@@ -8,7 +8,7 @@ import traceback
 from dataclasses import fields
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal
+from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QTimer, Signal
 from PySide6.QtGui import QAction, QColor, QFont, QIcon, QKeySequence, QPalette
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDockWidget, QDoubleSpinBox, QFileDialog,
@@ -22,7 +22,7 @@ from .job import Operation, Tool
 from .project import Project
 
 CHOICES = {
-    "type": ["rough", "finish", "profile"],
+    "type": ["rough", "finish", "profile", "drill", "bore"],
     "up": list(geometry.UP_AXES),
     "zero": ["stock", "model"],
     "post": ["grbl"],
@@ -31,9 +31,19 @@ LABELS = {
     "stepover": "Stepover (× tool Ø)", "leave": "Leave on walls", "feed": "Feed (mm/min)",
     "plunge": "Plunge (mm/min)", "bottom": "Bottom Z", "rpm": "Spindle (rpm)",
     "safe_z": "Safe height", "top_offset": "Material above part", "margin": "Margin around part",
+    "hole_min": "Smallest hole Ø", "hole_max": "Largest hole Ø",
     "up": "Model axis facing up", "ramp_angle": "Ramp angle (°)", "tabs": "Tabs per outline", "zero": "Work zero", "post": "Post-processor",
 }
-AUTO = -99999.0   # spin box value shown as "model bottom" for an empty bottom
+AUTO = -99999.0   # spin box value shown as "auto" for an empty optional number
+OPTIONAL = {"bottom": "model bottom", "hole_min": "auto", "hole_max": "auto"}
+# Operation fields that mean nothing for a given type are hidden from the form.
+HIDDEN = {
+    "rough": {"tabs", "tab_width", "tab_height", "hole_min", "hole_max"},
+    "finish": {"stepover", "hole_min", "hole_max"},
+    "profile": {"stepover", "hole_min", "hole_max"},
+    "drill": {"stepover", "leave", "feed", "ramp_angle", "tabs", "tab_width", "tab_height"},
+    "bore": {"tabs", "tab_width", "tab_height"},
+}
 
 
 class DataForm(QWidget):
@@ -55,16 +65,22 @@ class DataForm(QWidget):
         self.obj = obj
         if obj is None:
             return
+        hidden = HIDDEN.get(getattr(obj, "type", None), set()) if isinstance(obj, Operation) else set()
         for f in fields(obj):
-            if f.name == "id":
+            if f.name == "id" or f.name in hidden:
                 continue
             w = self._editor(f.name, getattr(obj, f.name), f.type)
-            self.layout_.addRow(LABELS.get(f.name, f.name.replace("_", " ").capitalize()), w)
+            label = LABELS.get(f.name, f.name.replace("_", " ").capitalize())
+            if f.name == "stepdown" and getattr(obj, "type", "") == "drill":
+                label = "Peck depth"
+            self.layout_.addRow(label, w)
 
     def _editor(self, name, value, ftype):
         def store(v):
             setattr(self.obj, name, v)
             self.changed.emit()
+            if name == "type":            # different fields apply: rebuild the form
+                QTimer.singleShot(0, lambda: self.set(self.obj))
 
         if name in CHOICES:
             w = QComboBox()
@@ -83,10 +99,10 @@ class DataForm(QWidget):
         elif isinstance(value, float) or "float" in str(ftype):
             w = QDoubleSpinBox()
             w.setDecimals(3)
-            w.setRange(AUTO if name == "bottom" else -10000, 100000)
+            w.setRange(AUTO if name in OPTIONAL else -10000, 100000)
             w.setSingleStep(0.1 if name in ("stepover", "leave") else 0.5)
-            if name == "bottom":
-                w.setSpecialValueText("model bottom")
+            if name in OPTIONAL:
+                w.setSpecialValueText(OPTIONAL[name])
             w.setValue(AUTO if value is None else value)
             w.valueChanged.connect(lambda v: store(None if v == AUTO else v))
         else:

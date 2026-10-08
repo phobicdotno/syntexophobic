@@ -34,7 +34,7 @@ class Machine:
 
 @dataclass
 class Operation:
-    type: str = "rough"       # "rough": clear by levels, "finish": all walls, "profile": outside only
+    type: str = "rough"       # rough | finish (all walls) | profile (outside only) | drill | bore
     name: str = "Rough"
     tool: int = 1
     stepdown: float = 1.5
@@ -47,6 +47,8 @@ class Operation:
     tabs: int = 0             # holding tabs per outline (profile and finish only)
     tab_width: float = 6.0
     tab_height: float = 2.0  # above the operation's bottom
+    hole_min: float | None = None   # drill/bore: smallest hole diameter to machine
+    hole_max: float | None = None   # drill/bore: largest
     enabled: bool = True
 
 

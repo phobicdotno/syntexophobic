@@ -176,3 +176,40 @@ def test_simulation_catches_a_bad_move(pocket_part, tmp_path):
         cam.Move("rapid", 5, 20, 20), cam.Move("feed", 5, 20, 12, 300), cam.Move("feed", 55, 20, 12, 1000)])
     res = simulate.simulate(p.setup(), [tp], res=0.25)
     assert res.gouge_cells > 0 and abs(res.gouge_depth - 3.0) < 0.05    # 3 mm into the 15 mm block
+
+
+DEMO = __import__("pathlib").Path(__file__).resolve().parent.parent / "examples" / "demo-plate.step"
+
+
+def test_find_holes_skips_fillets_and_bosses():
+    holes = geometry.find_holes(geometry.load_step(DEMO))
+    assert sorted((h.x, h.y, h.diameter) for h in holes) == sorted(
+        [(8, 8, 5.2), (92, 8, 5.2), (8, 62, 5.2), (92, 62, 5.2), (38, 35, 5.0), (62, 35, 5.0)])
+    assert {h.top for h in holes} == {20.0, 17.0} and {h.bottom for h in holes} == {0.0}
+
+
+def test_drill_and_bore_cut_the_holes_without_gouging(tmp_path):
+    from syntexophobic import simulate
+    from syntexophobic.job import Operation, Tool
+    p = Project.create(tmp_path / "holes", DEMO)
+    p.job.tools = [Tool(1, "6 mm endmill", 6.0), Tool(2, "5 mm drill", 5.0), Tool(3, "3 mm endmill", 3.0)]
+    p.job.operations = [
+        Operation(type="rough", name="Rough", tool=1, bottom=4.0),
+        Operation(type="drill", name="Drill 5", tool=2, stepdown=4.0),
+        Operation(type="bore", name="Bore", tool=3, stepover=0.4, hole_min=5.1),   # the 5.2 corner holes
+    ]
+    tps = p.toolpaths()
+    drill, bore = tps[1], tps[2]
+    assert len(drill.levels) == 6 and len(bore.levels) == 4
+    res = simulate.simulate(p.setup(), tps, res=0.2)
+    assert res.gouge_cells == 0, f"gouge {res.gouge_depth:.3f} mm"
+    xs, ys = res.grid.centres()
+    for x, y in ((38, 35), (8, 8)):                         # a drilled and a bored hole, all the way down
+        j, i = int(round((y - ys[0]) / 0.2)), int(round((x - xs[0]) / 0.2))
+        assert res.stock[j, i] <= 0.0 + 1e-6
+    # drilling pecks: no single feed deeper than the peck depth below the previous one
+    last_z = None
+    for kind, x, y, z, f in drill.positions():
+        if kind == "feed" and last_z is not None:
+            assert last_z - z <= 4.0 + 0.5 + 1e-6
+        last_z = z

@@ -12,7 +12,7 @@ from OCP.BRepBndLib import BRepBndLib
 from OCP.BRepMesh import BRepMesh_IncrementalMesh
 from OCP.Bnd import Bnd_Box
 from OCP.GCPnts import GCPnts_AbscissaPoint
-from OCP.GeomAbs import GeomAbs_Line, GeomAbs_Plane
+from OCP.GeomAbs import GeomAbs_Cylinder, GeomAbs_Line, GeomAbs_Plane
 from OCP.IFSelect import IFSelect_RetDone
 from OCP.STEPControl import STEPControl_Reader
 from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_REVERSED, TopAbs_SOLID
@@ -192,6 +192,44 @@ def upward_flat_levels(shape: TopoDS_Shape) -> list[float]:
                 levels.add(round(plane.Location().Z(), 4))
         exp.Next()
     return sorted(levels)
+
+
+@dataclass(frozen=True)
+class Hole:
+    x: float
+    y: float
+    diameter: float
+    top: float
+    bottom: float
+
+
+def find_holes(shape: TopoDS_Shape) -> list[Hole]:
+    """Vertical round holes: full cylinders with material outside them.
+
+    A hole is often split into two half-cylinder faces, so faces are grouped by axis and
+    radius and must cover a full turn together. Partial cylinders (fillets in pocket
+    corners) and bosses (material inside) are left out.
+    """
+    groups: dict[tuple, list] = {}
+    exp = TopExp_Explorer(shape, TopAbs_FACE)
+    while exp.More():
+        face = TopoDS.Face(exp.Current())
+        surf = BRepAdaptor_Surface(face)
+        if surf.GetType() == GeomAbs_Cylinder:
+            cyl = surf.Cylinder()
+            axis = cyl.Axis()
+            if abs(axis.Direction().Z()) > 0.999 and face.Orientation() == TopAbs_REVERSED:
+                loc = axis.Location()
+                key = (round(loc.X(), 3), round(loc.Y(), 3), round(cyl.Radius(), 3))
+                sweep = surf.LastUParameter() - surf.FirstUParameter()
+                box = bounding_box(face)
+                groups.setdefault(key, []).append((sweep, box.zmin, box.zmax))
+        exp.Next()
+    holes = []
+    for (x, y, r), parts in groups.items():
+        if sum(p[0] for p in parts) >= 2 * math.pi - 1e-3:
+            holes.append(Hole(x, y, 2 * r, max(p[2] for p in parts), min(p[1] for p in parts)))
+    return sorted(holes, key=lambda h: (h.y, h.x))
 
 
 def mesh(shape: TopoDS_Shape, deflection: float = 0.1):

@@ -6,6 +6,15 @@ All notable changes to Syntexophobic. The format follows
 ## [Unreleased]
 
 ### Added
+- Hole detection: full vertical cylinders with material around them. Pocket-corner
+  fillets and bosses are left out.
+- `drill` operation: full-retract pecks written out move by move (GRBL has no G83),
+  counted from the stock top so it is safe before roughing, with a tip allowance on
+  through holes. Takes holes within -0.05/+0.3 mm of the drill unless
+  `hole_min`/`hole_max` say otherwise.
+- `bore` operation: helical circles from the centre outwards for holes larger than the
+  endmill.
+- The operation form shows only the fields that apply to the chosen type.
 - Stock removal simulation on a height map, with a gouge check against the part.
   *Simulate* in the window (gouges drawn red) and `syntexophobic simulate`, which exits
   with status 1 if the tool would cut into the part.

@@ -134,6 +134,7 @@ class Setup:
             cache["flats"] = geometry.upward_flat_levels(shape)
             cache["slices"] = {}
             cache["slicer"] = geometry.MeshSlicer(shape)
+            cache["holes"] = geometry.find_holes(shape)
         self.part = cache["part"]
         m = job.stock.margin
         self.stock = geometry.Box(self.part.xmin - m, self.part.ymin - m, self.part.zmin,
@@ -142,6 +143,7 @@ class Setup:
         self.flats = cache["flats"]
         self._slices: dict[float, list] = cache["slices"]
         self.slicer: geometry.MeshSlicer = cache["slicer"]
+        self.holes: list[geometry.Hole] = cache["holes"]
 
     def slice_region(self, z: float):
         key = round(z, 4)
@@ -261,7 +263,80 @@ def _rings(op: Operation, forbidden, setup: "Setup", r: float, diameter: float):
     return rings
 
 
+def hole_matches(op: Operation, tool_diameter: float, d: float) -> bool:
+    """Which holes a drill or bore operation takes, unless hole_min/hole_max say otherwise."""
+    if op.type == "drill":
+        lo, hi = tool_diameter - 0.05, tool_diameter + 0.3
+    else:
+        lo, hi = tool_diameter + 0.2, float("inf")
+    lo = lo if op.hole_min is None else op.hole_min
+    hi = hi if op.hole_max is None else op.hole_max
+    return lo <= d <= hi
+
+
+def _nearest_order(holes):
+    """Visit holes nearest-first from the origin corner: short rapids, no clever routing."""
+    left, out, at = list(holes), [], (-1e9, -1e9)
+    while left:
+        h = min(left, key=lambda h: math.dist(at, (h.x, h.y)))
+        left.remove(h)
+        out.append(h)
+        at = (h.x, h.y)
+    return out
+
+
+def _holes(setup: Setup, op: Operation) -> Toolpath:
+    tool = setup.job.tool(op.tool)
+    r = tool.diameter / 2
+    top = setup.stock.zmax
+    safe = top + setup.job.machine.safe_z
+    travel, clearance = top + 1.0, top + 0.5
+    tp = Toolpath(op, tool.diameter)
+    moves = tp.moves
+    moves.append(Move("rapid", None, None, safe))
+    holes = [h for h in setup.holes if hole_matches(op, tool.diameter, h.diameter)]
+    for h in _nearest_order(holes):
+        through = h.bottom <= setup.part.zmin + 1e-6
+        bottom = h.bottom - (0.3 * tool.diameter if through and op.type == "drill" else 0.0)
+        if op.bottom is not None:
+            bottom = max(bottom, op.bottom)
+        moves += [Move("rapid", None, None, travel), Move("rapid", h.x, h.y, None),
+                  Move("rapid", None, None, clearance)]
+        if op.type == "drill":
+            # Full-retract pecks (GRBL has no G83): down one peck, out to clear chips, back.
+            depth = clearance
+            while depth > bottom + 1e-6:
+                nxt = max(bottom, depth - op.stepdown)   # counted from the stock top: safe before roughing too
+                moves.append(Move("feed", None, None, nxt, op.plunge))
+                if nxt > bottom + 1e-6:
+                    moves.append(Move("rapid", None, None, clearance))
+                    moves.append(Move("rapid", None, None, nxt + 0.5))
+                depth = nxt
+            moves.append(Move("rapid", None, None, clearance))
+        else:
+            # Helical bore: circles from the centre outwards, each ramped down its whole depth.
+            outer = h.diameter / 2 - r - op.leave
+            radii, rad = [], outer
+            while rad > 0.05:
+                radii.append(rad)
+                rad -= op.stepover * tool.diameter
+            for rad in reversed(radii):
+                n = max(24, math.ceil(2 * math.pi * rad / 0.2))
+                loop = [(h.x + rad * math.cos(2 * math.pi * k / n), h.y + rad * math.sin(2 * math.pi * k / n))
+                        for k in range(n)]
+                pts = _ramp_and_lap(loop, clearance, bottom, op.ramp_angle or 3.0)
+                moves.append(Move("rapid", pts[0][0], pts[0][1], None))
+                moves += [Move("feed", x, y, z, op.feed) for x, y, z in pts[1:]]
+                moves.append(Move("rapid", None, None, clearance))
+                moves.append(Move("rapid", h.x, h.y, None))
+        tp.levels.append(bottom)
+    moves.append(Move("rapid", None, None, safe))
+    return tp
+
+
 def generate(setup: Setup, op: Operation) -> Toolpath:
+    if op.type in ("drill", "bore"):
+        return _holes(setup, op)
     tool = setup.job.tool(op.tool)
     r = tool.diameter / 2
     top = setup.stock.zmax
