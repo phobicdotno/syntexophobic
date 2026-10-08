@@ -6,6 +6,19 @@ All notable changes to Syntexophobic. The format follows
 ## [Unreleased]
 
 ### Added
+- **Sketch** (`sketch.py`): points, lines, circles and arcs with 20 constraint types
+  (coincident, horizontal, vertical, parallel, perpendicular, equal, distance, horizontal /
+  vertical distance, radius, diameter, angle, point on line / circle, midpoint, tangent,
+  concentric, symmetric, fixed, x, y). Levenberg-Marquardt solver that moves geometry as
+  little as possible, reports remaining degrees of freedom and conflicting constraints.
+  Closed profiles (with holes) are found automatically. Stored as TOML, one entity per table.
+- **3D modelling** (`model.py`): parametric parts as a feature list in `model.toml` with
+  sketches in `sketches/`. Extrude (one side or symmetric) and revolve, each as new body,
+  join, cut or intersect; linear and circular patterns; fillet, chamfer, shell and mirror.
+  Edges and faces are chosen with short selectors (`|Z`, `#Z`, `>Z`, `<Z`, `%CIRCLE`,
+  `A&B`) that stay valid when the design changes. STEP export.
+- A CAM project can machine a designed part directly (`model = "model.toml"`); it is
+  rebuilt whenever the project reloads.
 - Hole detection: full vertical cylinders with material around them. Pocket-corner
   fillets and bosses are left out.
 - `drill` operation: full-retract pecks written out move by move (GRBL has no G83),
@@ -63,6 +76,8 @@ All notable changes to Syntexophobic. The format follows
 - Assemblies are sliced per solid, so touching or overlapping parts stay correct.
 
 ### Fixed
+- Hole detection no longer depends on how a face's orientation flag was set; it checks
+  that the surface normal points at the hole's axis.
 - Roughing ignored the part when the first union of the forbidden area started empty, so
   it would have cut straight through the part. Caught by a test that now samples every
   cut every 0.5 mm.

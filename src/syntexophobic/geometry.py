@@ -20,7 +20,7 @@ from OCP.TopExp import TopExp_Explorer
 from OCP.TopLoc import TopLoc_Location
 from OCP.TopoDS import TopoDS, TopoDS_Shape
 from OCP.BRepBuilderAPI import BRepBuilderAPI_Transform
-from OCP.gp import gp_Ax1, gp_Dir, gp_Pln, gp_Pnt, gp_Trsf
+from OCP.gp import gp_Ax1, gp_Dir, gp_Pln, gp_Pnt, gp_Trsf, gp_Vec
 
 Point = tuple[float, float]
 Loop = list[Point]
@@ -203,6 +203,20 @@ class Hole:
     bottom: float
 
 
+def _normal_towards_axis(face, surf, axis) -> bool:
+    """True when the face's outward (material-leaving) normal points at the axis: the
+    material is around the cylinder, so it is a hole, not a boss."""
+    u = (surf.FirstUParameter() + surf.LastUParameter()) / 2
+    v = (surf.FirstVParameter() + surf.LastVParameter()) / 2
+    p, du, dv = gp_Pnt(), gp_Vec(), gp_Vec()
+    surf.D1(u, v, p, du, dv)
+    n = du.Crossed(dv)
+    if face.Orientation() == TopAbs_REVERSED:
+        n.Reverse()
+    loc = axis.Location()
+    return n.X() * (loc.X() - p.X()) + n.Y() * (loc.Y() - p.Y()) > 0
+
+
 def find_holes(shape: TopoDS_Shape) -> list[Hole]:
     """Vertical round holes: full cylinders with material outside them.
 
@@ -218,7 +232,7 @@ def find_holes(shape: TopoDS_Shape) -> list[Hole]:
         if surf.GetType() == GeomAbs_Cylinder:
             cyl = surf.Cylinder()
             axis = cyl.Axis()
-            if abs(axis.Direction().Z()) > 0.999 and face.Orientation() == TopAbs_REVERSED:
+            if abs(axis.Direction().Z()) > 0.999 and _normal_towards_axis(face, surf, axis):
                 loc = axis.Location()
                 key = (round(loc.X(), 3), round(loc.Y(), 3), round(cyl.Radius(), 3))
                 sweep = surf.LastUParameter() - surf.FirstUParameter()

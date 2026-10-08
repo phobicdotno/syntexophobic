@@ -36,19 +36,25 @@ class Project:
     @property
     def shape(self):
         if self._shape is None or self._shape_up != self.job.stock.up:
-            raw = geometry.load_step(self.folder / self.job.model)
+            raw = self._load_model()
             self._shape = geometry.orient(raw, self.job.stock.up)
             self._shape_up = self.job.stock.up
             self._geometry_cache = {}
             self._setup = None
         return self._shape
 
+    def _load_model(self):
+        """The part to machine: a STEP file, or a designed part (model.toml) built now."""
+        path = self.folder / self.job.model
+        if path.suffix.lower() == ".toml":
+            from .model import Part
+            return Part.load(path).build()
+        return geometry.load_step(path)
+
     def reload(self) -> None:
-        """Re-read job.toml (after restoring a version or switching variant)."""
-        old_model = self.job.model
+        """Re-read job.toml and the model (after restoring a version or switching variant)."""
         self.job = jobfile.load(self.folder / jobfile.JOB_FILE)
-        if self.job.model != old_model:
-            self._shape = None
+        self._shape = None
         self._setup = None
 
     def save_job(self) -> None:
