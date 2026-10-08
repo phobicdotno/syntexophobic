@@ -48,6 +48,7 @@ class Operation:
     tabs: int = 0             # holding tabs per outline (profile and finish only)
     tab_width: float = 6.0
     tab_height: float = 2.0  # above the operation's bottom
+    rest_from: int | None = None    # rough: only cut what this earlier tool (id) could not reach
     hole_min: float | None = None   # drill/bore: smallest hole diameter to machine
     hole_max: float | None = None   # drill/bore: largest
     enabled: bool = True

@@ -295,3 +295,28 @@ def test_feeds_and_speeds_suggestions():
     job.stock.material = "mdf"
     op = job.operations[0]
     assert feeds.apply(job, op)["feed"] == op.feed == 2160
+
+
+def test_rest_machining_only_cuts_what_the_big_tool_left(pocket_part, tmp_path):
+    from syntexophobic import simulate
+    from syntexophobic.job import Operation, Tool
+    p = Project.create(tmp_path / "rest", pocket_part)
+    p.job.tools = [Tool(1, "6 mm", 6.0), Tool(2, "2 mm", 2.0)]
+    big = Operation(type="rough", name="Big", tool=1, bottom=10.0, leave=0.0)
+    rest = Operation(type="rough", name="Rest", tool=2, bottom=10.0, leave=0.0, rest_from=1, stepover=0.4)
+    p.job.operations = [big, rest]
+    tps = p.toolpaths()
+    corners = [(15, 10), (45, 10), (15, 30), (45, 30)]
+    small_cuts = [(x, y) for kind, x, y, z, f in tps[1].positions() if kind == "feed" and z < 15 - 1e-6]
+    assert small_cuts
+    # inside the pocket, the small tool only works near the four sharp corners
+    in_pocket = [(x, y) for x, y in small_cuts if 15 < x < 45 and 10 < y < 30]
+    assert in_pocket and all(min(math.dist(c, q) for c in corners) < 4.5 for q in in_pocket)
+    # and it is far less work than roughing the pocket again with the small tool
+    full = cam.generate(p.setup(), Operation(type="rough", tool=2, bottom=10.0, leave=0.0, stepover=0.4))
+    assert len(tps[1].moves) < 0.5 * len(full.moves)
+    res = simulate.simulate(p.setup(), tps, res=0.1)
+    assert res.gouge_cells == 0
+    xs, ys = res.grid.centres()
+    j, i = int(round((10.6 - ys[0]) / 0.1)), int(round((15.6 - xs[0]) / 0.1))   # 0.85 mm from the corner
+    assert res.stock[j, i] <= 10.0 + 1e-6          # the 6 mm tool alone leaves this at the top (Z 16)

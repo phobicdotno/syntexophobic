@@ -35,18 +35,18 @@ LABELS = {
     "stepover": "Stepover (× tool Ø)", "leave": "Leave on walls", "feed": "Feed (mm/min)",
     "plunge": "Plunge (mm/min)", "bottom": "Bottom Z", "rpm": "Spindle (rpm)",
     "safe_z": "Safe height", "top_offset": "Material above part", "margin": "Margin around part",
-    "hole_min": "Smallest hole Ø", "hole_max": "Largest hole Ø",
+    "rest_from": "Rest after tool", "hole_min": "Smallest hole Ø", "hole_max": "Largest hole Ø",
     "material": "Stock material", "up": "Model axis facing up", "ramp_angle": "Ramp angle (°)", "tabs": "Tabs per outline", "zero": "Work zero", "post": "Post-processor",
 }
 AUTO = -99999.0   # spin box value shown as "auto" for an empty optional number
-OPTIONAL = {"bottom": "model bottom", "hole_min": "auto", "hole_max": "auto"}
+OPTIONAL = {"bottom": "model bottom", "hole_min": "auto", "hole_max": "auto", "rest_from": "off"}
 # Operation fields that mean nothing for a given type are hidden from the form.
 HIDDEN = {
     "rough": {"tabs", "tab_width", "tab_height", "hole_min", "hole_max"},
-    "finish": {"stepover", "hole_min", "hole_max"},
-    "profile": {"stepover", "hole_min", "hole_max"},
-    "drill": {"stepover", "leave", "feed", "ramp_angle", "tabs", "tab_width", "tab_height"},
-    "bore": {"tabs", "tab_width", "tab_height"},
+    "finish": {"stepover", "hole_min", "hole_max", "rest_from"},
+    "profile": {"stepover", "hole_min", "hole_max", "rest_from"},
+    "drill": {"stepover", "leave", "feed", "ramp_angle", "tabs", "tab_width", "tab_height", "rest_from"},
+    "bore": {"tabs", "tab_width", "tab_height", "rest_from"},
 }
 
 
@@ -117,6 +117,12 @@ class DataForm(QWidget):
             w = QCheckBox()
             w.setChecked(value)
             w.toggled.connect(store)
+        elif name in OPTIONAL and "int" in str(ftype):
+            w = QSpinBox()
+            w.setRange(0, 1000)
+            w.setSpecialValueText(OPTIONAL[name])      # 0 shows "off"
+            w.setValue(value or 0)
+            w.valueChanged.connect(lambda v: store(v or None))
         elif isinstance(value, int) and "float" not in str(ftype):
             w = QSpinBox()
             w.setRange(0, 100000)

@@ -256,6 +256,8 @@ def _rings(op: Operation, forbidden, setup: "Setup", r: float, diameter: float):
         outer = _outermost(_offset(forbidden, r + op.leave))
         return [outer] if outer else []
     region = _boolean(setup.stock_rect(), _offset(forbidden, r + op.leave), pyclipper.CT_DIFFERENCE)
+    if op.rest_from is not None:
+        region = _rest_region(setup, op, forbidden, region, r)
     rings = []
     while region:
         rings.append(region)
@@ -332,6 +334,25 @@ def _holes(setup: Setup, op: Operation) -> Toolpath:
         tp.levels.append(bottom)
     moves.append(Move("rapid", None, None, safe))
     return tp
+
+
+def _rest_region(setup: Setup, op: Operation, forbidden, region, r: float):
+    """Tool-centre area that reaches material the earlier tool `op.rest_from` left behind.
+
+    The earlier tool cleared everything its disc swept: its own centre area grown by its
+    radius. What is left (minus what this tool must not touch) is the rest material; this
+    tool's centres go wherever they would touch it, with a small overlap.
+    """
+    big = setup.job.tool(op.rest_from)
+    R = big.diameter / 2
+    big_centres = _boolean(setup.stock_rect(), _offset(forbidden, R + op.leave), pyclipper.CT_DIFFERENCE)
+    cleared = _offset(big_centres, R)
+    material = _boolean(_boolean(setup.stock_rect(), _offset(forbidden, op.leave), pyclipper.CT_DIFFERENCE),
+                        cleared, pyclipper.CT_DIFFERENCE)
+    material = _offset(_offset(material, -0.02), 0.02)        # drop slivers thinner than 40 µm
+    if not material:
+        return []
+    return _boolean(region, _offset(material, r + 0.2), pyclipper.CT_INTERSECTION)
 
 
 def generate(setup: Setup, op: Operation) -> Toolpath:
