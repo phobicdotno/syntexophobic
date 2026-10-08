@@ -14,6 +14,9 @@ All notable changes to Syntexophobic. The format follows
   `hole_min`/`hole_max` say otherwise.
 - `bore` operation: helical circles from the centre outwards for holes larger than the
   endmill.
+- Menu bar (File, Toolpaths, View) and black-and-white line icons drawn in the theme's
+  text colour. View > Toolbar switches between icons, large icons and text only, and is
+  remembered. Toolpaths / Rapids / Model are toggle buttons with shortcuts T, R, M.
 - Fusion-style mouse in the 3D view: middle-drag pans, Shift+middle orbits as a
   turntable (Z stays up, stops short of vertical), wheel zooms towards the cursor,
   double middle-click fits.

@@ -8,8 +8,8 @@ import traceback
 from dataclasses import fields
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QTimer, Signal
-from PySide6.QtGui import QAction, QColor, QFont, QIcon, QKeySequence, QPalette
+from PySide6.QtCore import QByteArray, QObject, QRunnable, QSettings, QSize, Qt, QThreadPool, QTimer, Signal
+from PySide6.QtGui import QAction, QActionGroup, QColor, QFont, QIcon, QKeySequence, QPainter, QPalette, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDockWidget, QDoubleSpinBox, QFileDialog,
     QFormLayout, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
@@ -44,6 +44,28 @@ HIDDEN = {
     "drill": {"stepover", "leave", "feed", "ramp_angle", "tabs", "tab_width", "tab_height"},
     "bore": {"tabs", "tab_width", "tab_height"},
 }
+
+
+ICONS = Path(__file__).with_name("assets") / "icons"
+
+
+def mono_icon(name: str, palette: QPalette) -> QIcon:
+    """A line icon drawn in the palette's text colour (and a dimmed copy for disabled)."""
+    from PySide6.QtSvg import QSvgRenderer
+
+    svg = (ICONS / f"{name}.svg").read_text()
+    icon = QIcon()
+    for mode, role in ((QIcon.Normal, QPalette.Active), (QIcon.Disabled, QPalette.Disabled)):
+        colour = palette.color(role, QPalette.WindowText).name()
+        renderer = QSvgRenderer(QByteArray(svg.replace("currentColor", colour).encode()))
+        for size in (16, 22, 24, 32, 36, 48, 64):
+            pm = QPixmap(size, size)
+            pm.fill(Qt.transparent)
+            painter = QPainter(pm)
+            renderer.render(painter)
+            painter.end()
+            icon.addPixmap(pm, mode)
+    return icon
 
 
 class DataForm(QWidget):
@@ -162,39 +184,77 @@ class MainWindow(QMainWindow):
     # ---- layout -----------------------------------------------------------------------
 
     def _build_toolbar(self):
+        """Toolbar plus menu bar. View > Toolbar switches icons / large icons / text only."""
         tb = QToolBar("Main")
         tb.setMovable(False)
+        tb.setObjectName("main-toolbar")
+        tb.setContextMenuPolicy(Qt.PreventContextMenu)
         self.addToolBar(tb)
+        self.toolbar = tb
+        bar = self.menuBar()
+        m_file, m_paths, m_view = bar.addMenu("&File"), bar.addMenu("&Toolpaths"), bar.addMenu("&View")
 
-        def act(text, slot, key=None):
+        def act(text, slot, icon, key=None, menu=None, checkable=False, toolbar=True):
             a = QAction(text, self)
-            a.triggered.connect(slot)
+            a.setIcon(mono_icon(icon, self.palette()))
+            a.setIconText(text.rstrip("…"))
+            a.setToolTip(text.rstrip("…") + (f"  ({QKeySequence(key).toString()})" if key else ""))
             if key:
                 a.setShortcut(QKeySequence(key))
-            tb.addAction(a)
+            if checkable:
+                a.setCheckable(True)
+                a.setChecked(True)
+                a.toggled.connect(slot)
+            else:
+                a.triggered.connect(slot)
+            if toolbar:
+                tb.addAction(a)
+            if menu is not None:
+                menu.addAction(a)
             return a
 
-        act("New from STEP…", self.new_project, "Ctrl+N")
-        act("Open project…", self.open_project, "Ctrl+O")
+        act("New from STEP…", self.new_project, "new", "Ctrl+N", m_file)
+        act("Open project…", self.open_project, "open", "Ctrl+O", m_file)
         tb.addSeparator()
-        self.a_generate = act("Generate toolpaths", self.generate, "Ctrl+G")
-        self.a_simulate = act("Simulate", self.simulate, "Ctrl+R")
-        self.a_export = act("Export G-code…", self.export_gcode, "Ctrl+E")
+        self.a_generate = act("Generate toolpaths", self.generate, "generate", "Ctrl+G", m_paths)
+        self.a_simulate = act("Simulate", self.simulate, "simulate", "Ctrl+R", m_paths)
+        self.a_export = act("Export G-code…", self.export_gcode, "export", "Ctrl+E", m_file)
+        m_file.addSeparator()
+        quit_ = m_file.addAction("Quit")
+        quit_.setShortcut(QKeySequence("Ctrl+Q"))
+        quit_.triggered.connect(self.close)
         tb.addSeparator()
-        act("Iso view", lambda: self.viewer.view_iso(), "1")
-        act("Top view", lambda: self.viewer.view_top(), "2")
-        self.c_paths = QCheckBox("Show toolpaths")
-        self.c_paths.setChecked(True)
-        self.c_paths.toggled.connect(self._redraw_paths)
-        tb.addWidget(self.c_paths)
-        self.c_rapids = QCheckBox("Show rapids")
-        self.c_rapids.setChecked(True)
-        self.c_rapids.toggled.connect(self._redraw_paths)
-        tb.addWidget(self.c_rapids)
-        self.c_model = QCheckBox("Show model")
-        self.c_model.setChecked(True)
-        self.c_model.toggled.connect(lambda on: self.viewer.set_model_visible(on))
-        tb.addWidget(self.c_model)
+        act("Iso view", lambda: self.viewer.view_iso(), "iso", "1", m_view)
+        act("Top view", lambda: self.viewer.view_top(), "top", "2", m_view)
+        tb.addSeparator()
+        m_view.addSeparator()
+        self.c_paths = act("Toolpaths", lambda _: self._redraw_paths(), "toolpaths", "T", m_view, True)
+        self.c_rapids = act("Rapids", lambda _: self._redraw_paths(), "rapids", "R", m_view, True)
+        self.c_model = act("Model", lambda on: self.viewer.set_model_visible(on), "model", "M", m_view, True)
+
+        m_view.addSeparator()
+        m_style = m_view.addMenu("Toolbar")
+        group = QActionGroup(self)
+        self.toolbar_styles = {}
+        for key, label in (("icons", "Icons"), ("large", "Large icons"), ("text", "Text only")):
+            a = m_style.addAction(label)
+            a.setCheckable(True)
+            a.triggered.connect(lambda _=False, k=key: self.set_toolbar_style(k))
+            group.addAction(a)
+            self.toolbar_styles[key] = a
+        self.set_toolbar_style(QSettings().value("toolbar_style", "icons"))
+
+    def set_toolbar_style(self, key: str):
+        tb = self.toolbar
+        if key == "text":
+            tb.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        else:
+            tb.setToolButtonStyle(Qt.ToolButtonIconOnly)
+            size = 36 if key == "large" else 22
+            tb.setIconSize(QSize(size, size))
+        if key in self.toolbar_styles:
+            self.toolbar_styles[key].setChecked(True)
+            QSettings().setValue("toolbar_style", key)
 
     def _build_job_dock(self):
         dock = QDockWidget("Job", self)
@@ -600,6 +660,7 @@ def run(path: str | None = None) -> int:
     os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
     app = QApplication(sys.argv)
     app.setApplicationName("Syntexophobic")
+    app.setOrganizationName("phobic")
     app.setDesktopFileName("syntexophobic")
     app.setWindowIcon(QIcon(str(Path(__file__).with_name("assets") / "syntexophobic.svg")))
     _dark_palette(app)
