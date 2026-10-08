@@ -153,3 +153,26 @@ def test_backend_slicing_matches_reference():
     got = sorted(map(tuple, np.round(segs[0], 9)))
     assert got == [(0.0, 5.0), (5.0, 5.0)]
     assert "numpy" in compute.available()
+
+
+def test_simulation_finds_no_gouges_and_clears_the_pocket(pocket_part, tmp_path):
+    from syntexophobic import simulate
+    p = Project.create(tmp_path / "sim", pocket_part)
+    for op in p.job.operations:
+        op.bottom = 10.0
+    tps = p.toolpaths()
+    res = simulate.simulate(p.setup(), tps, res=0.25)
+    assert res.gouge_cells == 0, f"gouge {res.gouge_depth:.3f} mm in {res.gouge_cells} cells"
+    xs, ys = res.grid.centres()
+    j, i = int(round((20 - ys[0]) / 0.25)), int(round((20 - xs[0]) / 0.25))   # pocket floor beside the boss
+    assert abs(res.stock[j, i] - 10.0) < 1e-6
+    assert res.removed_cm3 > 0
+
+
+def test_simulation_catches_a_bad_move(pocket_part, tmp_path):
+    from syntexophobic import simulate
+    p = Project.create(tmp_path / "bad", pocket_part)
+    tp = cam.Toolpath(p.job.operations[0], 6.0, moves=[
+        cam.Move("rapid", 5, 20, 20), cam.Move("feed", 5, 20, 12, 300), cam.Move("feed", 55, 20, 12, 1000)])
+    res = simulate.simulate(p.setup(), [tp], res=0.25)
+    assert res.gouge_cells > 0 and abs(res.gouge_depth - 3.0) < 0.05    # 3 mm into the 15 mm block

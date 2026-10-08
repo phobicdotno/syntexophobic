@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Syntexophobic: two molten droplets fusing (sýntēxis), a git merge running through them -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2B2F36"/>
+      <stop offset="1" stop-color="#17191D"/>
+    </linearGradient>
+    <radialGradient id="melt" cx="0.38" cy="0.3" r="0.85">
+      <stop offset="0" stop-color="#FFE29A"/>
+      <stop offset="0.35" stop-color="#FFB03B"/>
+      <stop offset="1" stop-color="#D9481F"/>
+    </radialGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="52" fill="url(#bg)"/>
+  <g fill="url(#melt)">
+    <circle cx="98" cy="148" r="50"/>
+    <circle cx="166" cy="104" r="38"/>
+    <path d="M95.4 98 Q125.5 116 132.1 86.7 L167.9 142 Q138.5 136 142.6 170.8 Z"/>
+  </g>
+  <g fill="none" stroke="#FFFFFF" stroke-width="9" stroke-linecap="round" opacity="0.92">
+    <path d="M98 148 C 112 120, 140 104, 166 104"/>
+    <path d="M98 148 C 120 164, 150 150, 166 104" opacity="0.55"/>
+  </g>
+  <g fill="#FFFFFF">
+    <circle cx="98" cy="148" r="13"/>
+    <circle cx="166" cy="104" r="11"/>
+  </g>
+  <circle cx="98" cy="148" r="6" fill="#D9481F"/>
+  <circle cx="166" cy="104" r="5" fill="#D9481F"/>
+</svg>

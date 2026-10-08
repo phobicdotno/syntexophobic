@@ -15,6 +15,9 @@ def main() -> int:
     n = sub.add_parser("new", help="create a project folder from a STEP file")
     n.add_argument("step")
     n.add_argument("folder", nargs="?")
+    sm = sub.add_parser("simulate", help="simulate the toolpaths and check for gouges (exit 1 if any)")
+    sm.add_argument("project")
+    sm.add_argument("--res", type=float, default=0.25, help="grid size in mm (default 0.25)")
     sub.add_parser("backends", help="list compute backends and the devices they would use")
     ap.add_argument("path", nargs="?", help="project folder or STEP file to open")
     ap.add_argument("--backend", help="compute backend: auto (default), numpy, cupy")
@@ -40,6 +43,17 @@ def main() -> int:
         for tp in tps:
             print(f"{tp.op.name}: {len(tp.levels)} levels, {tp.minutes():.1f} min")
         print(f"wrote {out}")
+        return 0
+    if args.cmd == "simulate":
+        from .project import Project
+        from . import simulate
+        p = Project(args.project)
+        r = simulate.simulate(p.setup(), p.toolpaths(), res=args.res)
+        print(f"grid {r.grid.nx} x {r.grid.ny} at {args.res} mm, {r.removed_cm3:.1f} cm³ removed")
+        if r.gouge_cells:
+            print(f"GOUGE: up to {r.gouge_depth:.3f} mm into the part in {r.gouge_cells} cells")
+            return 1
+        print("no gouges")
         return 0
     if args.cmd == "new":
         from pathlib import Path

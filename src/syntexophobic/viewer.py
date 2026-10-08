@@ -34,7 +34,7 @@ class Viewer(QVTKRenderWindowInteractor):
         self.ren.GradientBackgroundOn()
         self.GetRenderWindow().AddRenderer(self.ren)
         self.GetRenderWindow().GetInteractor().SetInteractorStyle(vtkInteractorStyleTrackballCamera())
-        self._model = self._stock = None
+        self._model = self._stock = self._sim = None
         self._paths: list[vtkActor] = []
         axes = vtkAxesActor()
         self._axes = vtkOrientationMarkerWidget()
@@ -124,6 +124,61 @@ class Viewer(QVTKRenderWindowInteractor):
         p.SetOpacity(0.45 if kind == "rapid" else 1.0)
         p.LightingOff()
         return actor
+
+    def show_simulation(self, result) -> None:
+        """Machined stock as a shaded height field; gouges in red."""
+        import numpy as np
+        from vtkmodules.util.numpy_support import numpy_to_vtk
+        from vtkmodules.vtkCommonDataModel import vtkImageData
+        from vtkmodules.vtkFiltersGeometry import vtkImageDataGeometryFilter
+        from vtkmodules.vtkFiltersGeneral import vtkWarpScalar
+
+        self.clear_simulation()
+        g = result.grid
+        img = vtkImageData()
+        img.SetDimensions(g.nx, g.ny, 1)
+        img.SetOrigin(g.x0, g.y0, 0)
+        img.SetSpacing(g.res, g.res, 1)
+        h = numpy_to_vtk(np.ascontiguousarray(result.stock.ravel()), deep=True)
+        h.SetName("height")
+        img.GetPointData().SetScalars(h)
+        rgb = np.empty((g.ny * g.nx, 3), np.uint8)
+        rgb[:] = (205, 170, 120)                                  # cut stock: wood
+        top = np.isclose(result.stock.ravel(), result.stock.max())
+        rgb[top] = (170, 140, 100)                                # untouched stock top
+        rgb[result.gouges().ravel()] = (235, 50, 50)              # gouge
+        colours = numpy_to_vtk(rgb, deep=True)
+        colours.SetName("colour")
+        img.GetPointData().AddArray(colours)
+        geom = vtkImageDataGeometryFilter()
+        geom.SetInputData(img)
+        warp = vtkWarpScalar()
+        warp.SetInputConnection(geom.GetOutputPort())
+        warp.SetNormal(0, 0, 1)
+        warp.UseNormalOn()
+        normals = vtkPolyDataNormals()
+        normals.SetInputConnection(warp.GetOutputPort())
+        mapper = vtkPolyDataMapper()
+        mapper.SetInputConnection(normals.GetOutputPort())
+        mapper.SetScalarModeToUsePointFieldData()
+        mapper.SelectColorArray("colour")
+        mapper.SetColorModeToDirectScalars()
+        mapper.ScalarVisibilityOn()
+        self._sim = vtkActor()
+        self._sim.SetMapper(mapper)
+        self._sim.GetProperty().SetSpecular(0.1)
+        self.ren.AddActor(self._sim)
+        self.GetRenderWindow().Render()
+
+    def clear_simulation(self) -> None:
+        if self._sim:
+            self.ren.RemoveActor(self._sim)
+            self._sim = None
+
+    def set_model_visible(self, on: bool) -> None:
+        if self._model:
+            self._model.SetVisibility(on)
+            self.GetRenderWindow().Render()
 
     # ---- camera ---------------------------------------------------------------------
 

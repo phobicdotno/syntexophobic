@@ -9,7 +9,7 @@ from dataclasses import fields
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal
-from PySide6.QtGui import QAction, QColor, QFont, QKeySequence, QPalette
+from PySide6.QtGui import QAction, QColor, QFont, QIcon, QKeySequence, QPalette
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDockWidget, QDoubleSpinBox, QFileDialog,
     QFormLayout, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
@@ -154,14 +154,23 @@ class MainWindow(QMainWindow):
         act("Open project…", self.open_project, "Ctrl+O")
         tb.addSeparator()
         self.a_generate = act("Generate toolpaths", self.generate, "Ctrl+G")
+        self.a_simulate = act("Simulate", self.simulate, "Ctrl+R")
         self.a_export = act("Export G-code…", self.export_gcode, "Ctrl+E")
         tb.addSeparator()
         act("Iso view", lambda: self.viewer.view_iso(), "1")
         act("Top view", lambda: self.viewer.view_top(), "2")
+        self.c_paths = QCheckBox("Show toolpaths")
+        self.c_paths.setChecked(True)
+        self.c_paths.toggled.connect(self._redraw_paths)
+        tb.addWidget(self.c_paths)
         self.c_rapids = QCheckBox("Show rapids")
         self.c_rapids.setChecked(True)
-        self.c_rapids.toggled.connect(lambda: self.viewer.show_toolpaths(self.toolpaths, self.c_rapids.isChecked()))
+        self.c_rapids.toggled.connect(self._redraw_paths)
         tb.addWidget(self.c_rapids)
+        self.c_model = QCheckBox("Show model")
+        self.c_model.setChecked(True)
+        self.c_model.toggled.connect(lambda on: self.viewer.set_model_visible(on))
+        tb.addWidget(self.c_model)
 
     def _build_job_dock(self):
         dock = QDockWidget("Job", self)
@@ -262,8 +271,12 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.RightDockWidgetArea, dock)
         self.history_dock = dock
 
+    def _redraw_paths(self):
+        paths = self.toolpaths if self.c_paths.isChecked() else []
+        self.viewer.show_toolpaths(paths, self.c_rapids.isChecked())
+
     def _enable(self, on: bool):
-        for w in (self.a_generate, self.a_export, self.job_dock, self.history_dock):
+        for w in (self.a_generate, self.a_simulate, self.a_export, self.job_dock, self.history_dock):
             w.setEnabled(on)
 
     # ---- project ----------------------------------------------------------------------
@@ -411,15 +424,44 @@ class MainWindow(QMainWindow):
     def _generated(self, toolpaths):
         self.a_generate.setEnabled(True)
         self.toolpaths = toolpaths
-        self.viewer.show_toolpaths(toolpaths, self.c_rapids.isChecked())
+        self.viewer.clear_simulation()
+        self.c_model.setChecked(True)
+        self.c_paths.setChecked(True)
+        self._redraw_paths()
         parts = [f"{tp.op.name}: {len(tp.levels)} levels, {tp.minutes():.0f} min" for tp in toolpaths]
         total = sum(tp.minutes() for tp in toolpaths)
         self.status.setText("  ·  ".join(parts) + f"  ·  total ≈ {total:.0f} min cutting")
 
     def _failed(self, tb):
         self.a_generate.setEnabled(True)
+        self.a_simulate.setEnabled(True)
         self.status.setText("Toolpath generation failed.")
         QMessageBox.critical(self, "Toolpath generation failed", tb[-2000:])
+
+    def simulate(self):
+        if not self.toolpaths:
+            QMessageBox.information(self, "No toolpaths", "Generate toolpaths first.")
+            return
+        from . import simulate as sim
+        self.a_simulate.setEnabled(False)
+        self.status.setText("Simulating material removal…")
+        setup, tps = self.project.setup(), self.toolpaths
+        task = Task(lambda: sim.simulate(setup, tps))
+        task.signals.done.connect(self._simulated)
+        task.signals.failed.connect(self._failed)
+        self.pool.start(task)
+
+    def _simulated(self, result):
+        self.a_simulate.setEnabled(True)
+        self.c_model.setChecked(False)
+        self.c_paths.setChecked(False)
+        self.viewer.show_simulation(result)
+        if result.gouge_cells:
+            self.status.setText(f"Gouge: the tool cuts up to {result.gouge_depth:.2f} mm into the part "
+                                f"({result.gouge_cells} cells, shown red). Do not run this file.")
+        else:
+            self.status.setText(f"Simulated: no gouges. {result.removed_cm3:.1f} cm³ removed. "
+                                "Tick Show model or Show toolpaths to compare.")
 
     def export_gcode(self):
         if not self.toolpaths:
@@ -529,6 +571,8 @@ def run(path: str | None = None) -> int:
     os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
     app = QApplication(sys.argv)
     app.setApplicationName("Syntexophobic")
+    app.setDesktopFileName("syntexophobic")
+    app.setWindowIcon(QIcon(str(Path(__file__).with_name("assets") / "syntexophobic.svg")))
     _dark_palette(app)
     win = MainWindow()
     win.show()
