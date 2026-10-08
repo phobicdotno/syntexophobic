@@ -120,3 +120,22 @@ def test_profile_tabs_hold_the_part(pocket_part, tmp_path):
     for x, y, z in samples:                                        # profile stays outside the block
         dx, dy = max(0 - x, 0, x - 60), max(0 - y, 0, y - 40)
         assert math.hypot(dx, dy) >= r - 0.02
+
+
+def _signed_area(paths):
+    import pyclipper
+    return sum(pyclipper.Area(p) for p in paths) / cam.SCALE ** 2
+
+
+def test_mesh_slices_match_exact_sections(pocket_part):
+    """The fast mesh slicer must agree with OpenCascade's exact sections to within a few µm."""
+    import pyclipper
+    shape = geometry.load_step(pocket_part)
+    slicer = geometry.MeshSlicer(shape)
+    for z in (0.5, 5.0, 10.01, 11.0, 12.5, 13.01, 14.0, 14.99):
+        exact = cam._region_from_slices(geometry.slice_at(shape, z))
+        fast = cam._region_from_slices(slicer.slice(z))
+        diff = _signed_area(cam._boolean(exact, fast, pyclipper.CT_XOR))
+        outline = sum(sum(math.dist(p[i - 1], p[i]) for i in range(len(p))) for p in exact) / cam.SCALE
+        assert diff / outline < 0.005, f"z={z}: mean deviation {diff / outline * 1000:.1f} µm"
+    assert slicer.fallbacks == 0

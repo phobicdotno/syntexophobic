@@ -66,19 +66,25 @@ def _edge_points(edge) -> list[Point]:
     return pts
 
 
-def _chain(segments: list[list[Point]], tol: float = 0.01) -> list[Loop]:
+def _chain(segments: list[list[Point]], tol: float = 0.01, open_chains: list | None = None) -> list[Loop]:
     """Join loose edge polylines end-to-end into closed loops.
 
     Endpoints within `tol` are merged into one node, then edges are walked like a graph,
     so outlines that touch at a corner (four edges meeting) still come out as loops.
     """
     nodes: list[Point] = []
+    grid: dict[tuple[int, int], list[int]] = {}
 
     def node(p: Point) -> int:
-        for i, q in enumerate(nodes):
-            if abs(p[0] - q[0]) < tol and abs(p[1] - q[1]) < tol:
-                return i
+        gx, gy = math.floor(p[0] / tol), math.floor(p[1] / tol)
+        for cx in (gx - 1, gx, gx + 1):
+            for cy in (gy - 1, gy, gy + 1):
+                for i in grid.get((cx, cy), ()):
+                    q = nodes[i]
+                    if abs(p[0] - q[0]) < tol and abs(p[1] - q[1]) < tol:
+                        return i
         nodes.append(p)
+        grid.setdefault((gx, gy), []).append(len(nodes) - 1)
         return len(nodes) - 1
 
     edges = []                       # (start node, end node, points)
@@ -110,6 +116,8 @@ def _chain(segments: list[list[Point]], tol: float = 0.01) -> list[Loop]:
             cur = b if a == cur else a
         if cur == start and len(pts) >= 4:
             loops.append(pts[:-1])
+        elif open_chains is not None:
+            open_chains.append(pts)
     return loops
 
 
@@ -128,19 +136,27 @@ def slice_at(shape: TopoDS_Shape, z: float) -> list[list[Loop]]:
     Solids are kept apart because parts of an assembly may touch or overlap, and their
     outlines only make sense as inside/outside per solid.
     """
-    plane = gp_Pln(gp_Pnt(0, 0, z), gp_Dir(0, 0, 1))
     result = []
     for solid in solids(shape):
-        section = BRepAlgoAPI_Section(solid, plane)
-        segments = []
-        exp = TopExp_Explorer(section.Shape(), TopAbs_EDGE)
-        while exp.More():
-            segments.append(_edge_points(TopoDS.Edge(exp.Current())))
-            exp.Next()
-        loops = _chain(segments)
+        loops = slice_solid(solid, z)
         if loops:
             result.append(loops)
     return result
+
+
+def slice_solid(solid: TopoDS_Shape, z: float) -> list[Loop]:
+    """Exact outlines of one solid at height z (OpenCascade section of the B-rep)."""
+    section = BRepAlgoAPI_Section(solid, gp_Pln(gp_Pnt(0, 0, z), gp_Dir(0, 0, 1)), False)
+    section.Approximation(False)
+    section.ComputePCurveOn1(False)
+    section.ComputePCurveOn2(False)
+    section.Build()
+    segments = []
+    exp = TopExp_Explorer(section.Shape(), TopAbs_EDGE)
+    while exp.More():
+        segments.append(_edge_points(TopoDS.Edge(exp.Current())))
+        exp.Next()
+    return _chain(segments)
 
 
 UP_AXES = ("+Z", "-Z", "+X", "-X", "+Y", "-Y")
@@ -201,3 +217,55 @@ def mesh(shape: TopoDS_Shape, deflection: float = 0.1):
                 tris.append((a, c, b) if flip else (a, b, c))
         exp.Next()
     return verts, tris
+
+
+# ---- fast slicing on a mesh -------------------------------------------------------------
+# Exact B-spline sections take about a second per level on a real part. A fine mesh
+# (0.01 mm chordal error, well below what a router holds) sliced with numpy takes
+# milliseconds, which is how the toolpaths are computed. slice_at stays as the exact
+# reference.
+
+
+class MeshSlicer:
+    def __init__(self, shape: TopoDS_Shape, deflection: float = 0.01):
+        import numpy as np
+
+        self._np = np
+        self.solids = []          # (B-rep solid, (n, 3, 3) triangle array) per solid
+        self.fallbacks = 0        # levels where the mesh slice did not close and the exact one was used
+        for solid in solids(shape):
+            verts, tris = mesh(solid, deflection)
+            if tris:
+                v = np.asarray(verts, dtype=float)
+                self.solids.append((solid, v[np.asarray(tris)]))
+
+    def slice(self, z: float) -> list[list[Loop]]:
+        np = self._np
+        result = []
+        for solid, tri in self.solids:
+            d = tri[:, :, 2] - z
+            above = d > 0
+            n_above = above.sum(axis=1)
+            hit = tri[(n_above == 1) | (n_above == 2)]
+            if not len(hit):
+                continue
+            segments = []
+            for t in hit:
+                pts = []
+                for i, j in ((0, 1), (1, 2), (2, 0)):
+                    a, b = t[i], t[j]
+                    if (a[2] > z) != (b[2] > z):
+                        if tuple(a) > tuple(b):     # same float result from both triangles
+                            a, b = b, a
+                        k = (z - a[2]) / (b[2] - a[2])
+                        pts.append((a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k))
+                if len(pts) == 2 and pts[0] != pts[1]:
+                    segments.append(pts)
+            open_chains: list = []
+            loops = _chain(segments, tol=1e-4, open_chains=open_chains)
+            if open_chains:
+                self.fallbacks += 1
+                loops = slice_solid(solid, z)
+            if loops:
+                result.append(loops)
+        return result

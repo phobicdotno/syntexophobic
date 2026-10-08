@@ -123,21 +123,30 @@ def cutting_levels(top: float, bottom: float, stepdown: float, flats: list[float
 class Setup:
     """Model + stock, with Z-slices cached so several operations can share them."""
 
-    def __init__(self, shape, job: Job):
+    def __init__(self, shape, job: Job, cache: dict | None = None):
+        """`cache` holds geometry that only depends on the model (bounding box, flat
+        levels, slices); pass the same dict while the model is unchanged."""
         self.shape = shape
         self.job = job
-        self.part = geometry.bounding_box(shape)
+        cache = {} if cache is None else cache
+        if "part" not in cache:
+            cache["part"] = geometry.bounding_box(shape)
+            cache["flats"] = geometry.upward_flat_levels(shape)
+            cache["slices"] = {}
+            cache["slicer"] = geometry.MeshSlicer(shape)
+        self.part = cache["part"]
         m = job.stock.margin
         self.stock = geometry.Box(self.part.xmin - m, self.part.ymin - m, self.part.zmin,
                                   self.part.xmax + m, self.part.ymax + m,
                                   self.part.zmax + job.stock.top_offset)
-        self.flats = geometry.upward_flat_levels(shape)
-        self._slices: dict[float, list] = {}
+        self.flats = cache["flats"]
+        self._slices: dict[float, list] = cache["slices"]
+        self.slicer: geometry.MeshSlicer = cache["slicer"]
 
     def slice_region(self, z: float):
         key = round(z, 4)
         if key not in self._slices:
-            self._slices[key] = _region_from_slices(geometry.slice_at(self.shape, z + EPS))
+            self._slices[key] = _region_from_slices(self.slicer.slice(z + EPS))
         return self._slices[key]
 
     def stock_rect(self):

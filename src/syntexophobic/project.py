@@ -17,6 +17,7 @@ class Project:
         self.history = History(self.folder)
         self._shape = None
         self._shape_up = None
+        self._geometry_cache: dict = {}
         self._setup = None
 
     @classmethod
@@ -38,6 +39,7 @@ class Project:
             raw = geometry.load_step(self.folder / self.job.model)
             self._shape = geometry.orient(raw, self.job.stock.up)
             self._shape_up = self.job.stock.up
+            self._geometry_cache = {}
             self._setup = None
         return self._shape
 
@@ -56,7 +58,7 @@ class Project:
     def setup(self) -> cam.Setup:
         shape = self.shape          # reloads (and drops the setup) if the up axis changed
         if self._setup is None:
-            self._setup = cam.Setup(shape, self.job)
+            self._setup = cam.Setup(shape, self.job, self._geometry_cache)
         return self._setup
 
     def toolpaths(self) -> list[cam.Toolpath]:
