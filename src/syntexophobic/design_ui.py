@@ -181,27 +181,25 @@ class DesignPanel(QWidget):
             self.edit_sketch.emit(name)
 
 
-def sketch_toolbar(view, on_finish) -> QToolBar:
-    """Drawing tools and constraint buttons for a SketchView."""
+def sketch_toolbar(view, on_finish) -> QWidget:
+    """Two rows for a SketchView: drawing tools and actions, then constraints."""
     from .sketcher import RULES
-    tb = QToolBar("Sketch")
-    tb.setMovable(False)
+    tools, cons = QToolBar("Sketch"), QToolBar("Constraints")
+    for tb in (tools, cons):
+        tb.setMovable(False)
     for key, text in (("select", "Select"), ("line", "Line"), ("rectangle", "Rectangle"),
                       ("circle", "Circle"), ("arc", "Arc"), ("point", "Point")):
-        a = tb.addAction(text)
+        a = tools.addAction(text)
         a.setCheckable(True)
+        a.setChecked(key == "select")
         a.setData(key)
-        a.triggered.connect(lambda _=False, k=key, t=tb: (view.set_tool(k),
-                            [x.setChecked(x.data() == k) for x in t.actions() if x.isCheckable()]))
-    tb.addSeparator()
-    for name in RULES:
-        a = tb.addAction(name.replace("_", " ").capitalize())
-        a.setToolTip("Needs: " + " or ".join(" + ".join(r) for r in RULES[name]))
-        a.triggered.connect(lambda _=False, n=name: view.apply_constraint(n))
-    a = tb.addAction("Dimension")
+        a.triggered.connect(lambda _=False, k=key: (view.set_tool(k),
+                            [x.setChecked(x.data() == k) for x in tools.actions() if x.isCheckable()]))
+    tools.addSeparator()
+    a = tools.addAction("Dimension")
     a.setToolTip("Length, distance, diameter or angle of the selection")
     a.triggered.connect(lambda: view.dimension())
-    a = tb.addAction("Construction")
+    a = tools.addAction("Construction")
     a.setToolTip("Toggle construction (reference) geometry for the selected lines and circles")
 
     def toggle_construction():
@@ -212,9 +210,19 @@ def sketch_toolbar(view, on_finish) -> QToolBar:
                 ent.construction = not ent.construction
         view.commit()
     a.triggered.connect(toggle_construction)
-    tb.addSeparator()
-    a = tb.addAction("Fit")
+    a = tools.addAction("Fit")
     a.triggered.connect(view.fit)
-    a = tb.addAction("Finish sketch")
+    tools.addSeparator()
+    a = tools.addAction("Finish sketch")
     a.triggered.connect(on_finish)
-    return tb
+    for name in RULES:
+        a = cons.addAction(name.replace("_", " ").capitalize())
+        a.setToolTip("Needs: " + " or ".join(" + ".join(r) for r in RULES[name]))
+        a.triggered.connect(lambda _=False, n=name: view.apply_constraint(n))
+    box = QWidget()
+    col = QVBoxLayout(box)
+    col.setContentsMargins(0, 0, 0, 0)
+    col.setSpacing(0)
+    col.addWidget(tools)
+    col.addWidget(cons)
+    return box

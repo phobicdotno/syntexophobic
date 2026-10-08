@@ -17,6 +17,10 @@ All notable changes to Syntexophobic. The format follows
   join, cut or intersect; linear and circular patterns; fillet, chamfer, shell and mirror.
   Edges and faces are chosen with short selectors (`|Z`, `#Z`, `>Z`, `<Z`, `%CIRCLE`,
   `A&B`) that stay valid when the design changes. STEP export.
+- **Design workspace** in the window: Design / Manufacture switch, File > New design…,
+  feature list with per-type settings, and a sketch editor (draw, snap, drag with live
+  solving, constraint and dimension buttons, construction geometry). Edits save and
+  rebuild the part automatically.
 - A CAM project can machine a designed part directly (`model = "model.toml"`); it is
   rebuilt whenever the project reloads.
 - Hole detection: full vertical cylinders with material around them. Pocket-corner

@@ -2,8 +2,8 @@
 
 # Syntexophobic
 
-2.5D CAM for GRBL machines (Shapeoko, Nomad, Carbide Motion), with a git-style job history
-instead of a timeline. Built on OpenCascade, Qt and VTK. Linux desktop.
+Parametric CAD and 2.5D CAM for GRBL machines (Shapeoko, Nomad, Carbide Motion), with a
+git-style history instead of a timeline. Built on OpenCascade, Qt and VTK. Linux desktop.
 
 *σύντηξις (sýntēxis): melting together, fusion.*
 
@@ -24,7 +24,37 @@ uv run pytest                                # tests
 
 ## How it works
 
-A **project** is a folder with the STEP model, `job.toml` and a git repository.
+A **project** is a folder with the model (a designed part or a STEP file), `job.toml` and a
+git repository. The toolbar switches between the **Design** and **Manufacture** workspaces.
+
+### Design
+
+![Design workspace: feature list, feature settings and the part](docs/screenshots/design.png)
+
+A part is a list of features in `model.toml`, built top to bottom:
+
+| Feature | Options |
+|---|---|
+| **Extrude** | distance, symmetric, new / join / cut / intersect, linear or circular pattern |
+| **Revolve** | axis line from the sketch, angle, same operations and patterns |
+| **Fillet**, **Chamfer** | radius or distance, edge selector |
+| **Shell** | wall thickness, faces to open |
+| **Mirror** | YZ, XZ or XY plane |
+
+Edges and faces are picked with short selectors that survive design changes: `|Z`
+(vertical edges), `#Z` (horizontal), `>Z` / `<Z` (top / bottom face), `%LINE`, `%CIRCLE`,
+and `A&B` for both.
+
+### Sketch
+
+![Sketch editor: fully constrained base sketch, the hole selected](docs/screenshots/sketch.png)
+
+Lines, rectangles, circles, arcs and points on the XY, XZ or YZ plane (with an offset).
+Clicking near a point reuses it. Constraints: coincident, horizontal, vertical, parallel,
+perpendicular, equal, tangent, concentric, midpoint, point on line/circle, fixed,
+symmetric, plus dimensions for length, distance, diameter and angle. Geometry is blue while
+it can still move and white when fully constrained; conflicting constraints turn red.
+Sketches live in `sketches/<name>.toml`.
 
 ### Job
 
@@ -88,7 +118,9 @@ Slicing and simulation run through a pluggable backend with a numpy-compatible A
 
 ## Not there yet
 
-Drilling, adaptive clearing, 3D finishing, and the modelling side. See
+Sketch trim/offset/fillet tools and splines, sketches on faces, sweep and loft, picking
+edges in the 3D view, adaptive clearing and 3D finishing. See
 [CHANGELOG.md](CHANGELOG.md) for what changed.
 
-Screenshots are made from `examples/demo-plate.step` by `uv run python tools/screenshots.py`.
+Screenshots are made from `examples/demo-plate.step` and a small designed bracket by
+`uv run python tools/screenshots.py`.

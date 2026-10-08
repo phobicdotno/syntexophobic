@@ -391,6 +391,7 @@ class SketchView(QGraphicsView):
                  "tangent": "T", "coincident": "●", "concentric": "◎", "midpoint": "M", "fixed": "⚓",
                  "symmetric": "⇋", "point_on_line": "•", "point_on_circle": "•"}
         font = QFont("sans", 8)
+        stacked: dict[tuple, int] = {}                  # labels already at an anchor
         for k in s.constraints:
             anchor = None
             ref = k.refs[0]
@@ -413,7 +414,10 @@ class SketchView(QGraphicsView):
             item = sc.addSimpleText(text, font)
             item.setBrush(CONFLICT if k.id in self.conflicts else QColor(200, 205, 212))
             item.setFlag(item.GraphicsItemFlag.ItemIgnoresTransformations)
-            item.setPos(anchor[0] + self.px(4), anchor[1] + self.px(4))
+            key = (round(anchor[0], 3), round(anchor[1], 3))
+            n = stacked.get(key, 0)
+            stacked[key] = n + 1
+            item.setPos(anchor[0] + self.px(5), anchor[1] + self.px(5 + 13 * n))   # one row per label
 
     def fit(self) -> None:
         s = self.sketch

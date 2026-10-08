@@ -7,7 +7,7 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QPoint, QRect, Qt, QTimer
 from PySide6.QtGui import QImage, QPainter
 from PySide6.QtWidgets import QApplication
 from vtkmodules.vtkIOImage import vtkPNGWriter
@@ -23,6 +23,8 @@ OUT = ROOT / "docs" / "screenshots"
 
 def capture(win, name):
     """The window with the VTK view painted in (a plain widget grab shows it black)."""
+    for _ in range(5):                  # let Qt lay out widgets that were just created
+        QApplication.processEvents()
     win.viewer.GetRenderWindow().Render()
     f = vtkWindowToImageFilter()
     f.SetInput(win.viewer.GetRenderWindow())
@@ -34,14 +36,48 @@ def capture(win, name):
     w.SetInputConnection(f.GetOutputPort())
     w.Write()
     shot = win.grab().toImage()
-    view = QImage(str(tmp))
-    p = QPainter(shot)
-    r = win.viewer.geometry()
-    p.drawImage(r, view.scaled(r.size()))
-    p.end()
+    if win.viewer.isVisible():          # paint the GL view where it sits in the window
+        view = QImage(str(tmp))
+        p = QPainter(shot)
+        top_left = win.viewer.mapTo(win, QPoint(0, 0))
+        r = QRect(top_left, win.viewer.size())
+        p.drawImage(r, view.scaled(r.size()))
+        p.end()
     shot = shot.scaledToWidth(1600, Qt.SmoothTransformation)
     shot.save(str(OUT / name))
     print("saved", OUT / name)
+
+
+def design_project():
+    """A small designed bracket: dimensioned base sketch, pocket, hole pattern, fillets."""
+    from syntexophobic.model import Feature, Part
+    from syntexophobic.sketch import Sketch
+
+    base = Sketch(name="base")
+    ls = base.rectangle(0, 0, 90, 60)
+    corner = base.lines[ls[0]].a
+    base.constrain("fixed", corner)
+    base.constrain("distance", ls[0], value=90)
+    base.constrain("distance", ls[1], value=60)
+    hole = base.circle((12, 12), 3)
+    base.constrain("diameter", hole, value=6.5)
+    base.constrain("horizontal_distance", corner, base.circles[hole].center, value=12)
+    base.constrain("vertical_distance", corner, base.circles[hole].center, value=12)
+    base.solve()
+    pocket = Sketch(name="pocket", offset=16)
+    pls = pocket.rectangle(25, 15, 65, 45)
+    pocket.constrain("distance", pls[0], value=40)
+    part = Part("bracket", [
+        Feature("extrude", "Base", sketch="base", distance=16),
+        Feature("extrude", "Pocket", sketch="pocket", distance=-9, operation="cut"),
+        Feature("fillet", "Round corners", radius=6, edges="|Z"),
+    ], {"base": base, "pocket": pocket})
+    folder = Path(tempfile.mkdtemp()) / "bracket"
+    proj = Project.create_design(folder, "bracket")
+    part.save(folder)
+    proj.history.save("Bracket: base, pocket, rounded corners")
+    proj.reload()
+    return proj
 
 
 def main():
@@ -89,6 +125,21 @@ def main():
 
     def step3():
         capture(win, "history.png")
+        win.load(design_project())
+        QTimer.singleShot(800, step4)
+
+    def step4():
+        win.viewer.view_iso()
+        win.design_panel.l_features.setCurrentRow(2)
+        capture(win, "design.png")
+        win.open_sketch("base")
+        QTimer.singleShot(400, win.sketch_view.fit)
+        QTimer.singleShot(900, step5)
+
+    def step5():
+        win.sketch_view.selected = [next(iter(win.part.sketches["base"].circles))]
+        win.sketch_view.draw()
+        capture(win, "sketch.png")
         qa.quit()
 
     QTimer.singleShot(1500, step1)
