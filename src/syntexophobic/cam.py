@@ -8,6 +8,7 @@ concentric offset rings. Polygon work is done with Clipper in integer micrometre
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 import pyclipper
@@ -34,6 +35,7 @@ class Toolpath:
     tool_diameter: float
     moves: list[Move] = field(default_factory=list)
     levels: list[float] = field(default_factory=list)
+    tabs: list = field(default_factory=list)
 
     def positions(self):
         """(kind, x, y, z, f) with every axis filled in from the previous position."""
@@ -79,6 +81,16 @@ def _boolean(subject, clip, op, fill=pyclipper.PFT_NONZERO):
     if clip:
         pc.AddPaths(clip, pyclipper.PT_CLIP, True)
     return pc.Execute(op, fill, fill)
+
+
+def _outermost(paths):
+    """Only the top-level outlines: no holes and no islands standing inside holes."""
+    if not paths:
+        return []
+    pc = pyclipper.Pyclipper()
+    pc.AddPaths(paths, pyclipper.PT_SUBJECT, True)
+    tree = pc.Execute2(pyclipper.CT_UNION, pyclipper.PFT_NONZERO, pyclipper.PFT_NONZERO)
+    return [child.Contour for child in tree.Childs]
 
 
 def _region_from_slices(per_solid):
@@ -133,6 +145,113 @@ class Setup:
         return _to_int([[(s.xmin, s.ymin), (s.xmax, s.ymin), (s.xmax, s.ymax), (s.xmin, s.ymax)]])
 
 
+def _ramp_and_lap(loop, z_from: float, z_to: float, ramp_angle: float):
+    """Points for one closed loop: ramp down along the loop itself, then a full lap at depth.
+
+    The ramp follows the path (several laps on short loops, like a helix), so the tool
+    never plunges straight into material. The full lap at depth starts and ends where
+    the ramp reached depth, which recuts the ramped stretch at full depth.
+    """
+    n = len(loop)
+    perimeter = sum(math.dist(loop[i], loop[(i + 1) % n]) for i in range(n))
+    if ramp_angle <= 0 or perimeter < 0.5:
+        return [(*loop[0], z_from), (*loop[0], z_to)] + [(*p, z_to) for p in loop[1:] + loop[:1]]
+    slope = math.tan(math.radians(ramp_angle))
+    out = [(*loop[0], z_from)]
+    cur, z, i = loop[0], z_from, 0
+    while True:
+        nxt = loop[(i + 1) % n]
+        seg = math.dist(cur, nxt)
+        if z - seg * slope <= z_to:
+            t = (z - z_to) / slope / seg if seg else 0.0
+            hit = (cur[0] + (nxt[0] - cur[0]) * t, cur[1] + (nxt[1] - cur[1]) * t)
+            out.append((*hit, z_to))
+            out += [(*loop[(i + 1 + k) % n], z_to) for k in range(n)]
+            out.append((*hit, z_to))
+            return out
+        z -= seg * slope
+        cur, i = nxt, (i + 1) % n
+        out.append((*cur, z))
+
+
+def _tab_centres(region, r: float, count: int, width: float):
+    """Evenly spaced tab positions on the tool-centre path around each outer outline."""
+    if count <= 0:
+        return []
+    centres = []
+    for loop in _to_mm(_outermost(_offset(region, r))):
+        n = len(loop)
+        lengths = [math.dist(loop[i], loop[(i + 1) % n]) for i in range(n)]
+        perimeter = sum(lengths)
+        if perimeter < count * (width + 2 * r) * 1.5:
+            continue                      # too small to hold tabs
+        targets = [perimeter * (k + 0.5) / count for k in range(count)]
+        acc, k = 0.0, 0
+        for i, seg in enumerate(lengths):
+            while k < count and targets[k] <= acc + seg:
+                t = (targets[k] - acc) / seg
+                a, b = loop[i], loop[(i + 1) % n]
+                centres.append((a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t))
+                k += 1
+            acc += seg
+    return centres
+
+
+def _seg_dist(p, a, b) -> float:
+    ax, ay = b[0] - a[0], b[1] - a[1]
+    L2 = ax * ax + ay * ay
+    t = 0.0 if L2 == 0 else max(0.0, min(1.0, ((p[0] - a[0]) * ax + (p[1] - a[1]) * ay) / L2))
+    return math.dist(p, (a[0] + ax * t, a[1] + ay * t))
+
+
+def _lift_over_tabs(points, centres, reach: float, tab_top: float):
+    """Raise the path to tab_top wherever the tool would cut into a tab.
+
+    The path steps straight up just before a tab and straight down just after it, so
+    no slanted move crosses into the tab.
+    """
+    if not centres:
+        return points
+
+    def in_tab(x, y, z):
+        return z < tab_top and any(math.dist(c, (x, y)) < reach for c in centres)
+
+    out = [points[0]]
+    lifted = in_tab(*points[0])
+    if lifted:
+        out[0] = (points[0][0], points[0][1], tab_top)
+    for a, b in zip(points, points[1:]):
+        near = min(b[2], a[2]) < tab_top and any(_seg_dist(c, a, b) < reach + 0.25 for c in centres)
+        steps = max(1, math.ceil(math.dist(a[:2], b[:2]) / 0.1)) if near else 1
+        for k in range(1, steps + 1):
+            t = k / steps
+            x, y, z = (a[i] + (b[i] - a[i]) * t for i in range(3))
+            now = near and in_tab(x, y, z)
+            if now and not lifted:
+                px, py, pz = out[-1]
+                out.append((px, py, max(pz, tab_top)))      # step up before the tab
+            if lifted and not now:
+                out.append((x, y, tab_top))                  # clear of the tab: step down here
+            out.append((x, y, tab_top if now else z))
+            lifted = now
+    return out
+
+
+def _rings(op: Operation, forbidden, setup: "Setup", r: float, diameter: float):
+    """Closed paths for one level, in cutting order."""
+    if op.type == "finish":
+        return [_offset(forbidden, r + op.leave)] if forbidden else []
+    if op.type == "profile":
+        outer = _outermost(_offset(forbidden, r + op.leave))
+        return [outer] if outer else []
+    region = _boolean(setup.stock_rect(), _offset(forbidden, r + op.leave), pyclipper.CT_DIFFERENCE)
+    rings = []
+    while region:
+        rings.append(region)
+        region = _offset(region, -op.stepover * diameter)
+    return rings
+
+
 def generate(setup: Setup, op: Operation) -> Toolpath:
     tool = setup.job.tool(op.tool)
     r = tool.diameter / 2
@@ -144,6 +263,16 @@ def generate(setup: Setup, op: Operation) -> Toolpath:
     moves = tp.moves
     moves.append(Move("rapid", None, None, safe))
 
+    tab_top = bottom + op.tab_height
+    tabs = []
+    if op.tabs > 0 and op.type in ("profile", "finish"):
+        silhouette: list = []
+        for z in levels:
+            silhouette = _boolean(silhouette, setup.slice_region(z), pyclipper.CT_UNION)
+        tabs = _tab_centres(silhouette, r + op.leave, op.tabs, op.tab_width)
+    tp.tabs = tabs
+    reach = op.tab_width / 2 + r
+
     # XY rapids happen just above the stock. The tool then drops fast to 0.5 mm above the
     # previous level: each level's region lies inside the one above, so that air is cut.
     travel = top + 1.0
@@ -151,26 +280,18 @@ def generate(setup: Setup, op: Operation) -> Toolpath:
     clearance = top + 0.5
     for z in levels:
         forbidden = _boolean(forbidden, setup.slice_region(z), pyclipper.CT_UNION)
-        if op.type == "finish":
-            rings = [_offset(forbidden, r)] if forbidden else []
-        else:
-            region = _boolean(setup.stock_rect(), _offset(forbidden, r + op.leave),
-                              pyclipper.CT_DIFFERENCE)
-            rings = []
-            while region:
-                rings.append(region)
-                region = _offset(region, -op.stepover * tool.diameter)
-        for ring in rings:
+        for ring in _rings(op, forbidden, setup, r, tool.diameter):
             for loop in _to_mm(ring):
                 if len(loop) < 2:
                     continue
-                x0, y0 = loop[0]
+                pts = _ramp_and_lap(loop, clearance, z, op.ramp_angle)
+                if tabs and z < tab_top:
+                    pts = _lift_over_tabs(pts, tabs, reach, tab_top)
                 moves.append(Move("rapid", None, None, travel))
-                moves.append(Move("rapid", x0, y0, None))
-                moves.append(Move("rapid", None, None, clearance))
-                moves.append(Move("feed", None, None, z, op.plunge))
-                for x, y in loop[1:] + [loop[0]]:
-                    moves.append(Move("feed", x, y, None, op.feed))
+                moves.append(Move("rapid", pts[0][0], pts[0][1], None))
+                moves.append(Move("rapid", None, None, pts[0][2]))
+                for x, y, zz in pts[1:]:
+                    moves.append(Move("feed", x, y, zz, op.feed))
         clearance = z + 0.5
     moves.append(Move("rapid", None, None, safe))
     return tp

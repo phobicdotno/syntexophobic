@@ -22,7 +22,7 @@ from .job import Operation, Tool
 from .project import Project
 
 CHOICES = {
-    "type": ["rough", "finish"],
+    "type": ["rough", "finish", "profile"],
     "up": list(geometry.UP_AXES),
     "zero": ["stock", "model"],
     "post": ["grbl"],
@@ -31,7 +31,7 @@ LABELS = {
     "stepover": "Stepover (× tool Ø)", "leave": "Leave on walls", "feed": "Feed (mm/min)",
     "plunge": "Plunge (mm/min)", "bottom": "Bottom Z", "rpm": "Spindle (rpm)",
     "safe_z": "Safe height", "top_offset": "Material above part", "margin": "Margin around part",
-    "up": "Model axis facing up", "zero": "Work zero", "post": "Post-processor",
+    "up": "Model axis facing up", "ramp_angle": "Ramp angle (°)", "tabs": "Tabs per outline", "zero": "Work zero", "post": "Post-processor",
 }
 AUTO = -99999.0   # spin box value shown as "model bottom" for an empty bottom
 

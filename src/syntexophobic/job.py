@@ -34,7 +34,7 @@ class Machine:
 
 @dataclass
 class Operation:
-    type: str = "rough"       # "rough": clear by levels, "finish": walls only
+    type: str = "rough"       # "rough": clear by levels, "finish": all walls, "profile": outside only
     name: str = "Rough"
     tool: int = 1
     stepdown: float = 1.5
@@ -43,6 +43,10 @@ class Operation:
     feed: float = 1000.0      # mm/min
     plunge: float = 300.0     # mm/min
     bottom: float | None = None   # lowest Z; default is the bottom of the model
+    ramp_angle: float = 5.0   # degrees; the tool ramps down along its path. 0 = plunge
+    tabs: int = 0             # holding tabs per outline (profile and finish only)
+    tab_width: float = 6.0
+    tab_height: float = 2.0  # above the operation's bottom
     enabled: bool = True
 
 

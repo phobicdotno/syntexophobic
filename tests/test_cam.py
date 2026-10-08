@@ -77,3 +77,46 @@ def test_history_roundtrip(pocket_part, tmp_path):
     p.history.restore(log[1].hash)
     p.reload()
     assert p.job.tools[0].diameter == 6.0
+
+
+def test_ramp_never_plunges(pocket_part, tmp_path):
+    p = Project.create(tmp_path / "ramp", pocket_part)
+    p.job.operations[0].bottom = 10.0
+    p.job.operations[0].ramp_angle = 3.0
+    tp = cam.generate(p.setup(), p.job.operations[0])
+    slope = math.tan(math.radians(3.0)) + 1e-6
+    last = None
+    descents = 0
+    for kind, x, y, z, f in tp.positions():
+        if last and kind == "feed" and z < last[2] - 1e-9:
+            descents += 1
+            assert (last[2] - z) <= slope * math.dist(last[:2], (x, y)) + 1e-6, "steeper than the ramp angle"
+        last = (x, y, z)
+    assert descents > 0
+
+
+def test_ramp_lap_covers_the_whole_loop():
+    loop = [(0, 0), (10, 0), (10, 10), (0, 10)]
+    pts = cam._ramp_and_lap(loop, 1.0, 0.0, 5.0)
+    at_depth = [(x, y) for x, y, z in pts if z == 0.0]
+    for corner in loop:                        # every corner is visited at full depth
+        assert any(math.dist(corner, p) < 1e-9 for p in at_depth)
+    assert pts[0] == (0, 0, 1.0) and pts[-1][2] == 0.0
+
+
+def test_profile_tabs_hold_the_part(pocket_part, tmp_path):
+    p = Project.create(tmp_path / "tabs", pocket_part)
+    prof = p.job.operations[1]
+    prof.type, prof.name, prof.tabs, prof.tab_height, prof.bottom = "profile", "Cut out", 4, 2.0, None
+    p.job.operations = [prof]
+    tp = cam.generate(p.setup(), prof)
+    assert len(tp.tabs) == 4
+    r = p.job.tools[0].diameter / 2
+    samples = list(_feed_samples(tp, 0.2))
+    assert any(abs(z) < 1e-6 for x, y, z in samples)            # it does cut through (model bottom is Z=0)
+    for c in tp.tabs:
+        near = [z for x, y, z in samples if math.dist(c, (x, y)) < prof.tab_width / 2 + r - 0.05]
+        assert near and min(near) >= 2.0 - 1e-6                   # never below the tab top at a tab
+    for x, y, z in samples:                                        # profile stays outside the block
+        dx, dy = max(0 - x, 0, x - 60), max(0 - y, 0, y - 40)
+        assert math.hypot(dx, dy) >= r - 0.02
