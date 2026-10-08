@@ -14,6 +14,9 @@ All notable changes to Syntexophobic. The format follows
   `hole_min`/`hole_max` say otherwise.
 - `bore` operation: helical circles from the centre outwards for holes larger than the
   endmill.
+- Feeds and speeds starting points (`feeds.py`): stock material in the job, and
+  *Suggest feeds & speeds* fills feed, plunge, stepdown and stepover per operation from
+  chipload × flutes × rpm, scaled for cutter diameter and capped for belt machines.
 - Menu bar (File, Toolpaths, View) and black-and-white line icons drawn in the theme's
   text colour. View > Toolbar switches between icons, large icons and text only, and is
   remembered. Toolpaths / Rapids / Model are toggle buttons with shortcuts T, R, M.

@@ -278,3 +278,20 @@ def test_spacemouse_protocol_and_daemon_client(tmp_path):
     conn.close()
     server.close()
     os.unlink(path)
+
+
+def test_feeds_and_speeds_suggestions():
+    from syntexophobic import feeds
+    from syntexophobic.job import Job, Machine, Operation, Tool
+    end6 = Tool(1, "6 mm", 6.0, 2)
+    rough = feeds.suggest("hardwood", end6, Operation(type="rough"), Machine(rpm=18000))
+    assert rough["feed"] == 1620 and rough["plunge"] == 540 and rough["stepdown"] == 1.2
+    alu = feeds.suggest("aluminium", end6, Operation(type="rough"), Machine(rpm=18000))
+    assert alu["stepdown"] == 0.3 and alu["feed"] < rough["feed"]
+    small = feeds.suggest("hardwood", Tool(2, "1/8", 3.175, 2), Operation(type="rough"), Machine(rpm=18000))
+    assert small["feed"] < rough["feed"]                      # thinner chip for a smaller cutter
+    assert feeds.suggest("hdpe", Tool(3, "big", 12, 4), Operation(), Machine(rpm=24000))["feed"] == feeds.MAX_FEED
+    job = Job()
+    job.stock.material = "mdf"
+    op = job.operations[0]
+    assert feeds.apply(job, op)["feed"] == op.feed == 2160

@@ -26,13 +26,17 @@ CHOICES = {
     "up": list(geometry.UP_AXES),
     "zero": ["stock", "model"],
     "post": ["grbl"],
+    "material": None,   # filled from feeds.MATERIALS below
 }
+from .feeds import MATERIALS  # noqa: E402
+
+CHOICES["material"] = list(MATERIALS)
 LABELS = {
     "stepover": "Stepover (× tool Ø)", "leave": "Leave on walls", "feed": "Feed (mm/min)",
     "plunge": "Plunge (mm/min)", "bottom": "Bottom Z", "rpm": "Spindle (rpm)",
     "safe_z": "Safe height", "top_offset": "Material above part", "margin": "Margin around part",
     "hole_min": "Smallest hole Ø", "hole_max": "Largest hole Ø",
-    "up": "Model axis facing up", "ramp_angle": "Ramp angle (°)", "tabs": "Tabs per outline", "zero": "Work zero", "post": "Post-processor",
+    "material": "Stock material", "up": "Model axis facing up", "ramp_angle": "Ramp angle (°)", "tabs": "Tabs per outline", "zero": "Work zero", "post": "Post-processor",
 }
 AUTO = -99999.0   # spin box value shown as "auto" for an empty optional number
 OPTIONAL = {"bottom": "model bottom", "hole_min": "auto", "hole_max": "auto"}
@@ -297,8 +301,13 @@ class MainWindow(QMainWindow):
             b.clicked.connect(slot)
             row.addWidget(b)
         self.f_op = DataForm()
+        b_feeds = QPushButton("Suggest feeds && speeds")
+        b_feeds.setToolTip("Fill feed, plunge, stepdown and stepover for this operation from the "
+                           "stock material, the tool and the spindle speed. A cautious starting point.")
+        b_feeds.clicked.connect(self.suggest_feeds)
         ol.addWidget(self.l_ops)
         ol.addLayout(row)
+        ol.addWidget(b_feeds)
         ol.addWidget(self.f_op)
         col.addWidget(ops)
         col.addStretch()
@@ -470,6 +479,18 @@ class MainWindow(QMainWindow):
     def _mark_stale(self):
         if self.toolpaths:
             self.status.setText("Job changed. Press Generate to update the toolpaths.")
+
+    def suggest_feeds(self):
+        from . import feeds
+        row = self.l_ops.currentRow()
+        if row < 0:
+            return
+        op = self.project.job.operations[row]
+        values = feeds.apply(self.project.job, op)
+        self.f_op.set(op)
+        self._job_edited()
+        material = feeds.MATERIALS[self.project.job.stock.material].label
+        self.status.setText(f"{op.name}: {material} → " + ", ".join(f"{k} {v:g}" for k, v in values.items()))
 
     def add_tool(self):
         tools = self.project.job.tools
