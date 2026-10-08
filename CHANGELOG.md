@@ -14,6 +14,13 @@ All notable changes to Syntexophobic. The format follows
   `hole_min`/`hole_max` say otherwise.
 - `bore` operation: helical circles from the centre outwards for holes larger than the
   endmill.
+- Fusion-style mouse in the 3D view: middle-drag pans, Shift+middle orbits as a
+  turntable (Z stays up, stops short of vertical), wheel zooms towards the cursor,
+  double middle-click fits.
+- 3Dconnexion SpaceMouse / SpaceNavigator support through spacenavd, with a built-in
+  client for its socket protocol (no library needed). Twist spins, tilt tilts, slide
+  pans, push zooms; left button fits, right button iso view. Reconnects if the daemon
+  restarts.
 - G-code reader: exported files are parsed back and simulated, so the post-processor is
   checked end to end. `syntexophobic simulate <project> --gcode file.nc` checks any file
   written for the project, including hand-edited ones.

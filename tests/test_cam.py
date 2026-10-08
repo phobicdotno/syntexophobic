@@ -244,3 +244,37 @@ def test_gcode_round_trip_simulates_clean(tmp_path):
         assert max(math.dist(u, v) for u, v in zip(pa, pb)) < 0.002
     res = simulate.simulate(p.setup(), back, res=0.25)
     assert res.gouge_cells == 0
+
+
+def test_spacemouse_protocol_and_daemon_client(tmp_path):
+    """Parse spacenavd events and receive them through a fake daemon socket."""
+    import os, socket, struct
+    from PySide6.QtCore import QCoreApplication
+    from syntexophobic import spacemouse as sm
+    m = sm.parse(struct.pack("=8i", 0, 10, -20, 30, 1, 2, 3, 16))
+    assert (m.x, m.y, m.z, m.rx, m.ry, m.rz, m.period) == (10, -20, 30, 1, 2, 3, 16)
+    assert sm.parse(struct.pack("=8i", 1, 0, 0, 0, 0, 0, 0, 0)) == ("button", 0, True)
+    assert sm.parse(struct.pack("=8i", 2, 1, 0, 0, 0, 0, 0, 0)) == ("button", 1, False)
+
+    app = QCoreApplication.instance() or QCoreApplication([])
+    path = str(tmp_path / "spnav.sock")
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    server.bind(path)
+    server.listen(1)
+    client = sm.SpaceMouse(paths=(path,))
+    conn, _ = server.accept()
+    got = []
+    client.motion.connect(lambda ev: got.append(("motion", ev.x, ev.rz)))
+    client.button.connect(lambda n, p: got.append(("button", n, p)))
+    # two motion events in one read: only the newest is delivered; then a button press
+    conn.sendall(struct.pack("=8i", 0, 1, 0, 0, 0, 0, 5, 8) + struct.pack("=8i", 0, 7, 0, 0, 0, 0, 9, 8)
+                 + struct.pack("=8i", 1, 1, 0, 0, 0, 0, 0, 0))
+    for _ in range(50):
+        app.processEvents()
+        if len(got) >= 2:
+            break
+    assert ("motion", 7, 9) in got and ("button", 1, True) in got
+    assert ("motion", 1, 5) not in got
+    conn.close()
+    server.close()
+    os.unlink(path)

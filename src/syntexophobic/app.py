@@ -149,6 +149,14 @@ class MainWindow(QMainWindow):
         self._build_history_dock()
         self.status = QLabel("Open a STEP file to start a project.")
         self.statusBar().addWidget(self.status, 1)
+        from .spacemouse import SpaceMouse
+        self.space_label = QLabel()
+        self.statusBar().addPermanentWidget(self.space_label)
+        self.spacemouse = SpaceMouse(parent=self)
+        self.spacemouse.motion.connect(self.viewer.spacemouse_motion)
+        self.spacemouse.button.connect(self.viewer.spacemouse_button)
+        self.spacemouse.connected.connect(self._space_status)
+        self._space_status(self.spacemouse.is_connected)
         self._enable(False)
 
     # ---- layout -----------------------------------------------------------------------
@@ -286,6 +294,11 @@ class MainWindow(QMainWindow):
         dock.setMinimumWidth(320)
         self.addDockWidget(Qt.RightDockWidgetArea, dock)
         self.history_dock = dock
+
+    def _space_status(self, on: bool):
+        self.space_label.setText("3Dconnexion: ready" if on else "")
+        self.space_label.setToolTip("Connected to spacenavd. Twist to spin, tilt to tilt, slide to pan, "
+                                    "push to zoom. Left button fits, right button iso view." if on else "")
 
     def _redraw_paths(self):
         paths = self.toolpaths if self.c_paths.isChecked() else []

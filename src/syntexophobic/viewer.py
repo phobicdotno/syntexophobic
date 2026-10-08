@@ -25,6 +25,89 @@ def _rgb(c):
     return tuple(v / 255 for v in c)
 
 
+class FusionStyle(vtkInteractorStyleTrackballCamera):
+    """Mouse like Fusion 360: middle-drag pans, Shift+middle orbits (turntable, Z stays
+    up), wheel zooms towards the cursor, double middle-click fits. Left-drag also orbits
+    while there is nothing to select."""
+
+    def __init__(self, renderer):
+        super().__init__()
+        self.ren = renderer
+        self._orbit = False
+        self._pan = False
+        self._last_middle = 0.0
+        for event, handler in (("MiddleButtonPressEvent", self._middle_down),
+                               ("MiddleButtonReleaseEvent", self._release),
+                               ("LeftButtonPressEvent", self._left_down),
+                               ("LeftButtonReleaseEvent", self._release),
+                               ("MouseMoveEvent", self._move),
+                               ("MouseWheelForwardEvent", lambda o, e: self.zoom_at_cursor(0.85)),
+                               ("MouseWheelBackwardEvent", lambda o, e: self.zoom_at_cursor(1 / 0.85))):
+            self.AddObserver(event, handler)
+
+    def _middle_down(self, obj, event):
+        import time
+        now = time.monotonic()
+        if now - self._last_middle < 0.35:
+            self.ren.ResetCamera()
+            self.GetInteractor().Render()
+        self._last_middle = now
+        if self.GetInteractor().GetShiftKey():
+            self._orbit = True
+        else:
+            self._pan = True
+            self.StartPan()
+
+    def _left_down(self, obj, event):
+        self._orbit = True
+
+    def _release(self, obj, event):
+        if self._pan:
+            self.EndPan()
+        self._orbit = self._pan = False
+
+    def _move(self, obj, event):
+        if self._orbit:
+            iren = self.GetInteractor()
+            x, y = iren.GetEventPosition()
+            px, py = iren.GetLastEventPosition()
+            self.orbit(x - px, y - py)
+        else:
+            self.OnMouseMove()      # lets the built-in pan run while panning
+
+    def orbit(self, dx: float, dy: float) -> None:
+        """Turntable: spin around the world Z axis through the focal point, then tilt."""
+        cam = self.ren.GetActiveCamera()
+        cam.SetViewUp(0, 0, 1)
+        cam.Azimuth(-dx * 0.4)
+        before = cam.GetPosition()
+        cam.Elevation(-dy * 0.4)
+        if abs(cam.GetDirectionOfProjection()[2]) > 0.998:   # within ~3.6° of vertical: stop
+            cam.SetPosition(before)
+        cam.SetViewUp(0, 0, 1)
+        cam.OrthogonalizeViewUp()
+        self.ren.ResetCameraClippingRange()
+        self.GetInteractor().Render()
+
+    def zoom_at_cursor(self, factor: float) -> None:
+        """Move the camera towards (factor < 1) or away from the point under the cursor."""
+        iren = self.GetInteractor()
+        x, y = iren.GetEventPosition()
+        cam = self.ren.GetActiveCamera()
+        fp, pos = cam.GetFocalPoint(), cam.GetPosition()
+        self.ren.SetWorldPoint(*fp, 1.0)
+        self.ren.WorldToDisplay()
+        depth = self.ren.GetDisplayPoint()[2]
+        self.ren.SetDisplayPoint(x, y, depth)
+        self.ren.DisplayToWorld()
+        w = self.ren.GetWorldPoint()
+        target = [w[i] / w[3] for i in range(3)]
+        cam.SetFocalPoint(*[t + (f - t) * factor for t, f in zip(target, fp)])
+        cam.SetPosition(*[t + (p - t) * factor for t, p in zip(target, pos)])
+        self.ren.ResetCameraClippingRange()
+        iren.Render()
+
+
 class Viewer(QVTKRenderWindowInteractor):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -33,7 +116,8 @@ class Viewer(QVTKRenderWindowInteractor):
         self.ren.SetBackground2(0.24, 0.26, 0.30)
         self.ren.GradientBackgroundOn()
         self.GetRenderWindow().AddRenderer(self.ren)
-        self.GetRenderWindow().GetInteractor().SetInteractorStyle(vtkInteractorStyleTrackballCamera())
+        self.style = FusionStyle(self.ren)
+        self.GetRenderWindow().GetInteractor().SetInteractorStyle(self.style)
         self._model = self._stock = self._sim = None
         self._paths: list[vtkActor] = []
         axes = vtkAxesActor()
@@ -197,6 +281,45 @@ class Viewer(QVTKRenderWindowInteractor):
         cam.SetViewUp(0, 1, 0)
         self.ren.ResetCamera()
         self.GetRenderWindow().Render()
+
+    # ---- 3Dconnexion ------------------------------------------------------------------
+
+    SPACE_SPEED = 1.0          # overall sensitivity
+
+    def spacemouse_motion(self, m) -> None:
+        """Six-axis input: twist spins about Z, tilt tilts the view, slide pans, push zooms.
+
+        Values are about ±350 at full deflection; scaling by the event period keeps the
+        speed independent of how often the daemon reports.
+        """
+        cam = self.ren.GetActiveCamera()
+        dt = max(m.period, 1) / 1000.0 * self.SPACE_SPEED
+        dist = cam.GetDistance()
+        # orbit (degrees/s at full deflection: about 120)
+        self.style.orbit(-m.ry * dt * 0.95, m.rx * dt * 0.95)
+        # pan along the screen axes, proportional to how far away the model is
+        fp, pos = list(cam.GetFocalPoint()), list(cam.GetPosition())
+        up = cam.GetViewUp()
+        d = cam.GetDirectionOfProjection()
+        right = (d[1] * up[2] - d[2] * up[1], d[2] * up[0] - d[0] * up[2], d[0] * up[1] - d[1] * up[0])
+        k = dist * dt * 0.004
+        move = [-(right[i] * m.x + up[i] * m.y) * k for i in range(3)]
+        cam.SetFocalPoint(*[fp[i] + move[i] for i in range(3)])
+        cam.SetPosition(*[pos[i] + move[i] for i in range(3)])
+        # push the cap away (-z) to zoom in
+        if m.z:
+            cam.Dolly(1.0 + max(-0.5, min(0.5, -m.z * dt * 0.004)))
+        self.ren.ResetCameraClippingRange()
+        self.GetRenderWindow().Render()
+
+    def spacemouse_button(self, number: int, pressed: bool) -> None:
+        if not pressed:
+            return
+        if number == 0:
+            self.ren.ResetCamera()
+            self.GetRenderWindow().Render()
+        elif number == 1:
+            self.view_iso()
 
     def refresh(self) -> None:
         self.GetRenderWindow().Render()
