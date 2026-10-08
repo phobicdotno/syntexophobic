@@ -68,9 +68,16 @@ default).
 
 ### G-code
 
-GRBL 1.1, mm, absolute. Work zero is the stock's front-left top corner by default
-(`zero = "model"` uses the CAD origin). Tool changes stop with `M0` so you can swap and
-re-zero.
+Two posts, both mm and absolute, with only `G0`/`G1` moves:
+
+| Post | For | Tool change | Safe retract | End |
+|---|---|---|---|---|
+| `carbide` (default) | Shapeoko, Nomad with Carbide Motion | `M6 T<n>` for every tool, so Carbide Motion prompts and a BitSetter re-measures | `G53 G0 Z-5` before tool changes and at both ends | `M2` |
+| `grbl` | any GRBL 1.1 machine | `M0` pause, re-zero Z by hand | none | `M30` |
+
+The `carbide` post follows Carbide Create's own `shapeoko.post`, including the CutViewer
+`STOCK/BLOCK` and `TOOL/MILL` comments. Work zero is the stock's front-left top corner by
+default (`zero = "model"` uses the CAD origin).
 
 ### Compute backends
 

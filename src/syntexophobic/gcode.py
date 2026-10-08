@@ -11,30 +11,57 @@ def _num(v: float) -> str:
     return "0" if s in ("-0", "") else s
 
 
+POSTS = {
+    # Carbide Motion (Shapeoko, Nomad): written the way Carbide Create's own shapeoko.post
+    # does it. M6 T<n> for every tool, the first one too, so Carbide Motion prompts for
+    # the change and a BitSetter re-measures the tool. G53 G0 Z-5 lifts to 5 mm below the
+    # machine's top (homed) before tool changes, so nothing hits clamps. Ends with M2.
+    "carbide": {"tool_change": "M6", "safe_retract": True, "header": "G21 G90 G17", "end": "M2"},
+    # Any other GRBL 1.1 machine: M0 pause for a manual change, then re-zero Z by hand.
+    "grbl": {"tool_change": "M0", "safe_retract": False, "header": "G21 G90 G17 G94", "end": "M30"},
+}
+
+
 def grbl(job: Job, toolpaths: list[Toolpath], stock) -> str:
-    """stock is the cam.Setup stock Box; it sets work zero when machine.zero == "stock"."""
+    """G-code for GRBL-based machines in the dialect named by job.machine.post.
+
+    stock is the cam.Setup stock Box; it sets work zero when machine.zero == "stock".
+    """
+    post = POSTS.get(job.machine.post, POSTS["grbl"])
     if job.machine.zero == "stock":
         ox, oy, oz = stock.xmin, stock.ymin, stock.zmax
         zero_note = "X0 Y0 = stock front-left corner, Z0 = stock top"
     else:
         ox = oy = oz = 0.0
         zero_note = "X0 Y0 Z0 = model origin"
+    L, W, H = stock.xmax - stock.xmin, stock.ymax - stock.ymin, stock.zmax - stock.zmin
     out = [
         f"(Syntexophobic - {job.name})",
-        f"(GRBL, mm, absolute. Work zero: {zero_note})",
-        f"(Stock {_num(stock.xmax - stock.xmin)} x {_num(stock.ymax - stock.ymin)} x {_num(stock.zmax - stock.zmin)} mm)",
-        "G21 G90 G17 G94",
+        f"(Post: {job.machine.post}. Work zero: {zero_note})",
+        f"(STOCK/BLOCK,{_num(L)}, {_num(W)}, {_num(H)},{_num(ox - stock.xmin)}, {_num(oy - stock.ymin)}, {_num(oz - stock.zmin)})",
+        post["header"],
     ]
+
+    def safe_retract():
+        if post["safe_retract"]:
+            out.extend(["(Move to safe Z to avoid workholding)", "G53 G0 Z-5"])
+
+    safe_retract()
     current_tool = None
     for tp in toolpaths:
         tool = job.tool(tp.op.tool)
-        out.append(f"({tp.op.name}: T{tool.id} {tool.name}, D{_num(tool.diameter)})")
-        if current_tool is not None and current_tool != tool.id:
-            # GRBL has no tool changer: stop, let the operator swap and re-zero Z.
-            out += ["M5", f"(Change to T{tool.id} {tool.name}, re-zero Z, then resume)", "M0"]
         if current_tool != tool.id:
+            if post["tool_change"] == "M6":
+                if current_tool is not None:
+                    out.append("M5")
+                    safe_retract()
+                out += [f"(TOOL/MILL,{_num(tool.diameter)}, 0, 0, 0)", f"M6 T{tool.id}"]
+            elif current_tool is not None:
+                # GRBL has no tool changer: stop, let the operator swap and re-zero Z.
+                out += ["M5", f"(Change to T{tool.id} {tool.name}, re-zero Z, then resume)", "M0"]
             out += [f"M3 S{job.machine.rpm}", "G4 P3"]
             current_tool = tool.id
+        out.append(f"({tp.op.name}: T{tool.id} {tool.name}, D{_num(tool.diameter)})")
         last = {"X": None, "Y": None, "Z": None, "F": None}
         for m in tp.moves:
             words = []
@@ -53,7 +80,9 @@ def grbl(job: Job, toolpaths: list[Toolpath], stock) -> str:
                     last["F"] = _num(m.f)
                     words.append("F" + last["F"])
                 out.append("G1 " + " ".join(words))
-    out += ["M5", "M30", ""]
+    out.append("M5")
+    safe_retract()
+    out += [post["end"], ""]
     return "\n".join(out)
 
 
@@ -85,9 +114,16 @@ def read(text: str, job: Job, stock) -> list[Toolpath]:
         line = re.sub(r"\(.*?\)", "", line).strip()
         if not line or not paths:
             continue
-        words = dict((w[0], float(w[1:])) for w in line.split() if w[0] in "GXYZF" and len(w) > 1)
-        if "G" in words and words["G"] in (0, 1):
-            motion = "G0" if words["G"] == 0 else "G1"
+        parts = [w for w in line.split() if len(w) > 1 and w[0] in "GXYZF"]
+        gcodes = [float(w[1:]) for w in parts if w[0] == "G"]
+        words = {w[0]: float(w[1:]) for w in parts if w[0] != "G"}
+        if 53 in gcodes:
+            # machine-coordinate retract (G53 G0 Z-5): somewhere above everything
+            paths[-1].moves.append(Move("rapid", None, None, stock.zmax + 100.0)) if paths else None
+            continue
+        for g in gcodes:
+            if g in (0, 1):
+                motion = "G0" if g == 0 else "G1"
         if "F" in words:
             feed = words["F"]
         if not any(a in words for a in "XYZ"):

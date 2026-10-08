@@ -49,6 +49,12 @@ All notable changes to Syntexophobic. The format follows
   that regenerates them (`tools/screenshots.py`).
 
 ### Changed
+- New default post `carbide`, matching Carbide Create's own `shapeoko.post` for Carbide
+  Motion: `M6 T<n>` for every tool including the first (Carbide Motion prompts and a
+  BitSetter re-measures), `G53 G0 Z-5` safe retracts before tool changes and at both
+  ends, CutViewer `STOCK/BLOCK` and `TOOL/MILL` comments, header `G21 G90 G17` (no
+  `G94`, which Carbide Motion does not list), ends with `M2`. The previous output stays
+  available as `grbl` (manual `M0` tool changes).
 - Toolpaths slice a 0.01 mm mesh instead of exact B-rep sections, vectorised through the
   compute backend: a full regenerate on a 66k-triangle assembly went from about 33 s to
   1.7 s. Slices that do not close fall back to the exact section.

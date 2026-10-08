@@ -25,7 +25,7 @@ CHOICES = {
     "type": ["rough", "finish", "profile", "drill", "bore"],
     "up": list(geometry.UP_AXES),
     "zero": ["stock", "model"],
-    "post": ["grbl"],
+    "post": ["carbide", "grbl"],
     "material": None,   # filled from feeds.MATERIALS below
 }
 from .feeds import MATERIALS  # noqa: E402

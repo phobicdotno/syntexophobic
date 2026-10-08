@@ -61,8 +61,10 @@ def test_toolpaths_never_cut_the_part(pocket_part, tmp_path):
         # it must actually reach the pocket floor and go around the boss
         assert any(abs(z - 10) < 1e-6 and 15 < x < 45 for x, y, z in samples)
     g = p.gcode(tps)
-    assert g.startswith("(Syntexophobic") and "M30" in g and "G43" not in g
-    zs = [float(w[1:]) for line in g.splitlines() for w in line.split() if w.startswith("Z")]
+    assert g.startswith("(Syntexophobic") and g.rstrip().endswith("M2") and "G43" not in g
+    import re
+    zs = [float(w[1:]) for line in g.splitlines() if "G53" not in line
+          for w in re.sub(r"\(.*?\)", "", line).split() if w.startswith("Z") and len(w) > 1]
     assert abs(min(zs) + 6.0) < 1e-6      # stock top is Z0 with 1 mm skin: pocket floor = -6
 
 
@@ -226,7 +228,11 @@ def test_gcode_round_trip_simulates_clean(tmp_path):
                         Operation(type="drill", name="Drill", tool=2, stepdown=3.0)]
     tps = p.toolpaths()
     text = p.gcode(tps)
-    assert text.count("M0") == 1                       # one tool change, 6 mm -> 5 mm
+    assert [l for l in text.splitlines() if l.startswith("M6")] == ["M6 T1", "M6 T2"]   # first tool too
+    assert text.count("G53 G0 Z-5") == 3 and text.rstrip().endswith("M2") and "G94" not in text
+    p.job.machine.post = "grbl"
+    plain = p.gcode(tps)
+    assert plain.count("M0") == 1 and "M6" not in plain and "G53" not in plain
     back = gcode.read(text, p.job, p.setup().stock)
     assert [t.op.name for t in back] == ["Rough", "Finish", "Drill"]
     def cutting(tp):
