@@ -139,3 +139,17 @@ def test_mesh_slices_match_exact_sections(pocket_part):
         outline = sum(sum(math.dist(p[i - 1], p[i]) for i in range(len(p))) for p in exact) / cam.SCALE
         assert diff / outline < 0.005, f"z={z}: mean deviation {diff / outline * 1000:.1f} µm"
     assert slicer.fallbacks == 0
+
+
+def test_backend_slicing_matches_reference():
+    """Vectorised slicing on the active backend gives the same segments as plain geometry."""
+    import numpy as np
+    from syntexophobic import compute
+    be = compute.get("numpy")
+    tri = be.asarray(np.array([[[0, 0, 0], [10, 0, 0], [0, 10, 10]],      # crosses z=5
+                               [[0, 0, 6], [1, 0, 6], [0, 1, 7]]], float))  # entirely above
+    segs = compute.slice_segments(be, tri, 5.0)
+    assert segs.shape == (1, 2, 2)
+    got = sorted(map(tuple, np.round(segs[0], 9)))
+    assert got == [(0.0, 5.0), (5.0, 5.0)]
+    assert "numpy" in compute.available()

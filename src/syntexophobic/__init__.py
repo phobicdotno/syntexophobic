@@ -15,8 +15,20 @@ def main() -> int:
     n = sub.add_parser("new", help="create a project folder from a STEP file")
     n.add_argument("step")
     n.add_argument("folder", nargs="?")
+    sub.add_parser("backends", help="list compute backends and the devices they would use")
     ap.add_argument("path", nargs="?", help="project folder or STEP file to open")
+    ap.add_argument("--backend", help="compute backend: auto (default), numpy, cupy")
     args, _ = ap.parse_known_args()
+    if args.backend:
+        import os
+        os.environ["SYNTEXOPHOBIC_BACKEND"] = args.backend
+
+    if args.cmd == "backends":
+        from . import compute
+        for name, device in compute.available().items():
+            print(f"{name:8} {device}")
+        print(f"active:  {compute.get().name}")
+        return 0
 
     if args.cmd == "gcode":
         from pathlib import Path

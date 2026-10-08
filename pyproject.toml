@@ -14,6 +14,10 @@ dependencies = [
     "pyside6>=6.12.0",
 ]
 
+[project.optional-dependencies]
+# NVIDIA GPUs. For AMD ROCm install a ROCm build of CuPy instead (see CuPy's docs).
+cuda = ["cupy-cuda12x>=13"]
+
 [project.scripts]
 syntexophobic = "syntexophobic:main"
 

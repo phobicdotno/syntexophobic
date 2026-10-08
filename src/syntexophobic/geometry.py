@@ -227,40 +227,32 @@ def mesh(shape: TopoDS_Shape, deflection: float = 0.1):
 
 
 class MeshSlicer:
-    def __init__(self, shape: TopoDS_Shape, deflection: float = 0.01):
+    """Slices a fine mesh of the model; the triangle maths runs on a compute backend."""
+
+    def __init__(self, shape: TopoDS_Shape, deflection: float = 0.01, backend=None):
         import numpy as np
 
-        self._np = np
-        self.solids = []          # (B-rep solid, (n, 3, 3) triangle array) per solid
+        from . import compute
+
+        self.backend = backend or compute.get()
+        self.solids = []          # (B-rep solid, (n, 3, 3) triangles on the backend device)
         self.fallbacks = 0        # levels where the mesh slice did not close and the exact one was used
         for solid in solids(shape):
             verts, tris = mesh(solid, deflection)
             if tris:
                 v = np.asarray(verts, dtype=float)
-                self.solids.append((solid, v[np.asarray(tris)]))
+                self.solids.append((solid, self.backend.asarray(v[np.asarray(tris)])))
 
     def slice(self, z: float) -> list[list[Loop]]:
-        np = self._np
+        from . import compute
+
         result = []
         for solid, tri in self.solids:
-            d = tri[:, :, 2] - z
-            above = d > 0
-            n_above = above.sum(axis=1)
-            hit = tri[(n_above == 1) | (n_above == 2)]
-            if not len(hit):
+            segs = compute.slice_segments(self.backend, tri, z)
+            if not len(segs):
                 continue
-            segments = []
-            for t in hit:
-                pts = []
-                for i, j in ((0, 1), (1, 2), (2, 0)):
-                    a, b = t[i], t[j]
-                    if (a[2] > z) != (b[2] > z):
-                        if tuple(a) > tuple(b):     # same float result from both triangles
-                            a, b = b, a
-                        k = (z - a[2]) / (b[2] - a[2])
-                        pts.append((a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k))
-                if len(pts) == 2 and pts[0] != pts[1]:
-                    segments.append(pts)
+            segments = [[(float(a[0]), float(a[1])), (float(b[0]), float(b[1]))]
+                        for a, b in segs if (a != b).any()]
             open_chains: list = []
             loops = _chain(segments, tol=1e-4, open_chains=open_chains)
             if open_chains:
