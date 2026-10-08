@@ -14,6 +14,9 @@ All notable changes to Syntexophobic. The format follows
   `hole_min`/`hole_max` say otherwise.
 - `bore` operation: helical circles from the centre outwards for holes larger than the
   endmill.
+- G-code reader: exported files are parsed back and simulated, so the post-processor is
+  checked end to end. `syntexophobic simulate <project> --gcode file.nc` checks any file
+  written for the project, including hand-edited ones.
 - The operation form shows only the fields that apply to the chosen type.
 - Stock removal simulation on a height map, with a gouge check against the part.
   *Simulate* in the window (gouges drawn red) and `syntexophobic simulate`, which exits

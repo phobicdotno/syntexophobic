@@ -213,3 +213,34 @@ def test_drill_and_bore_cut_the_holes_without_gouging(tmp_path):
         if kind == "feed" and last_z is not None:
             assert last_z - z <= 4.0 + 0.5 + 1e-6
         last_z = z
+
+
+def test_gcode_round_trip_simulates_clean(tmp_path):
+    """Write G-code, read it back as the machine would run it, and simulate that."""
+    from syntexophobic import gcode, simulate
+    from syntexophobic.job import Operation, Tool
+    p = Project.create(tmp_path / "rt", DEMO)
+    p.job.tools = [Tool(1, "6 mm endmill", 6.0), Tool(2, "5 mm drill", 5.0)]
+    p.job.operations = [Operation(type="rough", name="Rough", tool=1, bottom=4.0),
+                        Operation(type="finish", name="Finish", tool=1, bottom=4.0, leave=0.0, stepdown=4.0),
+                        Operation(type="drill", name="Drill", tool=2, stepdown=3.0)]
+    tps = p.toolpaths()
+    text = p.gcode(tps)
+    assert text.count("M0") == 1                       # one tool change, 6 mm -> 5 mm
+    back = gcode.read(text, p.job, p.setup().stock)
+    assert [t.op.name for t in back] == ["Rough", "Finish", "Drill"]
+    def cutting(tp):
+        """Feed end points, rounded like the post, without moves that go nowhere."""
+        out = []
+        for kind, x, y, z, f in tp.positions():
+            q = tuple(round(v, 3) for v in (x, y, z))
+            if kind == "feed" and (not out or out[-1] != q):
+                out.append(q)
+        return out
+
+    for a, b in zip(tps, back):                          # identical cutting moves, one to one
+        pa, pb = cutting(a), cutting(b)
+        assert len(pa) == len(pb) > 0
+        assert max(math.dist(u, v) for u, v in zip(pa, pb)) < 0.002
+    res = simulate.simulate(p.setup(), back, res=0.25)
+    assert res.gouge_cells == 0
