@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDockWidget, QDoubleSpinBox, QFileDialog,
     QFormLayout, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
     QListWidgetItem, QMainWindow, QMessageBox, QPlainTextEdit, QPushButton, QSpinBox,
-    QSplitter, QToolBar, QVBoxLayout, QWidget,
+    QSplitter, QStackedWidget, QToolBar, QVBoxLayout, QWidget,
 )
 
 from . import geometry
@@ -85,15 +85,17 @@ class DataForm(QWidget):
         if obj is not None:
             self.set(obj)
 
-    def set(self, obj) -> None:
+    def set(self, obj, only: list[str] | None = None) -> None:
+        """Show obj's fields: all of them, the ones in `only`, minus HIDDEN for operations."""
         while self.layout_.rowCount():
             self.layout_.removeRow(0)
         self.obj = obj
+        self.only = only
         if obj is None:
             return
         hidden = HIDDEN.get(getattr(obj, "type", None), set()) if isinstance(obj, Operation) else set()
         for f in fields(obj):
-            if f.name == "id" or f.name in hidden:
+            if f.name == "id" or f.name in hidden or (only is not None and f.name not in only):
                 continue
             w = self._editor(f.name, getattr(obj, f.name), f.type)
             label = LABELS.get(f.name, f.name.replace("_", " ").capitalize())
@@ -106,7 +108,7 @@ class DataForm(QWidget):
             setattr(self.obj, name, v)
             self.changed.emit()
             if name == "type":            # different fields apply: rebuild the form
-                QTimer.singleShot(0, lambda: self.set(self.obj))
+                QTimer.singleShot(0, lambda: self.set(self.obj, self.only))
 
         if name in CHOICES:
             w = QComboBox()
@@ -175,10 +177,19 @@ class MainWindow(QMainWindow):
         self.resize(1500, 920)
 
         self.viewer = Viewer(self)
-        self.setCentralWidget(self.viewer)
+        self.stack = QStackedWidget()
+        self.stack.addWidget(self.viewer)
+        self.setCentralWidget(self.stack)
+        self.part = None                     # the designed Part when the project has model.toml
+        self.sketch_page = None
+        self._rebuild_timer = QTimer(self)
+        self._rebuild_timer.setSingleShot(True)
+        self._rebuild_timer.setInterval(350)
+        self._rebuild_timer.timeout.connect(self._rebuild_part)
         self._build_toolbar()
         self._build_job_dock()
         self._build_history_dock()
+        self._build_design_dock()
         self.status = QLabel("Open a STEP file to start a project.")
         self.statusBar().addWidget(self.status, 1)
         from .spacemouse import SpaceMouse
@@ -189,6 +200,7 @@ class MainWindow(QMainWindow):
         self.spacemouse.button.connect(self.viewer.spacemouse_button)
         self.spacemouse.connected.connect(self._space_status)
         self._space_status(self.spacemouse.is_connected)
+        self.design_panel.status.connect(self.status.setText)
         self._enable(False)
 
     # ---- layout -----------------------------------------------------------------------
@@ -223,6 +235,15 @@ class MainWindow(QMainWindow):
                 menu.addAction(a)
             return a
 
+        self.c_workspace = QComboBox()
+        self.c_workspace.addItems(["Design", "Manufacture"])
+        self.c_workspace.setToolTip("Workspace")
+        self.c_workspace.currentTextChanged.connect(self.set_workspace)
+        tb.addWidget(self.c_workspace)
+        tb.addSeparator()
+        new_design = m_file.addAction("New design…")
+        new_design.setShortcut(QKeySequence("Ctrl+Shift+N"))
+        new_design.triggered.connect(self.new_design)
         act("New from STEP…", self.new_project, "new", "Ctrl+N", m_file)
         act("Open project…", self.open_project, "open", "Ctrl+O", m_file)
         tb.addSeparator()
@@ -380,8 +401,110 @@ class MainWindow(QMainWindow):
         self.viewer.show_toolpaths(paths, self.c_rapids.isChecked())
 
     def _enable(self, on: bool):
-        for w in (self.a_generate, self.a_simulate, self.a_export, self.job_dock, self.history_dock):
+        for w in (self.a_generate, self.a_simulate, self.a_export, self.job_dock, self.history_dock,
+                  self.design_dock):
             w.setEnabled(on)
+
+    # ---- design workspace ------------------------------------------------------------
+
+    def _build_design_dock(self):
+        from .design_ui import DesignPanel
+        dock = QDockWidget("Design", self)
+        dock.setFeatures(QDockWidget.DockWidgetMovable)
+        self.design_panel = DesignPanel()
+        self.design_panel.changed.connect(self._design_changed)
+        self.design_panel.edit_sketch.connect(self.open_sketch)
+        self.design_note = QLabel("This project machines an imported STEP file.\n"
+                                  "Use File > New design… to model a part here.")
+        self.design_note.setWordWrap(True)
+        body = QWidget()
+        col = QVBoxLayout(body)
+        col.addWidget(self.design_note)
+        col.addWidget(self.design_panel)
+        dock.setWidget(body)
+        dock.setMinimumWidth(330)
+        self.addDockWidget(Qt.LeftDockWidgetArea, dock)
+        self.design_dock = dock
+
+    def set_workspace(self, name: str):
+        design = name == "Design"
+        self.design_dock.setVisible(design)
+        self.job_dock.setVisible(not design)
+        for a in (self.a_generate, self.a_simulate, self.a_export, self.c_paths, self.c_rapids):
+            a.setVisible(not design)
+        if design:
+            self.viewer.show_toolpaths([], False)
+            self.viewer.clear_simulation()
+            self.viewer.set_model_visible(True)
+        else:
+            if self.stack.currentWidget() is not self.viewer:
+                self.finish_sketch()
+            self._redraw_paths()
+
+    def new_design(self):
+        from .model import Part
+        folder = QFileDialog.getExistingDirectory(self, "Folder for the new design (pick or create an empty one)",
+                                                  str(Path.home()))
+        if not folder:
+            return
+        name, ok = QInputDialog.getText(self, "New design", "Part name:", text="part")
+        if not ok or not name.strip():
+            return
+        target = Path(folder)
+        if any(target.iterdir()):
+            target = target / name.strip()
+        self.load(Project.create_design(target, name.strip()))
+        self.c_workspace.setCurrentText("Design")
+
+    def _design_changed(self):
+        if self.part is None:
+            return
+        self.part.save(self.project.folder)
+        self._refresh_history_status()
+        self._rebuild_timer.start()
+
+    def _rebuild_part(self):
+        from .model import ModelError
+        try:
+            shape = self.part.build()
+        except ModelError as e:
+            self.status.setText(f"Model: {e}")
+            return
+        self.project.reload()
+        self.viewer.show_model(shape)
+        self.viewer.show_stock(self.project.setup().stock)
+        self.viewer.refresh()
+        self.toolpaths = []
+        b = geometry.bounding_box(shape)
+        self.status.setText(f"Part {b.xmax - b.xmin:.1f} × {b.ymax - b.ymin:.1f} × {b.zmax - b.zmin:.1f} mm")
+
+    def open_sketch(self, name: str):
+        from .design_ui import sketch_toolbar
+        from .sketcher import SketchView
+        self.finish_sketch(save=False)
+        view = SketchView(self.part.sketches[name])
+        view.changed.connect(self._design_changed)
+        view.status.connect(lambda t: self.status.setText(f"{name}: {t}"))
+        page = QWidget()
+        col = QVBoxLayout(page)
+        col.setContentsMargins(0, 0, 0, 0)
+        col.addWidget(sketch_toolbar(view, self.finish_sketch))
+        col.addWidget(view)
+        self.stack.addWidget(page)
+        self.stack.setCurrentWidget(page)
+        self.sketch_page, self.sketch_view = page, view
+        view.solve_and_draw()
+        QTimer.singleShot(0, view.fit)
+
+    def finish_sketch(self, save: bool = True):
+        if self.sketch_page is None:
+            return
+        self.stack.setCurrentWidget(self.viewer)
+        self.stack.removeWidget(self.sketch_page)
+        self.sketch_page.deleteLater()
+        self.sketch_page = None
+        if save:
+            self._design_changed()
 
     # ---- project ----------------------------------------------------------------------
 
@@ -414,18 +537,36 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Could not open", str(e))
 
     def load(self, project: Project):
+        self.finish_sketch(save=False)
         self.project = project
         self.toolpaths = []
+        if project.job.model.endswith(".toml"):
+            from .model import Part
+            self.part = Part.load(project.folder / project.job.model)
+            self.design_panel.set_part(self.part)
+        else:
+            self.part = None
+        self.design_panel.setVisible(self.part is not None)
+        self.design_note.setVisible(self.part is None)
         self.setWindowTitle(f"Syntexophobic — {project.job.name}")
         self._fill_job()
         self._refresh_model()
         self._refresh_history()
         self._enable(True)
+        self.c_workspace.setCurrentText("Design" if self.part is not None else "Manufacture")
+        self.set_workspace(self.c_workspace.currentText())
         self.viewer.view_iso()
 
     def _refresh_model(self):
+        from .model import ModelError
         p = self.project
-        self.viewer.show_model(p.shape)
+        try:
+            shape = p.shape
+        except ModelError as e:
+            self.viewer.clear_model()
+            self.status.setText(f"{e}. Start with New sketch…, draw a closed shape, then Extrude.")
+            return
+        self.viewer.show_model(shape)
         s = p.setup()
         self.viewer.show_stock(s.stock)
         self.viewer.show_toolpaths([], False)

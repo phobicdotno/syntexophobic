@@ -157,6 +157,14 @@ class Viewer(QVTKRenderWindowInteractor):
         prop.SetSpecularPower(30)
         self.ren.AddActor(self._model)
 
+    def clear_model(self) -> None:
+        for name in ("_model", "_stock"):
+            actor = getattr(self, name)
+            if actor:
+                self.ren.RemoveActor(actor)
+                setattr(self, name, None)
+        self.GetRenderWindow().Render()
+
     def show_stock(self, box: geometry.Box) -> None:
         if self._stock:
             self.ren.RemoveActor(self._stock)

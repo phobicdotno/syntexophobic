@@ -33,6 +33,20 @@ class Project:
         h.save(f"New project from {model.name}")
         return cls(folder)
 
+    @classmethod
+    def create_design(cls, folder: str | Path, name: str) -> "Project":
+        """New project with an empty designed part (model.toml) instead of a STEP file."""
+        from .model import Part
+        folder = Path(folder)
+        folder.mkdir(parents=True, exist_ok=True)
+        Part(name).save(folder)
+        (folder / "sketches" / ".keep").touch()
+        jobfile.save(jobfile.Job(name=name, model="model.toml"), folder / jobfile.JOB_FILE)
+        h = History(folder)
+        h.init()
+        h.save(f"New design {name}")
+        return cls(folder)
+
     @property
     def shape(self):
         if self._shape is None or self._shape_up != self.job.stock.up:
