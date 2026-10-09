@@ -89,11 +89,15 @@ That area, grown by the tool radius (plus *leave*), is cut out of the stock outl
 | **profile** | follows only the outermost silhouette, for cut-outs; supports **tabs** |
 | **parallel** | 3D finishing: raster passes riding on the surface (exact drop-cutter, flat or ball end) |
 
+![Adaptive clearing on the demo plate: steered passes instead of slotting rings](docs/screenshots/adaptive.png)
+
 - Levels always land exactly on flat floors found in the model.
 - Every pass **ramps** down along its own path (default 5°) instead of plunging.
 - Tabs step straight up just before and down just after, so no slanted move nicks them.
 - The model is sliced as a 0.01 mm mesh, checked against exact OpenCascade sections; any
   outline that does not close falls back to the exact section.
+
+![A domed cap after adaptive roughing and 3 mm ball-end parallel finishing, simulated](docs/screenshots/finish3d.png)
 
 ### Simulation
 

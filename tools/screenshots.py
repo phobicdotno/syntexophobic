@@ -80,6 +80,53 @@ def design_project():
     return proj
 
 
+def adaptive_project():
+    """The demo plate roughed with adaptive clearing and finished on the walls."""
+    from syntexophobic.job import Operation, Tool
+    folder = Path(tempfile.mkdtemp()) / "demo-adaptive"
+    proj = Project.create(folder, ROOT / "examples" / "demo-plate.step")
+    proj.job.name = "demo-adaptive"
+    proj.job.tools = [Tool(1, "6 mm flat endmill", 6.0, 2, "flat")]
+    proj.job.operations = [Operation(type="adaptive", name="Adaptive", tool=1, stepdown=6.0, stepover=0.15,
+                                     leave=0.3, bottom=4.0, feed=2270, plunge=540),
+                           Operation(type="finish", name="Finish walls", tool=1, stepdown=6.0, leave=0.0, bottom=4.0)]
+    proj.save_job()
+    proj.history.save("Adaptive roughing")
+    return proj
+
+
+def dome_project():
+    """A domed cap finished with a ball end (parallel passes), for the 3D finishing view."""
+    import math as m
+    from syntexophobic.job import Operation, Tool
+    from syntexophobic.model import Feature, Part
+    from syntexophobic.sketch import Sketch
+    prof = Sketch(name="profile", plane="XZ")
+    o, a, b = prof.point(0, 0), prof.point(30, 0), prof.point(0, 14)
+    prof.line(o, a)
+    # circle through (30, 0) and (0, 14) with its centre on the axis: (0, (14² - 30²) / 28)
+    prof.arc((0, (14 ** 2 - 30 ** 2) / (2 * 14)), a, b)
+    axis = prof.line(b, o)
+    base = Sketch(name="base", offset=-6)
+    base.rectangle(-38, -38, 38, 38)
+    part = Part("cap", [Feature("revolve", "Dome", sketch="profile", axis=axis),
+                        Feature("extrude", "Base", sketch="base", distance=6, operation="join"),
+                        Feature("fillet", "Round base", radius=8, edges="|Z")],
+                {"profile": prof, "base": base})
+    folder = Path(tempfile.mkdtemp()) / "cap"
+    proj = Project.create_design(folder, "cap")
+    part.save(folder)
+    proj.reload()
+    proj.job.tools = [Tool(1, "6 mm flat endmill", 6.0, 2, "flat"), Tool(2, "3 mm ball", 3.0, 2, "ball")]
+    proj.job.operations = [
+        Operation(type="adaptive", name="Adaptive", tool=1, stepdown=6.0, stepover=0.15, leave=0.3, bottom=0.0),
+        Operation(type="parallel", name="3D finish", tool=2, stepover=0.2, leave=0.0, bottom=0.0)]
+    proj.save_job()
+    proj.history.save("Domed cap, 3D finishing")
+    proj.reload()
+    return proj
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     qa = QApplication(sys.argv)
@@ -140,6 +187,27 @@ def main():
         win.sketch_view.selected = [next(iter(win.part.sketches["base"].circles))]
         win.sketch_view.draw()
         capture(win, "sketch.png")
+        win.finish_sketch(save=False)
+        win.load(adaptive_project())
+        win.c_workspace.setCurrentText("Manufacture")
+        win._generated(win.project.toolpaths())
+        QTimer.singleShot(800, step6)
+
+    def step6():
+        win.viewer.view_iso()
+        win.job_dock.raise_()
+        win.l_ops.setCurrentRow(0)
+        capture(win, "adaptive.png")
+        win.load(dome_project())
+        win.c_workspace.setCurrentText("Manufacture")
+        win._generated(win.project.toolpaths())
+        win._simulated(simulate.simulate(win.project.setup(), win.toolpaths, res=0.15))
+        QTimer.singleShot(800, step7)
+
+    def step7():
+        win.viewer.view_iso()
+        win.l_ops.setCurrentRow(1)
+        capture(win, "finish3d.png")
         qa.quit()
 
     QTimer.singleShot(1500, step1)
