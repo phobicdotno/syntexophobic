@@ -192,3 +192,35 @@ def test_splines_closed_and_in_a_profile():
     assert Sketch.loads(text).dumps() == text and "[[splines]]" in text
     d.delete(d.splines[top].points[1])                                         # 2 points left: still a spline
     assert top in d.splines and len(d.splines[top].points) == 2
+
+
+def test_dxf_round_trip_bulges_and_inches(tmp_path):
+    import ezdxf
+    from syntexophobic import dxf
+    sk = Sketch()
+    p = [sk.point(0, 0), sk.point(50, 0), sk.point(50, 30), sk.point(0, 30)]
+    sk.line(p[0], p[1])
+    sk.line(p[1], p[2])
+    sk.arc((25, 30), p[2], p[3])                       # half-circle top, radius 25
+    sk.line(p[3], p[0])
+    sk.circle((25, 15), 5)
+    sk.spline([(60, 0), (70, 10), (80, 0), (70, -10)], closed=True)
+    v0 = _volume(sk, 1)
+    dxf.export_dxf(sk, tmp_path / "out.dxf")
+    back = dxf.import_dxf(tmp_path / "out.dxf")
+    assert len(back.profiles()) == len(sk.profiles()) == 3
+    assert abs(_volume(back, 1) - v0) < 0.002 * v0
+
+    # an LWPOLYLINE with a convex and a concave bulge, drawn in inches
+    doc = ezdxf.new()
+    doc.header["$INSUNITS"] = 1
+    doc.modelspace().add_lwpolyline([(0, 0, 0, 0, 0), (2, 0, 0, 0, 1), (2, 1, 0, 0, 0),
+                                     (0, 1, 0, 0, -1)], format="xyseb", close=True)
+    doc.saveas(tmp_path / "inch.dxf")
+    poly = dxf.import_dxf(tmp_path / "inch.dxf")
+    assert len(poly.arcs) == 2 and len(poly.profiles()) == 1
+    # 2 x 1 inch rectangle, a half-disc added on the right and one bitten out on the left
+    area = 2 * 1 * 25.4 ** 2
+    assert abs(_volume(poly, 1) - area) < 0.01 * area
+    xs = [pt.x for pt in poly.points.values() if not pt.construction]
+    assert max(xs) == pytest.approx(50.8)                       # inches became millimetres

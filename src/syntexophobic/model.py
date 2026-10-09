@@ -515,6 +515,16 @@ class Part:
             part.sketches[f.stem] = Sketch.load(f)
         return part
 
+    def export_stl(self, path: str | Path, deflection: float = 0.02) -> None:
+        from OCP.BRepMesh import BRepMesh_IncrementalMesh
+        from OCP.StlAPI import StlAPI_Writer
+        shape = self.build()
+        BRepMesh_IncrementalMesh(shape, deflection, False, 0.2, True)
+        w = StlAPI_Writer()
+        w.ASCIIMode = False
+        if not w.Write(shape, str(path)):
+            raise ModelError(f"Could not write {path}")
+
     def export_step(self, path: str | Path) -> None:
         w = STEPControl_Writer()
         w.Transfer(self.build(), STEPControl_AsIs)

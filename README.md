@@ -59,7 +59,8 @@ Clicking near a point reuses it. Constraints: coincident, horizontal, vertical, 
 perpendicular, equal, tangent, concentric, midpoint, point on line/circle, fixed,
 symmetric, plus dimensions for length, distance, diameter and angle. Geometry is blue while
 it can still move and white when fully constrained; conflicting constraints turn red.
-Sketches live in `sketches/<name>.toml`.
+Sketches live in `sketches/<name>.toml`. DXF drawings import as sketches (File menu) and
+sketches export as DXF; designed parts export as STEP or STL.
 
 ### Job
 

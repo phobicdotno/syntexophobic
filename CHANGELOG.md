@@ -52,6 +52,10 @@ All notable changes to Syntexophobic. The format follows
   it. Sketch planes can be custom (origin, X direction, normal, stored in the sketch
   file); faces square to an axis still become XY / XZ / YZ with an offset. The normal
   points out of the material, so a positive extrude adds and a negative one cuts.
+- **DXF import and export** (File menu, `dxf.py`): lines, arcs, circles, polylines with
+  bulges, splines and ellipses; touching end points are merged so outlines become closed
+  profiles; inch drawings are scaled to mm. Sketches export as mm DXF.
+- **Export model** as STEP or STL.
 - Sketch **splines**: smooth curves through ordinary (constrainable) sketch points, open
   or closed, built as OpenCascade interpolating B-splines and drawn from the same curve.
   Spline tool in the editor (Enter / right-click ends, clicking the first point closes).

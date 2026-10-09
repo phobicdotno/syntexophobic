@@ -9,6 +9,7 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "cadquery-ocp>=8.0.1.1.0",
+    "ezdxf>=1.4.4",
     "numba>=0.68.0",
     "numpy>=2.5.3",
     "pyclipper>=1.4.0",
@@ -29,4 +30,8 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
+    "pytest-xdist>=3.8.0",
 ]
+
+[tool.pytest.ini_options]
+addopts = "-n auto -p no:cacheprovider"
