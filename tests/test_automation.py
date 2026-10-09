@@ -72,3 +72,23 @@ def test_mcp_server_over_stdio(tmp_path):
 
     tools = asyncio.run(go())
     assert len(tools) >= 30
+
+
+def test_assistant_command_and_stream_parsing():
+    from syntexophobic import assistant_ui as U
+    args = U.command("make a plate", None, "/tmp")
+    assert args[:2] == ["-p", "make a plate"] and "--strict-mcp-config" in args
+    i = args.index("--tools")
+    assert args[i + 1] == ""                                     # no shell, no file tools
+    assert args[args.index("--allowedTools") + 1] == "mcp__syntexophobic"
+    assert "--resume" in U.command("more", "abc-123", "/tmp")
+    lines = [
+        '{"type":"system","subtype":"init","session_id":"s1"}',
+        '{"type":"assistant","message":{"content":[{"type":"text","text":"Drawing it."},'
+        '{"type":"tool_use","name":"mcp__syntexophobic__sketch_draw","input":{"sketch":"base","shape":"rectangle"}}]}}',
+        '{"type":"result","subtype":"success","is_error":false,"result":"Done","session_id":"s1"}',
+        "not json",
+    ]
+    out = [x for line in lines for x in U.parse(line)]
+    assert ("session", "s1") in out and ("text", "Drawing it.") in out and ("done", "s1") in out
+    assert any(k == "tool" and t.startswith("sketch_draw(") for k, t in out)

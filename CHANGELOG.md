@@ -6,6 +6,10 @@ All notable changes to Syntexophobic. The format follows
 ## [Unreleased]
 
 ### Added
+- **Assistant panel** (View > Assistant, Ctrl+K): chat with Claude inside the program.
+  It runs Claude Code with your subscription login (no API key) and only this program's
+  MCP tools (no shell, file or web tools); its tool calls drive the window live, shown as
+  grey lines, and the conversation continues across messages.
 - **Drive Syntexophobic from Claude** over MCP: `syntexophobic mcp` is an MCP server
   (stdio) with 36 tools covering projects, parameters, sketches (draw, constrain, edit,
   DXF), features, stock, machine, tools, operations, toolpaths, simulation, G-code,

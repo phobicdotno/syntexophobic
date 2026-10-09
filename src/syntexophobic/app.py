@@ -220,6 +220,7 @@ class MainWindow(QMainWindow):
         self._build_job_dock()
         self._build_history_dock()
         self._build_design_dock()
+        self._build_assistant_dock()
         self.status = QLabel("Open a STEP file to start a project.")
         self.statusBar().addWidget(self.status, 1)
         from .spacemouse import SpaceMouse
@@ -330,6 +331,10 @@ class MainWindow(QMainWindow):
         self.play_action.setVisible(False)
         self.sim_result = None
         self.section_axis = None
+        a_assist = m_view.addAction("Assistant (Claude)")
+        a_assist.setShortcut(QKeySequence("Ctrl+K"))
+        a_assist.triggered.connect(lambda: (self.assistant_dock.show(), self.assistant_dock.raise_(),
+                                            self.assistant.input.setFocus()))
         self.a_measure = m_view.addAction("Measure")
         self.a_measure.setCheckable(True)
         self.a_measure.setShortcut(QKeySequence("D"))
@@ -585,6 +590,19 @@ class MainWindow(QMainWindow):
                 self.viewer.refresh()
         except (ModelError, ValueError) as e:
             self.status.setText(str(e))
+
+    def _build_assistant_dock(self):
+        from .assistant_ui import AssistantPanel
+        dock = QDockWidget("Assistant (Claude)", self)
+        dock.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetClosable)
+        dock.setObjectName("assistant")
+        self.assistant = AssistantPanel(self)
+        dock.setWidget(self.assistant)
+        dock.setMinimumWidth(340)
+        self.addDockWidget(Qt.RightDockWidgetArea, dock)
+        self.tabifyDockWidget(self.history_dock, dock)
+        self.history_dock.raise_()
+        self.assistant_dock = dock
 
     def set_workspace(self, name: str):
         design = name == "Design"

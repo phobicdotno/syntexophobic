@@ -23,6 +23,21 @@ uv run pytest                                # tests
 uv run python tools/mutants.py               # check the safety tests catch known bugs
 ```
 
+## Claude
+
+Syntexophobic can be driven entirely by Claude, using your Claude subscription through
+Claude Code (no API key):
+
+- **In the program**: View > Assistant (Ctrl+K) opens a chat panel. Claude gets only
+  Syntexophobic's tools and you watch the window change as it works.
+- **From Claude Code**: `uv run syntexophobic install-mcp` registers the MCP server once;
+  then any Claude Code session can design, machine, simulate and export. With the window
+  open, changes appear in it live; without it, Claude works on the project files.
+
+The MCP server has 36 tools (projects, parameters, sketches, features, stock, tools,
+operations, toolpaths, simulation, G-code, history, views, screenshots). Claude is told to
+call nothing safe to run until `simulate` says so.
+
 ## How it works
 
 A **project** is a folder with the model (a designed part or a STEP file), `job.toml` and a
