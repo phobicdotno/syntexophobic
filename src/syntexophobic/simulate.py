@@ -27,9 +27,12 @@ class Grid:
 
     @classmethod
     def over(cls, box: geometry.Box, res: float) -> "Grid":
-        return cls(box.xmin, box.ymin, res,
-                   int(math.ceil((box.xmax - box.xmin) / res)) + 1,
-                   int(math.ceil((box.ymax - box.ymin) / res)) + 1)
+        """Cells covering the box, centred on it: row j and row ny-1-j are mirror images
+        about the box's middle, which is how the stock is turned over for a second side."""
+        nx = int(math.ceil((box.xmax - box.xmin) / res)) + 1
+        ny = int(math.ceil((box.ymax - box.ymin) / res)) + 1
+        cx, cy = (box.xmin + box.xmax) / 2, (box.ymin + box.ymax) / 2
+        return cls(cx - (nx - 1) / 2 * res, cy - (ny - 1) / 2 * res, res, nx, ny)
 
     def centres(self):
         xs = self.x0 + np.arange(self.nx) * self.res
@@ -47,6 +50,7 @@ class Result:
     removed_cm3: float
     frames: list = field(default_factory=list)   # (operation, tool tip (x, y, z), tool Ø, stock)
     rapid_hits: list = field(default_factory=list)   # (operation, (x, y, z), depth) where a rapid hits stock
+    bottom: np.ndarray | None = None   # (ny, nx) underside of the stock after bottom-side work, or None
 
     def gouges(self, tol: float = 0.02) -> np.ndarray:
         return _normal_depth(self.part, self.stock, self.grid.res) > tol
@@ -216,13 +220,18 @@ def simulate(setup, toolpaths, res: float = 0.25, backend=None, snapshots: int =
     be = backend or compute.get()
     xp = be.xp
     grid = Grid.over(setup.stock, res)
-    stock = xp.full((grid.ny, grid.nx), setup.stock.zmax, dtype=xp.float64)
+    maps = {"top": xp.full((grid.ny, grid.nx), setup.stock.zmax, dtype=xp.float64)}
+    if any(getattr(tp, "side", "top") == "bottom" for tp in toolpaths):
+        # the underside, seen from below after the flip: cut exactly like the top
+        maps["bottom"] = xp.full((grid.ny, grid.nx), setup.stock.zmax, dtype=xp.float64)
     runs = [(tp, _runs(tp, res)) for tp in toolpaths]
     total = sum(len(P) for _, rr in runs for P, _ in rr) or 1
     every = max(1, total // snapshots) if snapshots else 0
     done, next_frame = 0, every
     frames, hits = [], []
     for tp, rr in runs:
+        side = getattr(tp, "side", "top")
+        stock = maps[side]
         r = tp.tool_diameter / 2 - res * 0.25
         # group consecutive runs into chunks of a few thousand points: the cutting kernels
         # are fastest on big batches, and rapids are checked between chunks in order
@@ -249,11 +258,22 @@ def simulate(setup, toolpaths, res: float = 0.25, backend=None, snapshots: int =
                 chunk_rapids = rapids
                 flush()
         flush()
+        maps[side] = stock
+    stock = maps["top"]
     if frames:                                   # the last frame is the finished stock
         name, tip, dia, _ = frames[-1]
         frames[-1] = (name, tip, dia, be.to_numpy(stock).copy())
     stock = be.to_numpy(stock)
     part = part_heightmap(setup.shape, grid)
+    bottom = under = None
+    if "bottom" in maps:
+        flipped_setup = setup.flipped
+        under = be.to_numpy(maps["bottom"])
+        under_part = part_heightmap(flipped_setup.shape, grid)
+        under_depth = _normal_depth(under_part, under, res)
+        # back in the top's frame: mirror the rows, and heights about the stock's middle
+        cz = (setup.stock.zmin + setup.stock.zmax) / 2
+        bottom = 2 * cz - under[::-1, :]
     # V-carving cuts into the part on purpose: inside its shapes the part surface is
     # expected to go, so those cells are left out of the gouge check
     for tp in toolpaths:
@@ -267,8 +287,12 @@ def simulate(setup, toolpaths, res: float = 0.25, backend=None, snapshots: int =
             part = np.where(carved, -np.inf, part)
     depth = _normal_depth(part, stock, res)
     removed = float(np.sum(setup.stock.zmax - stock)) * res * res / 1000.0
-    return Result(grid, stock, part, float(max(depth.max(), 0.0)),
-                  int((depth > 0.02).sum()), removed, frames, hits)
+    worst, cells = float(max(depth.max(), 0.0)), int((depth > 0.02).sum())
+    if under is not None:
+        removed += float(np.sum(setup.stock.zmax - under)) * res * res / 1000.0
+        worst, cells = max(worst, float(max(under_depth.max(), 0.0))), cells + int((under_depth > 0.02).sum())
+        stock = np.where(bottom >= stock, setup.stock.zmin, stock)    # cut through from both sides
+    return Result(grid, stock, part, worst, cells, removed, frames, hits, bottom)
 
 
 def _normal_depth(part, stock, res: float) -> np.ndarray:

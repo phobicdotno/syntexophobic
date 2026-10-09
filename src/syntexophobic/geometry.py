@@ -162,6 +162,14 @@ def slice_solid(solid: TopoDS_Shape, z: float) -> list[Loop]:
 UP_AXES = ("+Z", "-Z", "+X", "-X", "+Y", "-Y")
 
 
+def flip(shape: TopoDS_Shape, cy: float, cz: float) -> TopoDS_Shape:
+    """Turn the part over: 180° about the X axis through (y = cy, z = cz), the way it is
+    flipped on the machine table for its second side."""
+    trsf = gp_Trsf()
+    trsf.SetRotation(gp_Ax1(gp_Pnt(0, cy, cz), gp_Dir(1, 0, 0)), math.pi)
+    return BRepBuilderAPI_Transform(shape, trsf, True).Shape()
+
+
 def orient(shape: TopoDS_Shape, up: str) -> TopoDS_Shape:
     """Rotate the model so the given model axis points up (towards the spindle)."""
     if up == "+Z":

@@ -296,7 +296,10 @@ class Viewer(QVTKRenderWindowInteractor):
     def _polyline_actor(self, tp, kind: str, colour):
         pts, lines = vtkPoints(), vtkCellArray()
         last = None
+        flip = getattr(tp, "flip", None) if getattr(tp, "side", "top") == "bottom" else None
         for k, x, y, z, f in tp.positions():
+            if flip:                                   # bottom side: back into the part's frame
+                y, z = 2 * flip[0] - y, 2 * flip[1] - z
             if last is not None and k == kind:
                 a = pts.InsertNextPoint(last)
                 b = pts.InsertNextPoint((x, y, z))

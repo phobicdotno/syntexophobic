@@ -420,3 +420,50 @@ def test_measure_distance_and_descriptions():
     assert "Ø8.000" in geometry.describe(hole_edge)
     assert geometry.describe(_nearest(faces, (5, 5, 10))).startswith(f"face {40 * 30 - math.pi * 16:.2f}")
     assert "Ø8.000" in geometry.describe(_nearest(faces, (24, 15, 5)))      # the hole's wall
+
+
+def test_two_sided_machining(tmp_path):
+    """Pocket on top, another on the bottom, a hole drilled from below: both sides cut where
+    they should, nothing gouged, the hole goes through, one G-code file per side."""
+    from syntexophobic import gcode, job as jobfile, simulate
+    from syntexophobic.history import History
+    from syntexophobic.job import Job, Operation, Tool
+    from syntexophobic.project import Project
+    base, top, under, hole = Sketch(), Sketch(offset=15), Sketch(), Sketch()
+    base.rectangle(0, 0, 60, 40)
+    top.rectangle(30, 10, 50, 30)                      # top pocket, 5 deep (floor Z 10)
+    under.rectangle(8, 4, 24, 16)                      # bottom pocket, 4 deep (ceiling Z 4), off-centre in Y
+    hole.circle((50, 5), 2.5)
+    part = Part("Plate", [Feature("extrude", sketch="base", distance=15),
+                          Feature("extrude", sketch="top", distance=-5, operation="cut"),
+                          Feature("extrude", sketch="under", distance=4, operation="cut"),
+                          Feature("extrude", sketch="hole", distance=15, operation="cut")],
+                {"base": base, "top": top, "under": under, "hole": hole})
+    folder = tmp_path / "two"
+    part.save(folder)
+    # stock 62 x 42 x 16 (1 mm on top), flipped about its middle: Z' = 16 - Z
+    jobfile.save(Job(name="two", model="model.toml",
+                     tools=[Tool(1, "6 mm", 6.0), Tool(2, "5 mm drill", 5.0)],
+                     operations=[Operation(type="rough", name="Top pocket", tool=1, bottom=10.0),
+                                 Operation(type="rough", name="Bottom pocket", tool=1, bottom=12.0, side="bottom"),
+                                 Operation(type="drill", name="Hole", tool=2, stepdown=4, side="bottom")]),
+                 folder / jobfile.JOB_FILE)
+    History(folder).init()
+    p = Project(folder)
+    tps = p.toolpaths()
+    assert [t.side for t in tps] == ["top", "bottom", "bottom"]
+    res = simulate.simulate(p.setup(), tps, res=0.2)
+    assert res.gouge_cells == 0 and res.rapid_hits == [], (res.gouge_depth, res.rapid_hits[:2])
+    xs, ys = res.grid.centres()
+    at = lambda m, x, y: m[int(round((y - ys[0]) / 0.2)), int(round((x - xs[0]) / 0.2))]   # noqa: E731
+    assert abs(at(res.stock, 40, 20) - 10.0) < 1e-6           # top pocket floor
+    assert abs(at(res.bottom, 16, 10) - 4.0) < 1e-6           # bottom pocket ceiling
+    assert at(res.bottom, 16, 30) <= 1e-6                      # its mirror image is untouched
+    assert at(res.bottom, 40, 20) <= 1e-6 and abs(at(res.stock, 16, 20) - 15) < 1e-6   # sides untouched there
+    assert at(res.stock, 50, 5) <= p.setup().stock.zmin + 1e-6   # the hole goes through
+    top_code, bottom_code = p.gcode(tps, "top"), p.gcode(tps, "bottom")
+    assert "(Top pocket:" in top_code and "Bottom pocket" not in top_code
+    assert "(Side: bottom." in bottom_code and "(Hole:" in bottom_code and "(Top pocket:" not in bottom_code
+    back = gcode.read(bottom_code, p.job, p.setup().stock, side="bottom")
+    again = simulate.simulate(p.setup(), [tps[0]] + back, res=0.2)
+    assert again.gouge_cells == 0 and abs(at(again.bottom, 16, 10) - 4.0) < 1e-6

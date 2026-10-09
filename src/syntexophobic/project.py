@@ -85,13 +85,45 @@ class Project:
                 self._setup.sketches = Part.load(self.folder / self.job.model).sketches
         return self._setup
 
+    def flipped(self) -> cam.Setup:
+        """The setup for the second side: the part turned over its X axis through the
+        middle of the stock, so the same block of stock is used."""
+        top = self.setup()
+        if getattr(top, "flipped", None) is None:
+            s = top.stock
+            cy, cz = (s.ymin + s.ymax) / 2, (s.zmin + s.zmax) / 2
+            shape = geometry.flip(self.shape, cy, cz)
+            if not hasattr(self, "_flipped_cache") or self._flipped_up != self.job.stock.up:
+                self._flipped_cache, self._flipped_up = {}, self.job.stock.up
+            bottom = cam.Setup(shape, self.job, self._flipped_cache, stock_box=s)
+            bottom.job_folder, bottom.flip_axis = self.folder, (cy, cz)
+            bottom.sketches = getattr(top, "sketches", None)
+            top.flipped = bottom
+        return top.flipped
+
     def toolpaths(self) -> list[cam.Toolpath]:
         self._setup = None   # job values may have changed
-        return cam.generate_all(self.setup())
+        out = []
+        for op in self.job.operations:
+            if not op.enabled:
+                continue
+            if op.side == "bottom":
+                setup = self.flipped()
+                tp = cam.generate(setup, op)
+                tp.side, tp.flip = "bottom", setup.flip_axis
+            else:
+                tp = cam.generate(self.setup(), op)
+            out.append(tp)
+        return out
 
-    def gcode(self, toolpaths=None) -> str:
+    def sides(self) -> list[str]:
+        return sorted({op.side for op in self.job.operations if op.enabled}, reverse=True)
+
+    def gcode(self, toolpaths=None, side: str = "top") -> str:
+        """G-code for one side (run the top file, flip the part, run the bottom file)."""
         tps = toolpaths if toolpaths is not None else self.toolpaths()
-        return gcode.grbl(self.job, tps, self.setup().stock)
+        tps = [t for t in tps if getattr(t, "side", "top") == side]
+        return gcode.grbl(self.job, tps, self.setup().stock, side=side)
 
 
 class Undo:

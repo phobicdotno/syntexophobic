@@ -6,12 +6,12 @@ All notable changes to Syntexophobic. The format follows
 ## [Unreleased]
 
 ### Added
-- `tools/mutants.py`: puts sixteen known bugs back one at a time (part ignored by roughing,
+- `tools/mutants.py`: puts seventeen known bugs back one at a time (part ignored by roughing,
   missing tool radius, drop-cutter without edges or faces, flipped work offset, tabs not
   lifted, no ramp, adaptive without keep-out, pecks from the hole top, a too-narrow ball
   waterline, no first `M6`, a lazy point simplifier, loop outlines chained from the wrong
-  end, holes attached with a fixed reversal, adaptive leftovers not cleaned up, G2/G3 swapped) and
-  checks that the tests fail for each. All sixteen are caught;
+  end, holes attached with a fixed reversal, adaptive leftovers not cleaned up, G2/G3 swapped, bottom side
+  not mirrored) and checks that the tests fail for each. All seventeen are caught;
   the waterline one first survived, which led to a test on vertical walls.
 - **Sketch** (`sketch.py`): points, lines, circles and arcs with 20 constraint types
   (coincident, horizontal, vertical, parallel, perpendicular, equal, distance, horizontal /
@@ -65,6 +65,11 @@ All notable changes to Syntexophobic. The format follows
   on awkward spots or at its path limit) is cleared with offset rings before the wall
   pass. Found when a reordering experiment left material that later rapids hit; the
   in-order rapid check caught it.
+- **Two-sided machining**: operations have a side (`top` or `bottom`). Bottom
+  operations see the part turned over its X axis through the middle of the same stock.
+  The simulation keeps both faces of the stock (gouge and rapid checks on both, cuts from
+  both sides that meet become holes). Bottom paths are drawn where they cut, and G-code
+  export writes one file per side with a note on how to flip.
 - **Arc output** (G2/G3, on by default, `arcs = false` turns it off): runs of short flat
   moves become arcs that stay within 5 µm of the path (checked at every point and chord
   midpoint). The reader expands arcs back, and the round-trip test simulates the file.

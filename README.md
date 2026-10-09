@@ -106,6 +106,13 @@ That area, grown by the tool radius (plus *leave*), is cut out of the stock outl
 
 ![A domed cap after adaptive roughing and 3 mm ball-end parallel finishing, simulated](docs/screenshots/finish3d.png)
 
+### Two sides
+
+Give an operation `side = "bottom"` to machine the part after turning it over (about the
+X axis, front edge staying at the front). Export writes `name-top.nc` and
+`name-bottom.nc`; the simulation follows both faces of the stock, so pockets on each
+side and holes drilled through from below are checked like everything else.
+
 ### Simulation
 
 ![Simulated stock after roughing and finishing](docs/screenshots/simulation.png)

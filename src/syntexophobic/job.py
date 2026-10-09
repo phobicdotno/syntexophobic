@@ -61,6 +61,7 @@ class Operation:
     max_depth: float = 3.0          # vcarve: deepest cut; wider areas get a flat floor
     hole_min: float | None = None   # drill/bore: smallest hole diameter to machine
     hole_max: float | None = None   # drill/bore: largest
+    side: str = "top"         # top, or bottom: after flipping the part over its X axis
     enabled: bool = True
 
 

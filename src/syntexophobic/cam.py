@@ -37,6 +37,8 @@ class Toolpath:
     levels: list[float] = field(default_factory=list)
     tabs: list = field(default_factory=list)
     tool_shape: str = "flat"
+    side: str = "top"             # bottom: coordinates are in the flipped part's frame
+    flip: tuple | None = None     # (cy, cz) of the flip axis, to show bottom paths in place
     vbit_k: float = 1.0           # V-bit: cut width per unit depth on each side, tan(angle/2)
 
     def positions(self):
@@ -176,7 +178,7 @@ def cutting_levels(top: float, bottom: float, stepdown: float, flats: list[float
 class Setup:
     """Model + stock, with Z-slices cached so several operations can share them."""
 
-    def __init__(self, shape, job: Job, cache: dict | None = None):
+    def __init__(self, shape, job: Job, cache: dict | None = None, stock_box=None):
         """`cache` holds geometry that only depends on the model (bounding box, flat
         levels, slices); pass the same dict while the model is unchanged."""
         self.shape = shape
@@ -195,7 +197,7 @@ class Setup:
         hx = st.width / 2 if st.width > 0 else (b.xmax - b.xmin) / 2 + st.margin
         hy = st.depth / 2 if st.depth > 0 else (b.ymax - b.ymin) / 2 + st.margin
         bottom = top - st.height if st.height > 0 else b.zmin
-        self.stock = geometry.Box(cx - hx, cy - hy, bottom, cx + hx, cy + hy, top)
+        self.stock = stock_box or geometry.Box(cx - hx, cy - hy, bottom, cx + hx, cy + hy, top)
         if st.width and st.width < b.xmax - b.xmin or st.depth and st.depth < b.ymax - b.ymin \
                 or st.height and bottom > b.zmin + 1e-6:
             self.warning = "The stock is smaller than the part."

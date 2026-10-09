@@ -28,6 +28,7 @@ CHOICES = {
     "post": ["carbide", "grbl"],
     "shape": ["flat", "ball", "vbit"],
     "raster": ["X", "Y"],
+    "side": ["top", "bottom"],
     "material": None,   # filled from feeds.MATERIALS below
 }
 from .feeds import MATERIALS  # noqa: E402
@@ -38,7 +39,7 @@ LABELS = {
     "plunge": "Plunge (mm/min)", "bottom": "Bottom Z", "rpm": "Spindle (rpm)",
     "safe_z": "Safe height", "top_offset": "Material above part", "margin": "Margin around part",
     "width": "Stock X size (0 = margin)", "depth": "Stock Y size (0 = margin)", "height": "Stock Z size (0 = to part bottom)",
-    "rest_from": "Rest after tool", "source": "Source (sketch or .dxf)", "max_depth": "Max depth",
+    "side": "Side (bottom = after flipping)", "rest_from": "Rest after tool", "source": "Source (sketch or .dxf)", "max_depth": "Max depth",
     "angle": "V angle (°)", "hole_min": "Smallest hole Ø", "hole_max": "Largest hole Ø",
     "material": "Stock material", "up": "Model axis facing up", "ramp_angle": "Ramp angle (°)", "tabs": "Tabs per outline", "zero": "Work zero", "post": "Post-processor",
 }
@@ -1016,9 +1017,22 @@ class MainWindow(QMainWindow):
             return
         default = str(self.project.folder / f"{self.project.job.name}.nc")
         path, _ = QFileDialog.getSaveFileName(self, "Save G-code", default, "G-code (*.nc *.gcode *.tap)")
-        if path:
+        if not path:
+            return
+        sides = self.project.sides()
+        if sides == ["top"]:
             Path(path).write_text(self.project.gcode(self.toolpaths))
             self.status.setText(f"Saved {path}")
+            return
+        # two sides: one file each, run the top one, flip the part, run the bottom one
+        base = Path(path)
+        saved = []
+        for side in sides:
+            out = base.with_name(f"{base.stem}-{side}{base.suffix or '.nc'}")
+            out.write_text(self.project.gcode(self.toolpaths, side=side))
+            saved.append(out.name)
+        self.status.setText("Saved " + " and ".join(saved) + ": run the top file, flip the part over its X axis, "
+                            "then run the bottom file.")
 
     # ---- history ---------------------------------------------------------------------
 

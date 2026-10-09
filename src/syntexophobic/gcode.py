@@ -62,7 +62,7 @@ def _with_arcs(moves):
     return out
 
 
-def grbl(job: Job, toolpaths: list[Toolpath], stock) -> str:
+def grbl(job: Job, toolpaths: list[Toolpath], stock, side: str = "top") -> str:
     """G-code for GRBL-based machines in the dialect named by job.machine.post.
 
     stock is the cam.Setup stock Box; it sets work zero when machine.zero == "stock".
@@ -78,6 +78,8 @@ def grbl(job: Job, toolpaths: list[Toolpath], stock) -> str:
     out = [
         f"(Syntexophobic - {job.name})",
         f"(Post: {job.machine.post}. Work zero: {zero_note})",
+        *([f"(Side: bottom. Turn the stock over its X axis (front edge stays at the front), "
+           f"then zero as before)"] if side == "bottom" else []),
         f"(STOCK/BLOCK,{_num(L)}, {_num(W)}, {_num(H)},{_num(ox - stock.xmin)}, {_num(oy - stock.ymin)}, {_num(oz - stock.zmin)})",
         post["header"],
     ]
@@ -138,7 +140,7 @@ def grbl(job: Job, toolpaths: list[Toolpath], stock) -> str:
     return "\n".join(out)
 
 
-def read(text: str, job: Job, stock) -> list[Toolpath]:
+def read(text: str, job: Job, stock, side: str = "top") -> list[Toolpath]:
     """Parse G-code written by grbl() back into toolpaths in model coordinates.
 
     Used to check the post-processor end to end: what the machine would actually do is
@@ -162,8 +164,10 @@ def read(text: str, job: Job, stock) -> list[Toolpath]:
         line = raw.strip()
         m = header.match(line)
         if m:
-            tp = Toolpath(Operation(name=m.group(1), tool=int(m.group(2))), float(m.group(3)),
-                          tool_shape=m.group(4) or "flat")
+            tp = Toolpath(Operation(name=m.group(1), tool=int(m.group(2)), side=side), float(m.group(3)),
+                          tool_shape=m.group(4) or "flat", side=side)
+            if side == "bottom":
+                tp.flip = ((stock.ymin + stock.ymax) / 2, (stock.zmin + stock.zmax) / 2)
             if m.group(5):
                 import math
                 tp.vbit_k = math.tan(math.radians(float(m.group(5)) / 2))
