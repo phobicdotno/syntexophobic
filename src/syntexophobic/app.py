@@ -22,7 +22,7 @@ from .job import Operation, Tool
 from .project import Project
 
 CHOICES = {
-    "type": ["rough", "adaptive", "finish", "profile", "parallel", "vcarve", "drill", "bore"],
+    "type": ["rough", "adaptive", "finish", "profile", "parallel", "vcarve", "engrave", "drill", "bore"],
     "up": list(geometry.UP_AXES),
     "zero": ["stock", "model"],
     "post": ["carbide", "grbl"],
@@ -54,6 +54,8 @@ HIDDEN = {
                  "source", "max_depth"},
     "vcarve": {"stepdown", "stepover", "leave", "ramp_angle", "tabs", "tab_width", "tab_height", "hole_min",
                "hole_max", "rest_from", "raster", "bottom"},
+    "engrave": {"stepover", "leave", "ramp_angle", "tabs", "tab_width", "tab_height", "hole_min",
+                "hole_max", "rest_from", "raster", "bottom"},
     "finish": {"stepover", "hole_min", "hole_max", "rest_from", "raster", "source", "max_depth"},
     "profile": {"stepover", "hole_min", "hole_max", "rest_from", "raster", "source", "max_depth"},
     "drill": {"stepover", "leave", "feed", "ramp_angle", "tabs", "tab_width", "tab_height", "rest_from", "raster", "source", "max_depth"},

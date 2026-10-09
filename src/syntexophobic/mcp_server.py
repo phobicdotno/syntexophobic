@@ -251,10 +251,10 @@ def update_tool(id: int, fields: dict) -> str:
 
 @server.tool()
 def add_operation(fields: dict) -> str:
-    """Add a machining operation: type (rough, adaptive, finish, profile, parallel, vcarve,
+    """Add a machining operation: type (rough, adaptive, finish, profile, parallel, vcarve, engrave,
     drill, bore), name, tool (id), stepdown, stepover (x diameter), leave, feed, plunge
     (mm/min), bottom (Z, omit for the model bottom), ramp_angle, tabs/tab_width/tab_height
-    (profile), rest_from (tool id), raster (X/Y), source + max_depth (vcarve), side (top/bottom)."""
+    (profile), rest_from (tool id), raster (X/Y), source + max_depth (vcarve; engrave follows the source's lines, max_depth in stepdown passes), side (top/bottom)."""
     return _out(_call("add_operation", **fields))
 
 

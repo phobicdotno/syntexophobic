@@ -190,9 +190,11 @@ def _runs(tp, step: float):
 
 
 @njit(cache=True)
-def _rapid_depth(stock, x0, y0, res, ax, ay, az, bx, by, bz, r):
+def _rapid_depth(stock, x0, y0, res, ax, ay, az, bx, by, bz, r, shape=0, k=1.0, R=0.0):
     """How deep (mm) a tool of radius r moving in a straight rapid from a to b goes into
-    the stock (0 = clear), and where."""
+    the stock (0 = clear), and where. shape: 0 flat, 1 ball (radius R), 2 V-bit (k = width
+    per depth); the tool's underside rises away from the tip, so leaving a V-groove or a
+    ball-end slot straight up is not a collision."""
     ny, nx = stock.shape
     L = math.sqrt((bx - ax) ** 2 + (by - ay) ** 2)
     n = max(1, int(L / (res * 0.5)) + 1)
@@ -206,8 +208,14 @@ def _rapid_depth(stock, x0, y0, res, ax, ay, az, bx, by, bz, r):
             dy = y0 + j * res - py
             for i in range(max(ci - ri, 0), min(ci + ri + 1, nx)):
                 dx = x0 + i * res - px
-                if dx * dx + dy * dy <= r * r:
-                    d = stock[j, i] - pz
+                d2 = dx * dx + dy * dy
+                if d2 <= r * r:
+                    under = pz
+                    if shape == 1:
+                        under = pz + R - math.sqrt(max(R * R - d2, 0.0))
+                    elif shape == 2:
+                        under = pz + math.sqrt(d2) / k
+                    d = stock[j, i] - under
                     if d > worst:
                         worst, wx, wy, wz = d, px, py, pz
     return worst, wx, wy, wz
@@ -233,6 +241,7 @@ def simulate(setup, toolpaths, res: float = 0.25, backend=None, snapshots: int =
         side = getattr(tp, "side", "top")
         stock = maps[side]
         r = tp.tool_diameter / 2 - res * 0.25
+        shape = {"ball": 1, "vbit": 2}.get(getattr(tp, "tool_shape", "flat"), 0)
         # group consecutive runs into chunks of a few thousand points: the cutting kernels
         # are fastest on big batches, and rapids are checked between chunks in order
         chunk, chunk_rapids = [], []
@@ -247,7 +256,8 @@ def simulate(setup, toolpaths, res: float = 0.25, backend=None, snapshots: int =
                     next_frame += every
             host = be.to_numpy(stock) if chunk_rapids else None
             for (a, b) in chunk_rapids:
-                depth, x, y, z = _rapid_depth(host, grid.x0, grid.y0, res, *a, *b, max(r, res))
+                depth, x, y, z = _rapid_depth(host, grid.x0, grid.y0, res, *a, *b, max(r, res), shape,
+                                              float(getattr(tp, "vbit_k", 1.0) or 1.0), tp.tool_diameter / 2)
                 if depth > 0.05:
                     hits.append((tp.op.name, (x, y, z), depth))
             chunk, chunk_rapids = [], []
@@ -274,13 +284,14 @@ def simulate(setup, toolpaths, res: float = 0.25, backend=None, snapshots: int =
         # back in the top's frame: mirror the rows, and heights about the stock's middle
         cz = (setup.stock.zmin + setup.stock.zmax) / 2
         bottom = 2 * cz - under[::-1, :]
-    # V-carving cuts into the part on purpose: inside its shapes the part surface is
+    # V-carving and engraving cut into the part on purpose: inside its shapes the part surface is
     # expected to go, so those cells are left out of the gouge check
     for tp in toolpaths:
-        if tp.op.type == "vcarve" and tp.op.source:
+        if tp.op.type in ("vcarve", "engrave") and tp.op.source:
             from . import adaptive, cam
+            regions = cam.vcarve_regions if tp.op.type == "vcarve" else cam.engrave_region
             try:
-                region = cam._to_mm(cam.vcarve_regions(setup, tp.op))
+                region = cam._to_mm(regions(setup, tp.op))
             except ValueError:
                 continue
             carved = adaptive.rasterize(region, grid.x0, grid.y0, res, part.shape)

@@ -395,7 +395,7 @@ class Session:
 
     def add_operation(self, **values) -> dict:
         """Fields as in job.Operation: type (rough, adaptive, finish, profile, parallel,
-        vcarve, drill, bore), tool, stepdown, stepover, leave, feed, plunge, bottom, side..."""
+        vcarve, engrave, drill, bore), tool, stepdown, stepover, leave, feed, plunge, bottom, side..."""
         def change(j):
             op = Operation()
             _update(op, values)

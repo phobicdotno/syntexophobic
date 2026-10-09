@@ -537,22 +537,28 @@ def _adaptive(setup: Setup, op: Operation) -> Toolpath:
     return tp
 
 
-def vcarve_regions(setup: Setup, op: Operation):
-    """Closed shapes to carve, as clipper paths: from a sketch of the designed part, or a
-    DXF file in the project folder."""
+def _source_sketch(setup: Setup, op: Operation, what: str):
+    """The sketch an operation follows: one of the designed part, or a DXF in the project."""
     from pathlib import Path
-    from .model import _loop_polygon
     src = op.source.strip()
     if not src:
-        raise ValueError("V-carve: set Source to a sketch name or a .dxf file in the project folder")
+        raise ValueError(f"{what}: set Source to a sketch name or a .dxf file in the project folder")
     if src.lower().endswith(".dxf"):
         from . import dxf
         folder = Path(setup.job_folder) if getattr(setup, "job_folder", None) else Path(".")
-        sk = dxf.import_dxf(folder / src)
-    else:
-        sk = setup.sketches.get(src) if getattr(setup, "sketches", None) else None
-        if sk is None:
-            raise ValueError(f"V-carve: no sketch called {src!r} in this design")
+        return dxf.import_dxf(folder / src)
+    sk = setup.sketches.get(src) if getattr(setup, "sketches", None) else None
+    if sk is None:
+        raise ValueError(f"{what}: no sketch called {src!r} in this design")
+    return sk
+
+
+def vcarve_regions(setup: Setup, op: Operation):
+    """Closed shapes to carve, as clipper paths: from a sketch of the designed part, or a
+    DXF file in the project folder."""
+    from .model import _loop_polygon
+    src = op.source.strip()
+    sk = _source_sketch(setup, op, "V-carve")
     loops = [_loop_polygon(sk, loop, 48) for loop in sk.profiles()]
     if not loops:
         raise ValueError(f"V-carve: {src!r} has no closed shapes")
@@ -606,6 +612,92 @@ def _vcarve(setup: Setup, op: Operation) -> Toolpath:
     return tp
 
 
+def engrave_paths(setup: Setup, op: Operation) -> list[list[tuple[float, float]]]:
+    """Every non-construction line, arc, circle and spline of the source as continuous
+    polylines (pieces that meet end to end are joined), in an order that keeps travel short."""
+    from .model import _segment_points
+    sk = _source_sketch(setup, op, "Engrave")
+    segs = [_segment_points(sk, ("line", l.a, l.b), 2) for l in sk.lines.values() if not l.construction]
+    segs += [_segment_points(sk, ("arc", a.id), 48) for a in sk.arcs.values() if not a.construction]
+    segs += [_segment_points(sk, ("circle", c.id), 72) for c in sk.circles.values() if not c.construction]
+    segs += [sk.spline_samples(sp.id, 96) + ([sk.spline_samples(sp.id, 96)[0]] if sp.closed else [])
+             for sp in sk.splines.values() if not sp.construction]
+    tol = 1e-4
+    near = lambda p, q: abs(p[0] - q[0]) < tol and abs(p[1] - q[1]) < tol     # noqa: E731
+    left, chains = [list(s) for s in segs if len(s) >= 2], []
+    while left:
+        chain = left.pop(0)
+        grown = True
+        while grown and not near(chain[0], chain[-1]):
+            grown = False
+            for i, s in enumerate(left):
+                if near(chain[-1], s[0]):
+                    chain += s[1:]
+                elif near(chain[-1], s[-1]):
+                    chain += s[-2::-1]
+                elif near(chain[0], s[-1]):
+                    chain = s[:-1] + chain
+                elif near(chain[0], s[0]):
+                    chain = s[:0:-1] + chain
+                else:
+                    continue
+                left.pop(i)
+                grown = True
+                break
+        chains.append(chain)
+    if not chains:
+        raise ValueError(f"Engrave: {op.source!r} has no lines to follow")
+    ordered, here = [], (setup.stock.xmin, setup.stock.ymin)
+    while chains:                                   # nearest next start (either end of open chains)
+        i, flip = min(((i, f) for i, c in enumerate(chains) for f in (False, True)
+                       if not f or not near(c[0], c[-1])),
+                      key=lambda t: math.dist(here, chains[t[0]][-1 if t[1] else 0]))
+        c = chains.pop(i)
+        c = c[::-1] if flip else c
+        ordered.append(c)
+        here = c[-1]
+    return ordered
+
+
+def engrave_region(setup: Setup, op: Operation):
+    """The band an engraving cuts (clipper paths): the lines widened by the tool's cutting
+    radius at full depth."""
+    tool = setup.job.tool(op.tool)
+    r = (math.tan(math.radians(tool.angle / 2)) * op.max_depth if tool.shape == "vbit"
+         else tool.diameter / 2)
+    pc = pyclipper.PyclipperOffset()
+    for c in engrave_paths(setup, op):
+        pc.AddPath(_to_int([c])[0], pyclipper.JT_ROUND,
+                   pyclipper.ET_CLOSEDLINE if math.dist(c[0], c[-1]) < 1e-4 else pyclipper.ET_OPENROUND)
+    return pc.Execute((r + 0.05) * SCALE)
+
+
+def _engrave(setup: Setup, op: Operation) -> Toolpath:
+    """The tool's centre on the lines (no offset), down to max_depth below the stock top in
+    stepdown passes. Closed outlines are cut lap after lap; open lines go back and forth, so
+    the tool stays down between passes."""
+    tool = setup.job.tool(op.tool)
+    top = setup.stock.zmax
+    n = max(1, math.ceil(op.max_depth / op.stepdown - 1e-9))
+    levels = [top - op.max_depth * (i + 1) / n for i in range(n)]
+    safe = top + setup.job.machine.safe_z
+    tp = Toolpath(op, tool.diameter, levels=levels)
+    moves = tp.moves
+    moves.append(Move("rapid", None, None, safe))
+    for chain in engrave_paths(setup, op):
+        closed = math.dist(chain[0], chain[-1]) < 1e-4
+        moves += [Move("rapid", None, None, top + 1.0), Move("rapid", chain[0][0], chain[0][1], None),
+                  Move("rapid", None, None, top + 0.5)]
+        path = chain
+        for z in levels:
+            moves.append(Move("feed", None, None, z, op.plunge))
+            moves += [Move("feed", x, y, None, op.feed) for x, y in path[1:]]
+            if not closed:
+                path = path[::-1]
+    moves.append(Move("rapid", None, None, safe))
+    return tp
+
+
 def generate(setup: Setup, op: Operation) -> Toolpath:
     tp = _generate(setup, op)
     tool = setup.job.tool(op.tool)
@@ -625,6 +717,8 @@ def _generate(setup: Setup, op: Operation) -> Toolpath:
         return parallel(setup, op)
     if op.type == "vcarve":
         return _vcarve(setup, op)
+    if op.type == "engrave":
+        return _engrave(setup, op)
     tool = setup.job.tool(op.tool)
     r = tool.diameter / 2
     top = setup.stock.zmax

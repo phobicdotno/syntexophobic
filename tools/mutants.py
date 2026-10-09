@@ -2,7 +2,7 @@
 
 Each mutant edits a copy of the source; the tests run against that copy. A mutant that
 'survives' (all tests pass) means the tests would not catch that bug.
-Run: uv run python tools/mutants.py
+Run: uv run python tools/mutants.py [words in mutant names, to run only those]
 """
 
 import os
@@ -48,6 +48,13 @@ MUTANTS = [
      "    region = _boolean(_offset(setup.stock_rect(), 0.9 * r), _offset(forbidden, r + op.leave),",
      "    region = _boolean(setup.stock_rect(), _offset(forbidden, r + op.leave),"),
     ("first tool change skipped (no M6 T1)", "gcode.py", '            if post["tool_change"] == "M6":', '            if post["tool_change"] == "M6" and current_tool is not None:'),
+    ("engraving counted as gouges", "simulate.py",
+     '        if tp.op.type in ("vcarve", "engrave") and tp.op.source:', '        if tp.op.type == "vcarve" and tp.op.source:'),
+    ("engrave lines not joined end to end", "cam.py", "    tol = 1e-4\n    near =", "    tol = -1.0\n    near ="),
+    ("rapid check lets shaped tools through stock", "simulate.py",
+     "                        under = pz + math.sqrt(d2) / k", "                        under = pz + 1e9"),
+    ("engrave open lines not reversed between passes", "cam.py",
+     "            if not closed:\n                path = path[::-1]", "            if False:\n                path = path[::-1]"),
 ]
 
 
@@ -67,7 +74,8 @@ def run(name, filename, old, new):
 
 
 if __name__ == "__main__":
-    results = [run(*m) for m in MUTANTS]
+    picked = [m for m in MUTANTS if not sys.argv[1:] or any(a in m[0] for a in sys.argv[1:])]
+    results = [run(*m) for m in picked]
     for name, verdict in results:
         print(f"{verdict:10} {name}")
     # a mutant whose code pattern is gone checks nothing: that is a failure too

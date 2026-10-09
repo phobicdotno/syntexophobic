@@ -609,3 +609,80 @@ def test_stl_to_step_round_trip(tmp_path):
     assert (b.xmax - b.xmin, b.ymax - b.ymin, b.zmax - b.zmin) == pytest.approx((40, 30, 10), abs=1e-3)
     p = Project.create(tmp_path / "cam", stl)
     assert vol(p.shape) == pytest.approx(vol(back), rel=1e-6)
+
+
+def test_engrave_follows_open_and_closed_lines(pocket_part, tmp_path):
+    """Engraving keeps the tool centre on the lines, open ones included, reaches max depth
+    in stepdown passes without lifting on open lines, and only cuts the band along them."""
+    import ezdxf
+    from syntexophobic import simulate
+    from syntexophobic.job import Operation, Tool
+    p = Project.create(tmp_path / "eng", pocket_part)
+    doc = ezdxf.new()
+    doc.header["$INSUNITS"] = 4
+    msp = doc.modelspace()
+    msp.add_line((5, 5), (15, 5))                  # an open "L" in two separate lines
+    msp.add_line((15, 5), (15, 30))
+    msp.add_circle((40, 20), 6)                    # a closed circle
+    doc.saveas(p.folder / "marks.dxf")
+    p.job.tools = [Tool(1, "1 mm flat", 1.0, 2, "flat")]
+    p.job.operations = [Operation(type="engrave", name="Mark", tool=1, source="marks.dxf", max_depth=1.0,
+                                  stepdown=0.4, feed=600, plunge=150)]
+    p.job.stock.top_offset = 0.0
+    p.save_job()
+    setup = p.setup()
+    chains = cam.engrave_paths(setup, p.job.operations[0])
+    assert len(chains) == 2                        # the two lines joined into one chain
+    tp = p.toolpaths()[0]
+    top = setup.stock.zmax
+    assert [round(top - z, 6) for z in tp.levels] == pytest.approx([1 / 3, 2 / 3, 1.0])
+    # every cutting move lies on a line or on the circle
+    def on_marks(x, y):
+        return (min(abs(y - 5) + max(0, x - 15, 5 - x), abs(x - 15) + max(0, y - 30, 5 - y)) < 1e-6
+                or abs(math.dist((x, y), (40, 20)) - 6) < 0.02)
+    x = y = None
+    lifts_on_l = 0
+    for m in tp.moves:
+        x = m.x if m.x is not None else x
+        y = m.y if m.y is not None else y
+        if m.kind == "feed" and x is not None and m.z is None:
+            assert on_marks(x, y), (x, y)
+        if m.kind == "rapid" and m.z is not None and m.z > top and x is not None and on_marks(x, y) and x <= 15:
+            lifts_on_l += 1
+    assert lifts_on_l == 2                         # arriving and leaving: no lift between passes
+    res = simulate.simulate(setup, [tp], res=0.05)
+    xs, ys = res.grid.centres()
+    depth = lambda x, y: top - res.stock[int(round((y - ys[0]) / 0.05)), int(round((x - xs[0]) / 0.05))]  # noqa: E731
+    assert depth(10, 5) == pytest.approx(1.0, abs=1e-6) and depth(15, 20) == pytest.approx(1.0, abs=1e-6)
+    assert depth(46, 20) == pytest.approx(1.0, abs=1e-6)
+    assert depth(10, 6) < 1e-9 and depth(40, 20) < 1e-9          # nothing beside the 1 mm band
+    assert res.gouge_cells == 0 and res.rapid_hits == []
+
+
+def test_rapid_check_knows_the_tool_shape(pocket_part, tmp_path):
+    """Leaving a V-groove straight up is clear (the cone rises away from the tip; a flat
+    cylinder of the full diameter would 'hit' the walls), but a sideways rapid at depth
+    with the same V-bit or a ball end still counts as a crash."""
+    import ezdxf
+    from syntexophobic import simulate
+    from syntexophobic.job import Operation, Tool
+    p = Project.create(tmp_path / "vrap", pocket_part)
+    doc = ezdxf.new()
+    doc.header["$INSUNITS"] = 4
+    doc.modelspace().add_line((5, 20), (40, 20))
+    doc.saveas(p.folder / "groove.dxf")
+    p.job.tools = [Tool(1, "60° V-bit", 6.35, 1, "vbit", 60.0), Tool(2, "6 mm ball", 6.0, 2, "ball")]
+    p.job.operations = [Operation(type="engrave", tool=1, source="groove.dxf", max_depth=1.0, stepdown=0.5)]
+    p.job.stock.top_offset = 0.0
+    p.save_job()
+    setup = p.setup()
+    tp = p.toolpaths()[0]
+    assert simulate.simulate(setup, [tp], res=0.1).rapid_hits == []
+    top = setup.stock.zmax
+    for tool, shape in ((1, "vbit"), (2, "ball")):
+        bad = cam.Toolpath(Operation(name="Bad", tool=tool), 6.35 if tool == 1 else 6.0, tool_shape=shape, moves=[
+            cam.Move("rapid", 20, 30, top + 2), cam.Move("rapid", None, None, top - 0.6),
+            cam.Move("rapid", 40, 30, None)])
+        bad.vbit_k = math.tan(math.radians(30))
+        hits = simulate.simulate(setup, [bad], res=0.1).rapid_hits
+        assert hits and max(h[2] for h in hits) == pytest.approx(0.6, abs=0.05), (shape, hits[:2])

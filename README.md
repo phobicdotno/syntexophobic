@@ -145,6 +145,7 @@ That area, grown by the tool radius (plus *leave*), is cut out of the stock outl
 | **profile** | follows only the outermost silhouette, for cut-outs; supports **tabs** |
 | **parallel** | 3D finishing: raster passes riding on the surface (exact drop-cutter, flat or ball end) |
 | **vcarve** | V-bit carving of a sketch or DXF (text, logos): sharp V walls, flat floors past a max depth |
+| **engrave** | the tool's centre on a sketch's or DXF's lines (open lines too), down to a depth in stepdown passes |
 
 ![Adaptive clearing on the demo plate: steered passes instead of slotting rings](docs/screenshots/adaptive.png)
 

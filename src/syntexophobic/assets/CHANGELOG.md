@@ -11,11 +11,25 @@ every release, read from this file.
   with one. The file is copied into the project's `imports/` folder so history keeps it,
   and read once per change.
 
+**CAM**
+- Engrave operation: the tool's centre follows a sketch's or DXF's lines with no offset,
+  open lines included (pieces that meet are joined, shortest travel between them), down to
+  a depth in stepdown passes; open lines are cut back and forth without lifting. Like
+  V-carving, the engraved band is expected in the simulation's gouge check.
+
+**Simulation**
+- The rapid check uses the tool's real shape: lifting a V-bit out of its groove or a ball
+  end out of its slot is no longer reported as a rapid into stock (a full-diameter flat
+  cylinder "hit" the groove walls); moving sideways at depth still is.
+
 **Fixes**
 - Exporting a design as STEP no longer prints OpenCascade's transfer statistics.
 
 **Testing**
 - Import: an STL as a body, a STEP cutting it, the saved project rebuilt and machined.
+- Engrave: on the lines, depth, no lifts on open lines, only the band cut; rapids with
+  V-bits and ball ends. Four new mutants (23 in all); `tools/mutants.py <words>` runs
+  only the matching ones.
 
 ## v0.5.1 (build 6) — 2026-10-09
 
