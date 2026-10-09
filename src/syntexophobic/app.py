@@ -963,6 +963,10 @@ class MainWindow(QMainWindow):
     def _after_automation(self, cmd: str):
         """Show what a remote command changed."""
         s = self.session
+        if cmd == "library_add" and hasattr(self, "assistant"):
+            self.assistant.library_changed()
+        if cmd == "library_list" or (cmd == "library_add" and self.project is None):
+            return
         if cmd in ("status", "get_sketch", "history", "diff", "screenshot", "view"):
             return
         if s.project is not self.project:
@@ -1153,8 +1157,10 @@ class MainWindow(QMainWindow):
         from . import library
         row = self.l_tools.currentRow()
         if 0 <= row < len(self.project.job.tools):
-            library.add(self.project.job.tools[row])
-            self.status.setText(f"Saved {self.project.job.tools[row].name} to {library.path()}.")
+            tool = self.project.job.tools[row]
+            there = library.add(tool)
+            self.status.setText(f"The library already has {there.name}." if there
+                                else f"Saved {tool.name} to {library.path()}.")
 
     def add_tool(self):
         tools = self.project.job.tools

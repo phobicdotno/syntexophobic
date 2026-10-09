@@ -280,6 +280,21 @@ def update_tool(id: int, fields: dict) -> str:
 
 
 @server.tool()
+def library_list() -> str:
+    """The user's tool library (bits they own, shared by every project)."""
+    return _out(_call("library_list"))
+
+
+@server.tool()
+def library_add(fields: dict, add_to_job: bool = False) -> str:
+    """Add a bit the user owns to their tool library: name, diameter (mm, the cutting
+    diameter), flutes, shape (flat/ball/vbit), angle (vbit). Put the details in the name, e.g.
+    '1/8" (3.175 mm) 1 flute upcut spiral, 12 mm cut'. Skips a cutter already there.
+    add_to_job also adds it to the open job's tools."""
+    return _out(_call("library_add", add_to_job=add_to_job, **fields))
+
+
+@server.tool()
 def add_operation(fields: dict) -> str:
     """Add a machining operation: type (rough, adaptive, finish, profile, parallel, vcarve, engrave,
     drill, bore), name, tool (id), stepdown, stepover (x diameter), leave, feed, plunge

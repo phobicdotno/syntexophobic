@@ -21,6 +21,17 @@ every release, read from this file.
   first feature of a design, an Import copied into `imports/`, so sketches, cuts, holes
   and fillets can be added to it. The job and history stay.
 
+**Assistant**
+- Pictures go with a message by pasting (Ctrl+V), dropping a file, *Attach image…* (several
+  at once, AVIF/HEIC/BMP/TIFF converted to PNG for Claude) or *Take photo…* with a camera;
+  they show as thumbnails under the chat (click one to remove it) and in the conversation.
+- Links in a message are read by Syntexophobic (Claude still has no web): the page's title,
+  description and main picture go with the message. A page that cannot be read (shops that
+  block it) is shown as such and Claude works from the address and the pictures.
+- A picture or link of a router bit adds it to the tool library (MCP `library_add`,
+  `library_list`), in the size you say you own; the chat shows what was added. Saving a
+  tool that the library already has (same diameter, flutes and shape) no longer duplicates it.
+
 **Updates**
 - An *Update available* bar above the view when GitHub has a newer release: what changed
   (*What's new* shows the release notes), *Update*, *Skip this version*, or ✕ until the next
@@ -65,6 +76,8 @@ every release, read from this file.
   rebuild the new file byte for byte from moved blocks, and a bad block falls back to the
   whole download.
 - A STEP project turned into a design: same part and job, then a sketch cut through it.
+- Assistant: pasted and dropped pictures, AVIF conversion, page titles and pictures from
+  links, unreadable links, library additions without duplicates.
 
 ## v0.6.1 (build 8) — 2026-10-09
 

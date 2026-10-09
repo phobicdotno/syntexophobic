@@ -63,13 +63,16 @@ Syntexophobic can be driven entirely by Claude, using your Claude subscription t
 Claude Code (no API key):
 
 - **In the program**: View > Assistant (Ctrl+K) opens a chat panel. Claude gets only
-  Syntexophobic's tools and you watch the window change as it works.
+  Syntexophobic's tools and you watch the window change as it works. Paste a picture or a
+  link (Ctrl+V), attach one or take a photo; a picture or shop link of a router bit adds
+  it to your tool library, in the size you say you have.
 - **From Claude Code**: `uv run syntexophobic install-mcp` registers the MCP server once;
   then any Claude Code session can design, machine, simulate and export. With the window
   open, changes appear in it live; without it, Claude works on the project files.
 
-The MCP server has 37 tools (projects, parameters, sketches, features, stock, tools,
-operations, toolpaths, simulation, G-code, history, views, screenshots, problem reports).
+The MCP server has 43 tools (projects, parameters, sketches, features, stock, tools, tool
+library, operations, toolpaths, simulation, G-code, history, views, screenshots, problem
+reports).
 Claude is told to call nothing safe to run until `simulate` says so.
 
 **Fault reports:** when a tool fails in the Assistant panel, or Claude can't do what you
