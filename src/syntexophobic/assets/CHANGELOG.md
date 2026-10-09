@@ -10,6 +10,8 @@ every release, read from this file.
   window asked for at least 1010 px of height, more than a laptop screen, so the window
   manager would not maximize it or make it full screen. Only the current workspace's
   panel shows now, and tall panels scroll instead of stretching the window.
+- A failing MCP tool tells Claude why it failed instead of a bare "Error executing tool".
+- With no project open, the Design panel says so instead of talking about a STEP file.
 
 **Interface**
 - View → *Full screen* (F11).

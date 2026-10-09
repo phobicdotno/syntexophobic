@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 
 from mcp.server.mcpserver import Image, MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
 from . import automation as A
 
@@ -31,7 +32,22 @@ _STATE = A.STATE / "headless.json"
 
 
 def _call(cmd: str, **args):
-    """Run in the open window if there is one, else headless (remembering the project)."""
+    """Run in the open window if there is one, else headless (remembering the project).
+
+    Every failure is raised as a ToolError carrying its message: the MCP server replaces the
+    text of any other exception with a bare "Error executing tool ...", which leaves Claude
+    (and the user) guessing."""
+    try:
+        return _run(cmd, args)
+    except ToolError:
+        raise
+    except A.CommandError as e:
+        raise ToolError(str(e) or f"{cmd} failed") from e
+    except Exception as e:
+        raise ToolError(f"{type(e).__name__}: {e}" if str(e) else type(e).__name__) from e
+
+
+def _run(cmd: str, args: dict):
     try:
         return A.send(cmd, args)
     except ConnectionError:
