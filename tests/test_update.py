@@ -98,11 +98,10 @@ def test_a_cut_download_leaves_nothing(tmp_path, monkeypatch):
 
 
 def test_update_bar(tmp_path, monkeypatch):
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtCore import QSettings, QThreadPool
     from PySide6.QtWidgets import QApplication
     from syntexophobic import update_ui
-    app = QApplication.instance() or QApplication([])
+    app = QApplication.instance()                              # made by conftest's qt_app
     QSettings.setPath(QSettings.NativeFormat, QSettings.UserScope, str(tmp_path))
     QSettings.setDefaultFormat(QSettings.NativeFormat)
     app.setOrganizationName("syntexophobic-tests")
