@@ -640,7 +640,12 @@ class MainWindow(QMainWindow):
         target = Path(folder)
         if any(target.iterdir()):
             target = target / name.strip()
-        self.load(Project.create_design(target, name.strip()))
+        try:
+            project = Project.create_design(target, name.strip())
+        except Exception as e:
+            QMessageBox.critical(self, "Could not create the design", str(e))
+            return
+        self.load(project)
         self.c_workspace.setCurrentText("Design")
 
     def undo_redo(self, redo: bool):
@@ -796,7 +801,15 @@ class MainWindow(QMainWindow):
         target = Path(folder)
         if any(target.iterdir()):
             target = target / (Path(step).stem + "-cam")
-        self.load(Project.create(target, step))
+        try:
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+            project = Project.create(target, step)
+        except Exception as e:
+            QMessageBox.critical(self, "Could not create the project", str(e))
+            return
+        finally:
+            QApplication.restoreOverrideCursor()
+        self.load(project)
 
     def convert_stl(self):
         from . import geometry
@@ -1207,6 +1220,11 @@ class MainWindow(QMainWindow):
             self.l_versions.addItem(item)
         self.l_versions.blockSignals(False)
         self.t_diff.clear()
+        from . import history
+        if not history.available():
+            self.t_diff.setPlainText("Version history is off because git is not installed.\n"
+                                     "Install it with: sudo apt install git")
+        self.b_save.setEnabled(history.available())
         self._refresh_history_status()
 
     def _refresh_history_status(self):

@@ -58,6 +58,8 @@ MUTANTS = [
     ("v-carve depth from the stock top", "cam.py", "        z = surface - depth\n", "        z = top - depth\n"),
     ("engrave open lines not reversed between passes", "cam.py",
      "            if not closed:\n                path = path[::-1]", "            if False:\n                path = path[::-1]"),
+    ("new project fails without a git identity", "history.py",
+     "                if not r.stdout.strip():", "                if False:"),
 ]
 
 
