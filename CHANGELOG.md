@@ -17,6 +17,10 @@ All notable changes to Syntexophobic. The format follows
   join, cut or intersect; linear and circular patterns; fillet, chamfer, shell and mirror.
   Edges and faces are chosen with short selectors (`|Z`, `#Z`, `>Z`, `<Z`, `%CIRCLE`,
   `A&B`) that stay valid when the design changes. STEP export.
+- Sketch tools: corner **fillet** (tangent arc, the corner point is removed), regular
+  **polygon** on a construction circle, **slot**, parametric **offset** of a closed chain
+  (stays parallel and at its distance when the original changes), **mirror** across a line
+  (symmetric constraints), and **trim** between crossings with lines and circles.
 - **Design workspace** in the window: Design / Manufacture switch, File > New design…,
   feature list with per-type settings, and a sketch editor (draw, snap, drag with live
   solving, constraint and dimension buttons, construction geometry). Edits save and

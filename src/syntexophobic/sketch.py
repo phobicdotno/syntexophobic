@@ -162,6 +162,214 @@ class Sketch:
             self.constrain(kind, ls[i])
         return ls
 
+    # ---- higher-level tools -------------------------------------------------------------
+
+    def _xy(self, pid):
+        p = self.points[pid]
+        return p.x, p.y
+
+    def _uses(self, pid) -> int:
+        n = sum(pid in (l.a, l.b) for l in self.lines.values())
+        n += sum(pid in (a.center, a.start, a.end) for a in self.arcs.values())
+        return n + sum(pid == c.center for c in self.circles.values())
+
+    def fillet(self, pid: str, radius: float) -> str:
+        """Round the corner where two lines meet at point pid. Returns the new arc id."""
+        lines = [l for l in self.lines.values() if pid in (l.a, l.b)]
+        if len(lines) != 2:
+            raise ValueError("Fillet needs a point where exactly two lines meet")
+        px, py = self._xy(pid)
+        dirs = []
+        for ln in lines:
+            ox, oy = self._xy(ln.b if ln.a == pid else ln.a)
+            L = math.hypot(ox - px, oy - py)
+            dirs.append(((ox - px) / L, (oy - py) / L, L))
+        (ux, uy, L1), (wx, wy, L2) = dirs
+        theta = math.acos(max(-1.0, min(1.0, ux * wx + uy * wy)))
+        if theta < 1e-6 or abs(theta - math.pi) < 1e-6:
+            raise ValueError("The lines are straight through: nothing to round")
+        d = radius / math.tan(theta / 2)
+        if d >= min(L1, L2):
+            raise ValueError(f"Radius {radius:g} is too big for these lines")
+        bx, by = ux + wx, uy + wy
+        bl = math.hypot(bx, by)
+        h = radius / math.sin(theta / 2)
+        t1 = self.point(px + ux * d, py + uy * d)
+        t2 = self.point(px + wx * d, py + wy * d)
+        c = self.point(px + bx / bl * h, py + by / bl * h, construction=True)
+        for ln, t in zip(lines, (t1, t2)):
+            if ln.a == pid:
+                ln.a = t
+            else:
+                ln.b = t
+        cx, cy = self._xy(c)
+        (ax, ay), (ex, ey) = self._xy(t1), self._xy(t2)
+        ccw = (ax - cx) * (ey - cy) - (ay - cy) * (ex - cx) > 0
+        arc = self.arc(c, t1, t2) if ccw else self.arc(c, t2, t1)
+        self.constrain("tangent", lines[0].id, arc)
+        self.constrain("tangent", lines[1].id, arc)
+        self.constrain("radius", arc, value=float(radius))
+        if not self._uses(pid):
+            self.delete(pid)
+        return arc
+
+    def polygon(self, cx: float, cy: float, r: float, sides: int) -> list[str]:
+        """Regular polygon inscribed in a construction circle (equal sides, corners on it)."""
+        circle = self.circle((cx, cy), r, construction=True)
+        pts = [self.point(cx + r * math.cos(math.pi / 2 + 2 * math.pi * k / sides),
+                          cy + r * math.sin(math.pi / 2 + 2 * math.pi * k / sides)) for k in range(sides)]
+        ls = [self.line(pts[k], pts[(k + 1) % sides]) for k in range(sides)]
+        for p in pts:
+            self.constrain("point_on_circle", p, circle)
+        for k in range(1, sides):
+            self.constrain("equal", ls[0], ls[k])
+        return ls
+
+    def slot(self, x0, y0, x1, y1, width: float) -> list[str]:
+        """Straight slot between two centre points: two lines and two tangent half-circles."""
+        L = math.hypot(x1 - x0, y1 - y0)
+        nx, ny = -(y1 - y0) / L * width / 2, (x1 - x0) / L * width / 2
+        c0, c1 = self.point(x0, y0, construction=True), self.point(x1, y1, construction=True)
+        a, b = self.point(x0 + nx, y0 + ny), self.point(x1 + nx, y1 + ny)
+        c, d = self.point(x1 - nx, y1 - ny), self.point(x0 - nx, y0 - ny)
+        top, bottom = self.line(a, b), self.line(c, d)
+        end1 = self.arc(c1, c, b)            # counter-clockwise from c to b around c1
+        end0 = self.arc(c0, a, d)
+        self.constrain("tangent", top, end1)
+        self.constrain("tangent", bottom, end1)
+        self.constrain("tangent", top, end0)
+        self.constrain("equal", end0, end1)
+        self.constrain("diameter", end0, value=float(width))
+        return [top, end1, bottom, end0]
+
+    def offset_lines(self, line_ids: list[str], distance: float) -> list[str]:
+        """Parallel copy of a closed chain of lines, `distance` outwards (negative = in).
+
+        Each new line is parallel to and `distance` away from its original, so the offset
+        follows the original when it changes.
+        """
+        chain = self._ordered_chain(line_ids)
+        pts = [self._xy(p) for p in chain]
+        n = len(pts)
+        area = sum(pts[i - 1][0] * pts[i][1] - pts[i][0] * pts[i - 1][1] for i in range(n)) / 2
+        sign = 1 if area > 0 else -1                      # outward normal side for CCW
+        shifted = []
+        for i in range(n):
+            (x0, y0), (x1, y1) = pts[i], pts[(i + 1) % n]
+            L = math.hypot(x1 - x0, y1 - y0)
+            ox, oy = (y1 - y0) / L * distance * sign, -(x1 - x0) / L * distance * sign
+            shifted.append(((x0 + ox, y0 + oy), (x1 + ox, y1 + oy)))
+        corners = []
+        for i in range(n):
+            (a0, a1), (b0, b1) = shifted[i - 1], shifted[i]
+            corners.append(_intersect(a0, a1, b0, b1) or a1)
+        new_pts = [self.point(*c) for c in corners]
+        new_lines = [self.line(new_pts[i], new_pts[(i + 1) % n]) for i in range(n)]
+        originals = self._chain_lines(chain)
+        for orig, new in zip(originals, new_lines):
+            self.constrain("parallel", orig, new)
+            self.constrain("distance", self.lines[new].a, orig, value=abs(float(distance)))
+        return new_lines
+
+    def mirror(self, ids: list[str], axis: str) -> list[str]:
+        """Mirrored copies of lines, circles and arcs across line `axis`, kept symmetric."""
+        ax = self.lines[axis]
+        (x0, y0), (x1, y1) = self._xy(ax.a), self._xy(ax.b)
+        dx, dy = x1 - x0, y1 - y0
+        L2 = dx * dx + dy * dy
+        copies: dict[str, str] = {}
+
+        def twin(pid):
+            if pid in copies:
+                return copies[pid]
+            px, py = self._xy(pid)
+            t = ((px - x0) * dx + (py - y0) * dy) / L2
+            fx, fy = x0 + dx * t, y0 + dy * t
+            copies[pid] = self.point(2 * fx - px, 2 * fy - py, self.points[pid].construction)
+            self.constrain("symmetric", pid, copies[pid], axis)
+            return copies[pid]
+
+        out = []
+        for eid in ids:
+            if eid in self.lines:
+                ln = self.lines[eid]
+                out.append(self.line(twin(ln.a), twin(ln.b), ln.construction))
+            elif eid in self.circles:
+                c = self.circles[eid]
+                out.append(self.circle(twin(c.center), c.r, c.construction))
+                self.constrain("equal", eid, out[-1])
+            elif eid in self.arcs:
+                a = self.arcs[eid]
+                out.append(self.arc(twin(a.center), twin(a.end), twin(a.start), a.construction))  # mirror flips sense
+                self.constrain("equal", eid, out[-1])
+        return out
+
+    def trim(self, line_id: str, x: float, y: float) -> list[str]:
+        """Remove the piece of a line between its nearest crossings around (x, y).
+
+        Crossings with other lines and circles split the line; the piece the click is on
+        is deleted and the new end points are kept on the crossing geometry.
+        """
+        ln = self.lines[line_id]
+        (ax, ay), (bx, by) = self._xy(ln.a), self._xy(ln.b)
+        L2 = (bx - ax) ** 2 + (by - ay) ** 2
+        click = max(0.0, min(1.0, ((x - ax) * (bx - ax) + (y - ay) * (by - ay)) / L2))
+        cuts = []                                         # (t along the line, cutting entity)
+        for other in self.lines.values():
+            if other.id == line_id:
+                continue
+            hit = _intersect((ax, ay), (bx, by), self._xy(other.a), self._xy(other.b), segment=True)
+            if hit:
+                cuts.append((((hit[0] - ax) * (bx - ax) + (hit[1] - ay) * (by - ay)) / L2, other.id))
+        for c in list(self.circles.values()) + list(self.arcs.values()):
+            cx, cy = self._xy(c.center)
+            for t in _line_circle((ax, ay), (bx, by), (cx, cy), c.r):
+                cuts.append((t, c.id))
+        cuts = sorted((t, e) for t, e in cuts if 1e-6 < t < 1 - 1e-6)
+        lo = max([c for c in cuts if c[0] < click], default=None)
+        hi = min([c for c in cuts if c[0] > click], default=None)
+        if lo is None and hi is None:
+            self.delete(line_id)                          # nothing crosses it: remove it all
+            return []
+        point = lambda t: (ax + (bx - ax) * t, ay + (by - ay) * t)   # noqa: E731
+        kept = []
+        a, b = ln.a, ln.b
+        del self.lines[line_id]
+        self.constraints = [k for k in self.constraints if line_id not in k.refs]
+        for (t, cutter), keep_start in ((lo, True), (hi, False)):
+            if (t, cutter) == (None, None) or t is None:
+                continue
+            p = self.point(*point(t))
+            kind = "point_on_line" if cutter in self.lines else "point_on_circle"
+            self.constrain(kind, p, cutter)
+            kept.append(self.line(a, p) if keep_start else self.line(p, b))
+        for end in (a, b):
+            if not self._uses(end):
+                self.delete(end)
+        return kept
+
+    def _ordered_chain(self, line_ids):
+        """Point ids around a closed chain of lines, in order."""
+        lines = [self.lines[i] for i in line_ids]
+        order = [lines[0].a, lines[0].b]
+        left = lines[1:]
+        while left:
+            nxt = next((l for l in left if order[-1] in (l.a, l.b)), None)
+            if nxt is None:
+                raise ValueError("Offset needs lines that form one closed chain")
+            left.remove(nxt)
+            order.append(nxt.b if nxt.a == order[-1] else nxt.a)
+        if order[-1] != order[0]:
+            raise ValueError("Offset needs a closed chain")
+        return order[:-1]
+
+    def _chain_lines(self, chain):
+        out = []
+        for i in range(len(chain)):
+            a, b = chain[i], chain[(i + 1) % len(chain)]
+            out.append(next(l.id for l in self.lines.values() if {l.a, l.b} == {a, b}))
+        return out
+
     def constrain(self, type: str, *refs: str, value: float | None = None) -> str:
         if type not in CONSTRAINT_TYPES:
             raise ValueError(f"Unknown constraint {type!r}")
@@ -488,6 +696,30 @@ class Sketch:
     @classmethod
     def load(cls, path: str | Path) -> "Sketch":
         return cls.loads(Path(path).read_text())
+
+
+def _intersect(p1, p2, p3, p4, segment: bool = False):
+    """Intersection of lines p1-p2 and p3-p4 (within both segments when segment=True)."""
+    d = (p2[0] - p1[0]) * (p4[1] - p3[1]) - (p2[1] - p1[1]) * (p4[0] - p3[0])
+    if abs(d) < 1e-12:
+        return None
+    t = ((p3[0] - p1[0]) * (p4[1] - p3[1]) - (p3[1] - p1[1]) * (p4[0] - p3[0])) / d
+    u = ((p3[0] - p1[0]) * (p2[1] - p1[1]) - (p3[1] - p1[1]) * (p2[0] - p1[0])) / d
+    if segment and not (-1e-9 <= t <= 1 + 1e-9 and -1e-9 <= u <= 1 + 1e-9):
+        return None
+    return p1[0] + (p2[0] - p1[0]) * t, p1[1] + (p2[1] - p1[1]) * t
+
+
+def _line_circle(a, b, c, r):
+    """Parameters t (0..1 on a-b) where the segment crosses the circle."""
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    fx, fy = a[0] - c[0], a[1] - c[1]
+    A, B, C = dx * dx + dy * dy, 2 * (fx * dx + fy * dy), fx * fx + fy * fy - r * r
+    disc = B * B - 4 * A * C
+    if disc < 0 or A == 0:
+        return []
+    s = math.sqrt(disc)
+    return [t for t in ((-B - s) / (2 * A), (-B + s) / (2 * A)) if 0 <= t <= 1]
 
 
 def _is_number(s: str) -> bool:

@@ -120,7 +120,10 @@ class SketchView(QGraphicsView):
                           "rectangle": "Rectangle: click two corners.",
                           "circle": "Circle: click the centre, then a point on it.",
                           "arc": "Arc: click the centre, the start, then the end (counter-clockwise).",
-                          "point": "Point: click to place."}.get(tool, tool))
+                          "point": "Point: click to place.",
+                          "polygon": "Polygon: click the centre, then a corner.",
+                          "slot": "Slot: click both centre points, then the width.",
+                          "trim": "Trim: click the piece of a line to remove."}.get(tool, tool))
         self.draw()
 
     def mousePressEvent(self, ev):
@@ -169,6 +172,34 @@ class SketchView(QGraphicsView):
                 c = s.points[self.pending[0]]
                 s.circle(self.pending[0], max(0.1, round(math.hypot(pos.x() - c.x, pos.y() - c.y), 3)))
                 self.pending = []
+                self.commit()
+        elif self.tool == "polygon":
+            if not self.pending:
+                self.pending = [(pos.x(), pos.y())]
+            else:
+                (cx, cy), r = self.pending[0], math.hypot(pos.x() - self.pending[0][0], pos.y() - self.pending[0][1])
+                sides, ok = (self._sides, True) if hasattr(self, "_sides") else \
+                    QInputDialog.getInt(self, "Polygon", "Sides", 6, 3, 64)
+                self.pending = []
+                if ok and r > 0.1:
+                    s.polygon(round(cx, 3), round(cy, 3), round(r, 3), sides)
+                    self.commit()
+        elif self.tool == "slot":
+            self.pending.append((pos.x(), pos.y()))
+            if len(self.pending) == 3:
+                (x0, y0), (x1, y1), (wx, wy) = self.pending
+                self.pending = []
+                L = math.hypot(x1 - x0, y1 - y0)
+                if L > 0.1:
+                    width = 2 * abs((x1 - x0) * (wy - y0) - (y1 - y0) * (wx - x0)) / L
+                    s.slot(x0, y0, x1, y1, max(0.2, round(width, 3)))
+                    self.commit()
+            self.draw()
+        elif self.tool == "trim":
+            hit = self.at(pos)
+            if hit in s.lines:
+                s.trim(hit, pos.x(), pos.y())
+                self.selected = []
                 self.commit()
         elif self.tool == "arc":
             self.pending.append(self.point_at(pos))
@@ -303,6 +334,52 @@ class SketchView(QGraphicsView):
             if not ok:
                 return False
         s.constrain(kind, *refs, value=value)
+        self.commit()
+        return True
+
+    def fillet_selected(self, radius: float | None = None) -> bool:
+        pts = [e for e in self.selected if self.kind(e) == "point"]
+        if len(pts) != 1:
+            self.status.emit("Fillet: select the corner point where two lines meet.")
+            return False
+        if radius is None:
+            radius, ok = QInputDialog.getDouble(self, "Fillet", "Radius (mm)", 3.0, 0.01, 1e5, 3)
+            if not ok:
+                return False
+        try:
+            self.sketch.fillet(pts[0], radius)
+        except ValueError as e:
+            self.status.emit(str(e))
+            return False
+        self.selected = []
+        self.commit()
+        return True
+
+    def offset_selected(self, distance: float | None = None) -> bool:
+        lines = [e for e in self.selected if self.kind(e) == "line"]
+        if len(lines) < 3:
+            self.status.emit("Offset: select all lines of one closed shape.")
+            return False
+        if distance is None:
+            distance, ok = QInputDialog.getDouble(self, "Offset", "Distance (mm, negative = inwards)", 2.0, -1e5, 1e5, 3)
+            if not ok:
+                return False
+        try:
+            new = self.sketch.offset_lines(lines, distance)
+        except ValueError as e:
+            self.status.emit(str(e))
+            return False
+        self.selected = new
+        self.commit()
+        return True
+
+    def mirror_selected(self) -> bool:
+        """Mirror the selection across the last selected line."""
+        if len(self.selected) < 2 or self.kind(self.selected[-1]) != "line":
+            self.status.emit("Mirror: select what to mirror, then the mirror line last.")
+            return False
+        *items, axis = self.selected
+        self.selected = self.sketch.mirror(items, axis)
         self.commit()
         return True
 

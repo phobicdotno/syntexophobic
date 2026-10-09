@@ -188,13 +188,21 @@ def sketch_toolbar(view, on_finish) -> QWidget:
     for tb in (tools, cons):
         tb.setMovable(False)
     for key, text in (("select", "Select"), ("line", "Line"), ("rectangle", "Rectangle"),
-                      ("circle", "Circle"), ("arc", "Arc"), ("point", "Point")):
+                      ("circle", "Circle"), ("arc", "Arc"), ("polygon", "Polygon"), ("slot", "Slot"),
+                      ("point", "Point"), ("trim", "Trim")):
         a = tools.addAction(text)
         a.setCheckable(True)
         a.setChecked(key == "select")
         a.setData(key)
         a.triggered.connect(lambda _=False, k=key: (view.set_tool(k),
                             [x.setChecked(x.data() == k) for x in tools.actions() if x.isCheckable()]))
+    tools.addSeparator()
+    for text, slot, tip in (("Fillet", view.fillet_selected, "Round the selected corner point"),
+                            ("Offset", view.offset_selected, "Parallel copy of the selected closed shape"),
+                            ("Mirror", view.mirror_selected, "Mirror the selection across the last selected line")):
+        a = tools.addAction(text)
+        a.setToolTip(tip)
+        a.triggered.connect(lambda _=False, f=slot: f())
     tools.addSeparator()
     a = tools.addAction("Dimension")
     a.setToolTip("Length, distance, diameter or angle of the selection")

@@ -99,3 +99,72 @@ def test_text_round_trip_and_delete():
     back.delete(back.lines[ls[0]].a)                         # deleting a corner removes its lines
     assert len(back.lines) == 2 and len(back.constraints) < n
     assert back.point(1, 1) not in sk.points or True
+
+
+def _volume(sk, h=10.0):
+    from OCP.BRepGProp import BRepGProp
+    from OCP.GProp import GProp_GProps
+    from syntexophobic.model import Feature, Part
+    props = GProp_GProps()
+    BRepGProp.VolumeProperties_s(Part("t", [Feature("extrude", sketch="s", distance=h)], {"s": sk}).build(), props)
+    return props.Mass()
+
+
+def test_fillet_corner_builds_rounded_solid():
+    sk = Sketch()
+    ls = sk.rectangle(0, 0, 40, 30)
+    corner = sk.lines[ls[0]].b                  # (40, 0)
+    arc = sk.fillet(corner, 6)
+    r = sk.solve()
+    assert r.ok, r
+    assert abs(sk.arcs[arc].r - 6) < 1e-7 and corner not in sk.points
+    assert abs(_volume(sk) - (40 * 30 - (36 - math.pi * 9)) * 10) < 1e-2
+
+
+def test_polygon_and_slot_areas():
+    sk = Sketch()
+    sk.polygon(0, 0, 10, 6)
+    assert sk.solve().ok
+    assert abs(_volume(sk, 1) - 3 * math.sqrt(3) / 2 * 100) < 1e-3          # regular hexagon, R = 10
+    sl = Sketch()
+    sl.slot(0, 0, 30, 0, 8)
+    assert sl.solve().ok
+    assert abs(_volume(sl, 1) - (30 * 8 + math.pi * 16)) < 1e-2
+
+
+def test_offset_follows_the_original():
+    sk = Sketch()
+    ls = sk.rectangle(0, 0, 40, 20)
+    sk.constrain("fixed", sk.lines[ls[0]].a)
+    width = sk.constrain("distance", ls[0], value=40)
+    sk.constrain("distance", ls[1], value=20)
+    new = sk.offset_lines(ls, 5)
+    assert sk.solve().ok
+    lengths = sorted(round(math.dist(sk._xy(sk.lines[l].a), sk._xy(sk.lines[l].b)), 6) for l in new)
+    assert lengths == [30, 30, 50, 50]
+    next(k for k in sk.constraints if k.id == width).value = 60      # widen the original
+    assert sk.solve().ok
+    lengths = sorted(round(math.dist(sk._xy(sk.lines[l].a), sk._xy(sk.lines[l].b)), 6) for l in new)
+    assert lengths == [30, 30, 70, 70]
+
+
+def test_mirror_and_trim():
+    sk = Sketch()
+    axis = sk.line((0, -10), (0, 10), construction=True)
+    sk.constrain("vertical", axis)
+    ln = sk.line((2, 0), (8, 5))
+    c = sk.circle((6, -3), 1.5)
+    copies = sk.mirror([ln, c], axis)
+    assert sk.solve().ok
+    m = sk.lines[copies[0]]
+    assert sk._xy(m.a) == pytest.approx((-2, 0)) and sk._xy(m.b) == pytest.approx((-8, 5))
+    assert sk._xy(sk.circles[copies[1]].center) == pytest.approx((-6, -3))
+
+    t = Sketch()
+    long = t.line((0, 0), (30, 0))
+    t.line((10, -5), (10, 5))
+    t.line((20, -5), (20, 5))
+    kept = t.trim(long, 15, 0)                  # click between the two crossings
+    assert len(kept) == 2 and t.solve().ok
+    spans = sorted(sorted((t._xy(t.lines[k].a)[0], t._xy(t.lines[k].b)[0])) for k in kept)
+    assert spans == [pytest.approx([0, 10]), pytest.approx([20, 30])]
