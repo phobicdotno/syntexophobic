@@ -645,7 +645,7 @@ def test_engrave_follows_open_and_closed_lines(pocket_part, tmp_path):
     for m in tp.moves:
         x = m.x if m.x is not None else x
         y = m.y if m.y is not None else y
-        if m.kind == "feed" and x is not None and m.z is None:
+        if m.kind == "feed" and x is not None:
             assert on_marks(x, y), (x, y)
         if m.kind == "rapid" and m.z is not None and m.z > top and x is not None and on_marks(x, y) and x <= 15:
             lifts_on_l += 1
@@ -686,3 +686,45 @@ def test_rapid_check_knows_the_tool_shape(pocket_part, tmp_path):
         bad.vbit_k = math.tan(math.radians(30))
         hits = simulate.simulate(setup, [bad], res=0.1).rapid_hits
         assert hits and max(h[2] for h in hits) == pytest.approx(0.6, abs=0.05), (shape, hits[:2])
+
+
+
+def test_engrave_depth_counts_from_the_part_surface(pocket_part, tmp_path):
+    """With material above the part that roughing faces off first, engraving is still cut
+    below the part's own top face, not in the removed layer; a line on the pocket floor is
+    cut into the floor; a line crossing a step is cut at the height of its highest part
+    (following the step down a wall would cut the wall with the side of the V-bit)."""
+    import ezdxf
+    from syntexophobic import simulate
+    from syntexophobic.job import Operation, Tool
+    p = Project.create(tmp_path / "surf", pocket_part)
+    doc = ezdxf.new()
+    doc.header["$INSUNITS"] = 4
+    doc.modelspace().add_line((2, 20), (58, 20))       # across the rim, the pocket and the boss
+    doc.modelspace().add_line((19, 14), (23, 14))      # on the pocket floor, clear of its walls and the boss
+    doc.saveas(p.folder / "line.dxf")
+    sq = ezdxf.new()
+    sq.header["$INSUNITS"] = 4
+    sq.modelspace().add_lwpolyline([(3, 2), (9, 2), (9, 8), (3, 8)], close=True)   # on the rim
+    sq.saveas(p.folder / "square.dxf")
+    p.job.tools = [Tool(1, "6 mm flat", 6.0, 2, "flat"), Tool(2, "60° V-bit", 6.35, 1, "vbit", 60.0)]
+    p.job.stock.top_offset = 1.0
+    p.job.operations = [Operation(type="rough", tool=1, stepdown=3, bottom=15.0),   # face the 1 mm off
+                        Operation(type="engrave", tool=2, source="line.dxf", max_depth=0.5, stepdown=0.5),
+                        Operation(type="vcarve", tool=2, source="square.dxf", max_depth=1.0)]
+    p.save_job()
+    setup = p.setup()
+    part_top = setup.part.zmax
+    assert setup.stock.zmax == pytest.approx(part_top + 1.0)
+    floor = cam.surface_heights(setup, [21.0], [14.0])[0]
+    assert floor == pytest.approx(10.0, abs=1e-6)
+    tp = p.toolpaths()[1]
+    cuts = {round(z, 6) for k, x, y, z, f in tp.positions() if k == "feed" and x is not None}
+    assert cuts == {round(part_top - 0.5, 6), round(floor - 0.5, 6)}
+    res = simulate.simulate(setup, p.toolpaths(), res=0.1)
+    xs, ys = res.grid.centres()
+    cell = lambda x, y: res.stock[int(round((y - ys[0]) / 0.1)), int(round((x - xs[0]) / 0.1))]  # noqa: E731
+    assert cell(3, 20) == pytest.approx(part_top - 0.5, abs=0.02)      # into the part's top
+    assert cell(21, 14) == pytest.approx(floor - 0.5, abs=0.02)        # into the pocket floor
+    assert cell(6, 5) == pytest.approx(part_top - 1.0, abs=0.02)        # V-carve floor below the part top
+    assert res.gouge_cells == 0 and res.rapid_hits == []

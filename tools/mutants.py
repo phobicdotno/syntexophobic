@@ -53,6 +53,9 @@ MUTANTS = [
     ("engrave lines not joined end to end", "cam.py", "    tol = 1e-4\n    near =", "    tol = -1.0\n    near ="),
     ("rapid check lets shaped tools through stock", "simulate.py",
      "                        under = pz + math.sqrt(d2) / k", "                        under = pz + 1e9"),
+    ("engrave depth from the stock top", "cam.py",
+     "        surface = float(np.max(surface_heights(setup, xy[:, 0], xy[:, 1])))", "        surface = top"),
+    ("v-carve depth from the stock top", "cam.py", "        z = surface - depth\n", "        z = top - depth\n"),
     ("engrave open lines not reversed between passes", "cam.py",
      "            if not closed:\n                path = path[::-1]", "            if False:\n                path = path[::-1]"),
 ]
@@ -75,8 +78,10 @@ def run(name, filename, old, new):
 
 if __name__ == "__main__":
     picked = [m for m in MUTANTS if not sys.argv[1:] or any(a in m[0] for a in sys.argv[1:])]
-    results = [run(*m) for m in picked]
-    for name, verdict in results:
-        print(f"{verdict:10} {name}")
+    results = []
+    for m in picked:                                 # report each as it finishes
+        name, verdict = run(*m)
+        results.append((name, verdict))
+        print(f"{verdict:10} {name}", flush=True)
     # a mutant whose code pattern is gone checks nothing: that is a failure too
     sys.exit(0 if all(v == "caught" for _, v in results) else 1)

@@ -11,6 +11,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
+import numpy as np
 import pyclipper
 
 from . import geometry
@@ -191,6 +192,7 @@ class Setup:
             cache["slicer"] = geometry.MeshSlicer(shape)
             cache["holes"] = geometry.find_holes(shape)
         self.part = cache["part"]
+        self.cache = cache
         st, b = job.stock, self.part
         top = b.zmax + st.top_offset
         cx, cy = (b.xmin + b.xmax) / 2, (b.ymin + b.ymax) / 2
@@ -574,8 +576,12 @@ def _vcarve(setup: Setup, op: Operation) -> Toolpath:
     if tool.shape != "vbit":
         raise ValueError("V-carve needs a V-bit tool (shape = vbit)")
     k = math.tan(math.radians(tool.angle / 2))            # width per depth on each side
-    top = setup.stock.zmax
     region = vcarve_regions(setup, op)
+    # depth counts from the part's surface under the outlines (the stock above it may
+    # already be faced off); rapids stay above the stock
+    edge = np.asarray([p for loop in _to_mm(region) for p in loop], float)
+    surface = float(np.max(surface_heights(setup, edge[:, 0], edge[:, 1]))) if len(edge) else setup.stock.zmax
+    top = setup.stock.zmax
     step = 0.1                                             # mm between rings along the walls
     safe = top + setup.job.machine.safe_z
     tp = Toolpath(op, 2 * k * op.max_depth, tool_shape="vbit")
@@ -595,7 +601,7 @@ def _vcarve(setup: Setup, op: Operation) -> Toolpath:
                 continue
             break
         depth = min(d / k, op.max_depth)
-        z = top - depth
+        z = surface - depth
         for loop in _to_mm(rings):
             if len(loop) < 2:
                 continue
@@ -659,6 +665,19 @@ def engrave_paths(setup: Setup, op: Operation) -> list[list[tuple[float, float]]
     return ordered
 
 
+def surface_heights(setup: Setup, xs, ys) -> np.ndarray:
+    """Height of the part's top surface at each point (a point dropped onto its mesh); the
+    stock top where there is no part underneath."""
+    from .surface import MeshDropper
+    d = setup.cache.get("point_dropper") if hasattr(setup, "cache") else None
+    if d is None:
+        d = MeshDropper(setup.shape, 0.001, 0.01)
+        if hasattr(setup, "cache"):
+            setup.cache["point_dropper"] = d
+    z = d.drop(np.asarray(xs, float), np.asarray(ys, float), False, -1e9)
+    return np.where(z < -1e8, setup.stock.zmax, z)
+
+
 def engrave_region(setup: Setup, op: Operation):
     """The band an engraving cuts (clipper paths): the lines widened by the tool's cutting
     radius at full depth."""
@@ -673,27 +692,38 @@ def engrave_region(setup: Setup, op: Operation):
 
 
 def _engrave(setup: Setup, op: Operation) -> Toolpath:
-    """The tool's centre on the lines (no offset), down to max_depth below the stock top in
-    stepdown passes. Closed outlines are cut lap after lap; open lines go back and forth, so
-    the tool stays down between passes."""
+    """The tool's centre on the lines (no offset), max_depth below the highest part surface
+    under each line (the stock above may already be faced off; a line on a pocket floor is
+    cut into the floor), in stepdown passes. A line is cut at one height: following a step
+    down a wall would cut the wall with the side of the tool. Closed outlines are cut lap
+    after lap; open lines go back and forth, so the tool stays down between passes."""
     tool = setup.job.tool(op.tool)
     top = setup.stock.zmax
     n = max(1, math.ceil(op.max_depth / op.stepdown - 1e-9))
-    levels = [top - op.max_depth * (i + 1) / n for i in range(n)]
+    depths = [op.max_depth * (i + 1) / n for i in range(n)]
     safe = top + setup.job.machine.safe_z
-    tp = Toolpath(op, tool.diameter, levels=levels)
+    tp = Toolpath(op, tool.diameter)
     moves = tp.moves
     moves.append(Move("rapid", None, None, safe))
+    reference = []
     for chain in engrave_paths(setup, op):
         closed = math.dist(chain[0], chain[-1]) < 1e-4
+        xy = [chain[0]]                              # sample every 0.5 mm for the surface under it
+        for a, b in zip(chain, chain[1:]):
+            m = max(1, math.ceil(math.dist(a, b) / 0.5))
+            xy += [(a[0] + (b[0] - a[0]) * t / m, a[1] + (b[1] - a[1]) * t / m) for t in range(1, m + 1)]
+        xy = np.asarray(xy)
+        surface = float(np.max(surface_heights(setup, xy[:, 0], xy[:, 1])))
+        reference.append(surface)
         moves += [Move("rapid", None, None, top + 1.0), Move("rapid", chain[0][0], chain[0][1], None),
-                  Move("rapid", None, None, top + 0.5)]
+                  Move("rapid", None, None, max(top, surface) + 0.5)]
         path = chain
-        for z in levels:
-            moves.append(Move("feed", None, None, z, op.plunge))
+        for d in depths:
+            moves.append(Move("feed", None, None, surface - d, op.plunge))
             moves += [Move("feed", x, y, None, op.feed) for x, y in path[1:]]
             if not closed:
                 path = path[::-1]
+    tp.levels = [max(reference, default=top) - d for d in depths]
     moves.append(Move("rapid", None, None, safe))
     return tp
 

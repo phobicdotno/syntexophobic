@@ -16,6 +16,11 @@ every release, read from this file.
   open lines included (pieces that meet are joined, shortest travel between them), down to
   a depth in stepdown passes; open lines are cut back and forth without lifting. Like
   V-carving, the engraved band is expected in the simulation's gouge check.
+- Engraving and V-carving depth counts from the part's surface under the lines (a point
+  dropped on its mesh), not from the stock top: with material above the part, roughing
+  faced it off first and a 0.3 mm engraving was cut entirely in the removed layer. A line
+  on a pocket floor is cut into the floor; a line crossing a step is cut at its highest
+  surface (following it down a wall would cut the wall with the side of the V-bit).
 
 **Sketch**
 - Single-line text (sketch Text tool, MCP `stroke_text`): Hershey lettering in nine styles
@@ -37,7 +42,7 @@ every release, read from this file.
 - Import: an STL as a body, a STEP cutting it, the saved project rebuilt and machined.
 - Single-line text: cap height, every stroke engraved exactly once.
 - Engrave: on the lines, depth, no lifts on open lines, only the band cut; rapids with
-  V-bits and ball ends. Four new mutants (23 in all); `tools/mutants.py <words>` runs
+  V-bits and ball ends; depth from the part surface with a faced-off top. Six new mutants (25 in all); `tools/mutants.py <words>` runs
   only the matching ones.
 
 ## v0.5.1 (build 6) — 2026-10-09
