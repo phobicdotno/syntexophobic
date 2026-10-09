@@ -21,6 +21,22 @@ every release, read from this file.
   first feature of a design, an Import copied into `imports/`, so sketches, cuts, holes
   and fillets can be added to it. The job and history stay.
 
+**Updates**
+- An *Update available* bar above the view when GitHub has a newer release: what changed
+  (*What's new* shows the release notes), *Update*, *Skip this version*, or ✕ until the next
+  start. In the AppImage, *Update* downloads the new AppImage next to the running one and
+  points `~/Applications/Syntexophobic.AppImage` at it, then *Restart now*; the old file is
+  kept. Only what changed is downloaded: the release carries a block index
+  (`<AppImage>.blocks`, written by `tools/build-appimage.sh`), the updater finds every block
+  the running AppImage already has, even where it moved, and fetches the rest with range
+  requests (0.5.1 to 0.6.0: 1.9 MB instead of 314 MB). The result is checked against the
+  release's SHA-256; without an index, or if anything does not match, it downloads the
+  whole file. Otherwise it shows the command that updates (`uv tool upgrade`, or `git pull`
+  in a clone). Checked at start and every 6 hours (Help → *Check for updates at start*), or
+  with Help → *Check for updates…*. The repository is private, so it asks with your GitHub
+  login (`GH_TOKEN`/`GITHUB_TOKEN`, `gh auth login`, or the token git stores for
+  github.com); without one it stays quiet.
+
 **Install**
 - The program icon shows in the dock, the window switcher and the app grid. GNOME takes a
   window's icon only from a menu entry that matches it, so the AppImage now adds its own
@@ -30,6 +46,10 @@ every release, read from this file.
   syntexophobic / Syntexophobic, and the .AppImage file carries an icon for file managers.
 
 **Testing**
+- Updates: version order, drafts and pre-releases left out, no access, a cut download, the
+  link moved to the new AppImage, the bar's skip / hide / installed states; delta updates
+  rebuild the new file byte for byte from moved blocks, and a bad block falls back to the
+  whole download.
 - A STEP project turned into a design: same part and job, then a sketch cut through it.
 
 ## v0.6.1 (build 8) — 2026-10-09
@@ -72,17 +92,6 @@ every release, read from this file.
   end out of its slot is no longer reported as a rapid into stock (a full-diameter flat
   cylinder "hit" the groove walls); moving sideways at depth still is.
 
-**Updates**
-- An *Update available* bar above the view when GitHub has a newer release: what changed
-  (*What's new* shows the release notes), *Update*, *Skip this version*, or ✕ until the next
-  start. In the AppImage, *Update* downloads the new AppImage next to the running one and
-  points `~/Applications/Syntexophobic.AppImage` at it, then *Restart now*; the old file is
-  kept. Otherwise it shows the command that updates (`uv tool upgrade`, or `git pull` in a
-  clone). Checked at start and every 6 hours (Help → *Check for updates at start*), or with
-  Help → *Check for updates…*. The repository is private, so it asks with your GitHub login
-  (`GH_TOKEN`/`GITHUB_TOKEN`, `gh auth login`, or the token git stores for github.com);
-  without one it stays quiet.
-
 **Interface**
 - Playback draws the cutter in its own shape: flat, ball end, or a V-bit's cone.
 
@@ -90,8 +99,6 @@ every release, read from this file.
 - Exporting a design as STEP no longer prints OpenCascade's transfer statistics.
 
 **Testing**
-- Updates: version order, drafts and pre-releases left out, no access, a cut download, the
-  link moved to the new AppImage, the bar's skip / hide / installed states.
 - Import: an STL as a body, a STEP cutting it, the saved project rebuilt and machined.
 - Single-line text: cap height, every stroke engraved exactly once.
 - Engrave: on the lines, depth, no lifts on open lines, only the band cut; rapids with

@@ -67,4 +67,7 @@ DESK
 
 OUT="dist/Syntexophobic-$VERSION-x86_64.AppImage"
 ARCH=x86_64 "$TOOL" --appimage-extract-and-run --comp zstd "$APPDIR" "$OUT" >/dev/null
-echo "$OUT ($(du -h "$OUT" | cut -f1))"
+# block index for delta updates: attach it to the release next to the AppImage, and the
+# updater downloads only what changed (see src/syntexophobic/delta.py)
+NUMBA_CACHE_DIR=build/numba "$APPDIR/usr/python/bin/python3" -m syntexophobic.delta "$OUT" >/dev/null
+echo "$OUT ($(du -h "$OUT" | cut -f1)) + $OUT.blocks"

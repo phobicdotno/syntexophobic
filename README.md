@@ -24,7 +24,9 @@ Build it from a clone with `./tools/build-appimage.sh` (writes `dist/`).
 
 **Updates:** when a newer release is on GitHub, a bar above the view says so, with what's new.
 In the AppImage, *Update* downloads the new one next to it and points
-`~/Applications/Syntexophobic.AppImage` (the link a menu entry should start) at it. The
+`~/Applications/Syntexophobic.AppImage` (the link a menu entry should start) at it. It
+downloads only what changed when the release also has the `.AppImage.blocks` file that
+`./tools/build-appimage.sh` writes next to the AppImage (attach both). The
 repository is private, so the check uses your GitHub login: `gh auth login`, `GH_TOKEN`, or
 the token git keeps for github.com. Without one it stays quiet; Help → *Check for updates…*
 says why.
