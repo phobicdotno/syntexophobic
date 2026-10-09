@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .cam import Toolpath
+from .cam import Move, Toolpath
 from .job import Job
 
 
@@ -20,6 +20,46 @@ POSTS = {
     # Any other GRBL 1.1 machine: M0 pause for a manual change, then re-zero Z by hand.
     "grbl": {"tool_change": "M0", "safe_retract": False, "header": "G21 G90 G17 G94", "end": "M30"},
 }
+
+
+def _with_arcs(moves):
+    """Moves with runs of flat feed moves (same Z and feed) replaced by fitted arcs."""
+    from .arcs import fit
+    out, run = [], []
+    x = y = z = None
+
+    def flush():
+        nonlocal run
+        if len(run) >= 4:
+            pts = [p for p, _ in run]
+            f = run[-1][1]
+            start = pts[0]
+            for piece in fit(pts):
+                if piece[0] == "line":
+                    out.append(Move("feed", piece[1][0], piece[1][1], None, f))
+                    start = piece[1]
+                else:
+                    out.append(("arc", start, piece[1], piece[2], piece[3], f))
+                    start = piece[1]
+        else:
+            out.extend(Move("feed", p[0], p[1], None, f) for p, f in run[1:])
+        run = []
+
+    for m in moves:
+        nx = x if m.x is None else m.x
+        ny = y if m.y is None else m.y
+        nz = z if m.z is None else m.z
+        flat_feed = m.kind == "feed" and m.z is None or (m.kind == "feed" and m.z == z)
+        if flat_feed and x is not None and (not run or run[-1][1] == m.f):
+            if not run:
+                run = [((x, y), m.f)]
+            run.append(((nx, ny), m.f))
+        else:
+            flush()
+            out.append(m)
+        x, y, z = nx, ny, nz
+    flush()
+    return out
 
 
 def grbl(job: Job, toolpaths: list[Toolpath], stock) -> str:
@@ -65,7 +105,17 @@ def grbl(job: Job, toolpaths: list[Toolpath], stock) -> str:
         shape = f"vbit {_num(tool.angle)}" if tool.shape == "vbit" else tool.shape
         out.append(f"({tp.op.name}: T{tool.id} {tool.name}, D{_num(tool.diameter)}, {shape})")
         last = {"X": None, "Y": None, "Z": None, "F": None}
-        for m in tp.moves:
+        moves = _with_arcs(tp.moves) if job.machine.arcs else tp.moves
+        for m in moves:
+            if isinstance(m, tuple):                      # ("arc", start, end, centre, ccw, f)
+                _, (sx, sy), (ex, ey), (cx, cy), ccw, f = m
+                words = [f"X{_num(ex - ox)}", f"Y{_num(ey - oy)}", f"I{_num(cx - sx)}", f"J{_num(cy - sy)}"]
+                if f is not None and _num(f) != last["F"]:
+                    last["F"] = _num(f)
+                    words.append("F" + last["F"])
+                out.append(("G3 " if ccw else "G2 ") + " ".join(words))
+                last["X"], last["Y"] = _num(ex - ox), _num(ey - oy)
+                continue
             words = []
             for axis, v, o in (("X", m.x, ox), ("Y", m.y, oy), ("Z", m.z, oz)):
                 if v is not None:
@@ -107,6 +157,7 @@ def read(text: str, job: Job, stock) -> list[Toolpath]:
     header = re.compile(r"^\((.+): T(\d+) .*, D([\d.]+)(?:, (flat|ball|vbit)(?: ([\d.]+))?)?\)$")
     paths: list[Toolpath] = []
     motion, feed = "G0", None
+    here = [0.0, 0.0, 0.0]                       # tool position in model coordinates
     for raw in text.splitlines():
         line = raw.strip()
         m = header.match(line)
@@ -121,20 +172,44 @@ def read(text: str, job: Job, stock) -> list[Toolpath]:
         line = re.sub(r"\(.*?\)", "", line).strip()
         if not line or not paths:
             continue
-        parts = [w for w in line.split() if len(w) > 1 and w[0] in "GXYZF"]
+        parts = [w for w in line.split() if len(w) > 1 and w[0] in "GXYZFIJ"]
         gcodes = [float(w[1:]) for w in parts if w[0] == "G"]
         words = {w[0]: float(w[1:]) for w in parts if w[0] != "G"}
         if 53 in gcodes:
             # machine-coordinate retract (G53 G0 Z-5): somewhere above everything
-            paths[-1].moves.append(Move("rapid", None, None, stock.zmax + 100.0)) if paths else None
+            if paths:
+                paths[-1].moves.append(Move("rapid", None, None, stock.zmax + 100.0))
+            here[2] = stock.zmax + 100.0
             continue
         for g in gcodes:
-            if g in (0, 1):
-                motion = "G0" if g == 0 else "G1"
+            if g in (0, 1, 2, 3):
+                motion = {0: "G0", 1: "G1", 2: "G2", 3: "G3"}[g]
         if "F" in words:
             feed = words["F"]
         if not any(a in words for a in "XYZ"):
             continue
+        if motion in ("G2", "G3"):
+            # expand the arc into short moves (about 0.1 mm or 3° apart)
+            import math
+            sx, sy = here[0], here[1]
+            ex = words["X"] + ox if "X" in words else sx
+            ey = words["Y"] + oy if "Y" in words else sy
+            cx, cy = sx + words.get("I", 0.0), sy + words.get("J", 0.0)
+            r = math.dist((sx, sy), (cx, cy))
+            a0 = math.atan2(sy - cy, sx - cx)
+            a1 = math.atan2(ey - cy, ex - cx)
+            sweep = (a1 - a0) % (2 * math.pi) if motion == "G3" else -((a0 - a1) % (2 * math.pi))
+            if abs(sweep) < 1e-12:
+                sweep = 2 * math.pi if motion == "G3" else -2 * math.pi
+            n = max(2, int(abs(sweep) * r / 0.1), int(abs(sweep) / math.radians(3)))
+            for k in range(1, n + 1):
+                a = a0 + sweep * k / n
+                paths[-1].moves.append(Move("feed", cx + r * math.cos(a), cy + r * math.sin(a), None, feed))
+            here[0], here[1] = ex, ey
+            continue
+        for k, axis, o in ((0, "X", ox), (1, "Y", oy), (2, "Z", oz)):
+            if axis in words:
+                here[k] = words[axis] + o
         paths[-1].moves.append(Move(
             "rapid" if motion == "G0" else "feed",
             words["X"] + ox if "X" in words else None,

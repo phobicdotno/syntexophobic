@@ -42,6 +42,7 @@ MUTANTS = [
      "    if (area > 0) != ccw:\n        wire = TopoDS.Wire(wire.Reversed())",
      "    if not ccw:\n        wire = TopoDS.Wire(wire.Reversed())"),
     ("adaptive leftovers not cleaned up", "cam.py", "        if left.any():\n            leftover", "        if False:\n            leftover"),
+    ("arc direction swapped (G2/G3)", "gcode.py", 'out.append(("G3 " if ccw else "G2 ")', 'out.append(("G2 " if ccw else "G3 ")'),
     ("first tool change skipped (no M6 T1)", "gcode.py", '            if post["tool_change"] == "M6":', '            if post["tool_change"] == "M6" and current_tool is not None:'),
 ]
 

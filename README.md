@@ -117,7 +117,8 @@ default).
 
 ### G-code
 
-Two posts, both mm and absolute, with only `G0`/`G1` moves:
+Two posts, both mm and absolute, with `G0`/`G1` moves and `G2`/`G3` arcs where a run of
+short moves fits one within 5 µm (turn arcs off with `arcs = false`):
 
 | Post | For | Tool change | Safe retract | End |
 |---|---|---|---|---|

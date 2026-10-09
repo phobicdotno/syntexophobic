@@ -227,12 +227,14 @@ def test_gcode_round_trip_simulates_clean(tmp_path):
                         Operation(type="finish", name="Finish", tool=1, bottom=4.0, leave=0.0, stepdown=4.0),
                         Operation(type="drill", name="Drill", tool=2, stepdown=3.0)]
     tps = p.toolpaths()
+    p.job.machine.arcs = False                      # straight moves: compare one to one
     text = p.gcode(tps)
     assert [l for l in text.splitlines() if l.startswith("M6")] == ["M6 T1", "M6 T2"]   # first tool too
     assert text.count("G53 G0 Z-5") == 3 and text.rstrip().endswith("M2") and "G94" not in text
     p.job.machine.post = "grbl"
     plain = p.gcode(tps)
     assert plain.count("M0") == 1 and "M6" not in plain and "G53" not in plain
+    p.job.machine.post = "carbide"
     back = gcode.read(text, p.job, p.setup().stock)
     assert [t.op.name for t in back] == ["Rough", "Finish", "Drill"]
     def cutting(tp):
@@ -507,3 +509,38 @@ def test_adaptive_leftovers_are_always_cleared(tmp_path, monkeypatch):
     # the pocket (20..80 x 15..55, floor Z 12) away from its walls and the two bosses
     middle = (X > 26) & (X < 74) & (Y > 21) & (Y < 49) & (np.hypot(X - 38, Y - 35) > 12) & (np.hypot(X - 62, Y - 35) > 12)
     assert res.stock[middle].max() <= 12.0 + 1e-6
+
+
+
+def test_arc_output_machines_the_same_part(tmp_path):
+    """G2/G3 output: far fewer lines, and read back it cuts the same stock (within 0.02)."""
+    import numpy as np
+    from syntexophobic import gcode, simulate
+    from syntexophobic.job import Operation, Tool
+    p = Project.create(tmp_path / "arcs", DEMO)
+    p.job.tools = [Tool(1, "6 mm endmill", 6.0)]
+    p.job.operations = [Operation(type="rough", name="Rough", tool=1, bottom=4.0),
+                        Operation(type="finish", name="Finish", tool=1, bottom=4.0, leave=0.0, stepdown=4.0)]
+    tps = p.toolpaths()
+    p.job.machine.arcs = False
+    lines_plain = p.gcode(tps).count("\n")
+    p.job.machine.arcs = True
+    text = p.gcode(tps)
+    assert text.count("G2 ") + text.count("G3 ") > 50
+    assert text.count("\n") < 0.6 * lines_plain
+    # every arc, expanded, stays within 6 µm of the toolpath it replaces
+    back = gcode.read(text, p.job, p.setup().stock)
+    for orig, read in zip(tps, back):
+        O = np.array([(x, y) for k, x, y, z, f in orig.positions() if k == "feed"])
+        A, B = O[:-1], O[1:]
+        d = B - A
+        L2 = np.maximum((d * d).sum(1), 1e-12)
+        pts = np.array([(x, y) for k, x, y, z, f in read.positions() if k == "feed"])
+        for q in pts[:: max(1, len(pts) // 4000)]:
+            t = np.clip(((q - A) * d).sum(1) / L2, 0, 1)
+            assert np.sqrt((((A + d * t[:, None]) - q) ** 2).sum(1)).min() < 0.006
+    direct = simulate.simulate(p.setup(), tps, res=0.2)
+    replayed = simulate.simulate(p.setup(), back, res=0.2)
+    assert replayed.gouge_cells == 0 and replayed.rapid_hits == []
+    # cells right at a wall can flip between cut and uncut over a few µm: allow a handful
+    assert (np.abs(direct.stock - replayed.stock) > 0.02).mean() < 0.001

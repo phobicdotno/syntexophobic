@@ -36,6 +36,7 @@ class Machine:
     rpm: int = 18000
     safe_z: float = 5.0       # rapid height above the stock top
     rapid_rate: float = 5000.0   # mm/min, for time estimates
+    arcs: bool = True         # write runs of short moves as G2/G3 arcs (within 5 µm)
     zero: str = "stock"       # "stock": X0 Y0 front-left corner, Z0 top. "model": CAD origin
 
 
