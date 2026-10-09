@@ -37,19 +37,23 @@ A part is a list of features in `model.toml`, built top to bottom:
 |---|---|
 | **Extrude** | distance, symmetric, new / join / cut / intersect, linear or circular pattern |
 | **Revolve** | axis line from the sketch, angle, same operations and patterns |
+| **Loft** | through two or more sketch profiles, bottom to top |
+| **Sweep** | a profile along a path sketch of lines and arcs |
 | **Fillet**, **Chamfer** | radius or distance, edge selector |
 | **Shell** | wall thickness, faces to open |
 | **Mirror** | YZ, XZ or XY plane |
 
-Edges and faces are picked with short selectors that survive design changes: `|Z`
-(vertical edges), `#Z` (horizontal), `>Z` / `<Z` (top / bottom face), `%LINE`, `%CIRCLE`,
-and `A&B` for both.
+Edges and faces are picked by clicking them in the 3D view (stored as `@x,y,z` and found
+again after a rebuild), or with short selectors: `|Z` (vertical edges), `#Z` (horizontal),
+`>Z` / `<Z` (top / bottom face), `%LINE`, `%CIRCLE`, and `A&B` for both. Click a flat face
+and press *Sketch on face* to draw on it.
 
 ### Sketch
 
 ![Sketch editor: fully constrained base sketch, the hole selected](docs/screenshots/sketch.png)
 
-Lines, rectangles, circles, arcs and points on the XY, XZ or YZ plane (with an offset).
+Lines, rectangles, circles, arcs, polygons, slots and points on the XY, XZ or YZ plane
+(with an offset). Corner fillet, offset, mirror and trim work on existing geometry.
 Clicking near a point reuses it. Constraints: coincident, horizontal, vertical, parallel,
 perpendicular, equal, tangent, concentric, midpoint, point on line/circle, fixed,
 symmetric, plus dimensions for length, distance, diameter and angle. Geometry is blue while
@@ -118,8 +122,7 @@ Slicing and simulation run through a pluggable backend with a numpy-compatible A
 
 ## Not there yet
 
-Sketch trim/offset/fillet tools and splines, sketches on faces, sweep and loft, picking
-edges in the 3D view, adaptive clearing and 3D finishing. See
+Splines, sketches on slanted faces, adaptive clearing and 3D finishing. See
 [CHANGELOG.md](CHANGELOG.md) for what changed.
 
 Screenshots are made from `examples/demo-plate.step` and a small designed bracket by

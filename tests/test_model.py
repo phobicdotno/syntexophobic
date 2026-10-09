@@ -136,3 +136,30 @@ def test_picked_edges_and_faces_survive_a_rebuild():
     next(k for k in base.constraints if k.id == width).value = 60          # the edge moved far away
     with pytest.raises(ModelError, match="pick the edges again"):
         part.build(2)
+
+
+def test_loft_and_sweep_volumes():
+    bottom, top = Sketch(), Sketch(offset=10)
+    bottom.rectangle(-10, -10, 10, 10)
+    top.rectangle(-5, -5, 5, 5)
+    frustum = Part("Loft", [Feature("loft", sketch="b;t")], {"b": bottom, "t": top})
+    assert abs(volume(frustum.build()) - 10 / 3 * (400 + 100 + 200)) < 1e-2
+
+    prof = Sketch()
+    prof.circle((0, 0), 2)
+    straight = Sketch(plane="XZ")
+    straight.line((0, 0), (0, 30))
+    pipe = Part("Pipe", [Feature("sweep", sketch="p", path="s")], {"p": prof, "s": straight})
+    assert abs(volume(pipe.build()) - math.pi * 4 * 30) < 1e-2
+
+    bend = Sketch(plane="XZ")                       # quarter circle, radius 20, starting at the profile
+    bend.arc((20, 0), (20, 20), (0, 0))
+    elbow = Part("Elbow", [Feature("sweep", sketch="p", path="b")], {"p": prof, "b": bend})
+    assert abs(volume(elbow.build()) - math.pi * 4 * (math.pi / 2 * 20)) < 0.05   # Pappus
+
+    forked = Sketch(plane="XZ")
+    forked.line((0, 0), (0, 10))
+    forked.line((0, 10), (5, 15))
+    forked.line((0, 10), (-5, 15))
+    with pytest.raises(ModelError, match="one chain"):
+        Part("x", [Feature("sweep", sketch="p", path="f")], {"p": prof, "f": forked}).build()

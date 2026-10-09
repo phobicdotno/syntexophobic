@@ -17,6 +17,9 @@ All notable changes to Syntexophobic. The format follows
   join, cut or intersect; linear and circular patterns; fillet, chamfer, shell and mirror.
   Edges and faces are chosen with short selectors (`|Z`, `#Z`, `>Z`, `<Z`, `%CIRCLE`,
   `A&B`) that stay valid when the design changes. STEP export.
+- **Loft** through two or more sketch profiles (`sketch = "bottom;top"`) and **sweep** of a
+  profile along a path sketch (one chain of lines and arcs; the sweep starts at the end
+  the profile sits on). Both take new / join / cut / intersect.
 - Picking in the 3D view: model edges are drawn; clicking (without dragging) picks the
   edge or face under the cursor. With a fillet or chamfer selected, clicks add or remove
   its edges; with a shell, its open faces. Picks are stored as `@x,y,z` points in

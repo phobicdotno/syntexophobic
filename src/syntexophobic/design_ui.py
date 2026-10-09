@@ -18,12 +18,14 @@ FEATURE_CHOICES = {
 FEATURE_FIELDS = {
     "extrude": ["name", "sketch", "distance", "symmetric", "operation", "count", "spacing", "direction", "suppressed"],
     "revolve": ["name", "sketch", "axis", "angle", "operation", "count", "direction", "suppressed"],
+    "loft": ["name", "sketch", "operation", "suppressed"],
+    "sweep": ["name", "sketch", "path", "operation", "suppressed"],
     "fillet": ["name", "radius", "edges", "suppressed"],
     "chamfer": ["name", "radius", "edges", "suppressed"],
     "shell": ["name", "faces", "thickness", "suppressed"],
     "mirror": ["name", "plane", "suppressed"],
 }
-FEATURE_LABELS = {"radius": "Radius / distance", "edges": "Edges (|Z, >Z, %CIRCLE…)",
+FEATURE_LABELS = {"path": "Path sketch", "radius": "Radius / distance", "edges": "Edges (|Z, >Z, %CIRCLE…)",
                   "faces": "Open faces (>Z, <Z…)", "count": "Pattern count", "spacing": "Pattern spacing",
                   "direction": "Pattern direction", "axis": "Axis (line id)"}
 
@@ -54,7 +56,8 @@ class DesignPanel(QWidget):
         for i, (text, slot) in enumerate((
                 ("New sketch…", self.new_sketch), ("Sketch on face", self.sketch_on_face),
                 ("Extrude", lambda: self.add("extrude")),
-                ("Revolve", lambda: self.add("revolve")), ("Fillet", lambda: self.add("fillet")),
+                ("Revolve", lambda: self.add("revolve")), ("Loft", lambda: self.add("loft")),
+                ("Sweep", lambda: self.add("sweep")), ("Fillet", lambda: self.add("fillet")),
                 ("Chamfer", lambda: self.add("chamfer")), ("Shell", lambda: self.add("shell")),
                 ("Mirror", lambda: self.add("mirror")), ("Edit sketch", self.open_sketch),
                 ("Remove", self.remove), ("Up", lambda: self.move(-1)), ("Down", lambda: self.move(1)))):
@@ -84,7 +87,7 @@ class DesignPanel(QWidget):
         self.l_features.clear()
         for i, f in enumerate(self.part.features):
             text = f"{i + 1}. {f.name or f.type.capitalize()}  ·  {f.type}"
-            if f.type in ("extrude", "revolve"):
+            if f.type in ("extrude", "revolve", "loft", "sweep"):
                 text += f" {f.sketch}, {f.operation}"
             self.l_features.addItem(text + ("  (off)" if f.suppressed else ""))
         self.l_features.blockSignals(False)
@@ -96,8 +99,12 @@ class DesignPanel(QWidget):
         feats = self.part.features if self.part else []
         f = feats[row] if 0 <= row < len(feats) else None
         self.form.set(f, FEATURE_FIELDS.get(f.type) if f else None)
-        if f is not None and f.type in ("extrude", "revolve"):
-            self._sketch_combo(f)
+        if f is not None and f.type in ("extrude", "revolve", "sweep"):
+            self._sketch_combo(f, "Sketch", "sketch")
+        if f is not None and f.type == "sweep":
+            self._sketch_combo(f, "Path sketch", "path")
+        if f is not None and f.type == "loft":
+            self.status.emit("Loft: list the sketches bottom to top, separated by ; (e.g. sketch1;sketch2)")
         self.selection.emit(f)
 
     def current(self) -> Feature | None:
@@ -173,17 +180,17 @@ class DesignPanel(QWidget):
         self.changed.emit()
         self.edit_sketch.emit(name)
 
-    def _sketch_combo(self, f: Feature) -> None:
-        """Replace the free-text sketch field with a list of the part's sketches."""
+    def _sketch_combo(self, f: Feature, label: str, attr: str) -> None:
+        """Replace a free-text sketch field with a list of the part's sketches."""
         lay = self.form.layout_
         for i in range(lay.rowCount()):
-            if lay.itemAt(i, lay.ItemRole.LabelRole).widget().text() == "Sketch":
+            if lay.itemAt(i, lay.ItemRole.LabelRole).widget().text() == label:
                 combo = QComboBox()
                 combo.addItems(sorted(self.part.sketches))
-                combo.setCurrentText(f.sketch)
-                combo.currentTextChanged.connect(lambda t: (setattr(f, "sketch", t), self._edited()))
+                combo.setCurrentText(getattr(f, attr))
+                combo.currentTextChanged.connect(lambda t: (setattr(f, attr, t), self._edited()))
                 lay.removeRow(i)
-                lay.insertRow(i, "Sketch", combo)
+                lay.insertRow(i, label, combo)
                 break
 
     def _edited(self) -> None:
@@ -192,7 +199,7 @@ class DesignPanel(QWidget):
             f = self.part.features[row]
             item = self.l_features.item(row)
             text = f"{row + 1}. {f.name or f.type.capitalize()}  ·  {f.type}"
-            if f.type in ("extrude", "revolve"):
+            if f.type in ("extrude", "revolve", "loft", "sweep"):
                 text += f" {f.sketch}, {f.operation}"
             item.setText(text + ("  (off)" if f.suppressed else ""))
         self.changed.emit()
@@ -217,6 +224,15 @@ class DesignPanel(QWidget):
     def add(self, kind: str) -> None:
         sketches = sorted(self.part.sketches)
         f = Feature(kind, name=f"{kind.capitalize()} {sum(1 for x in self.part.features if x.type == kind) + 1}")
+        if kind in ("loft", "sweep"):
+            if len(sketches) < 2:
+                self.status.emit(f"{kind.capitalize()} needs two sketches: a profile and a "
+                                 + ("second profile" if kind == "loft" else "path"))
+                return
+            f.sketch = ";".join(sketches[-2:]) if kind == "loft" else sketches[-2]
+            if kind == "sweep":
+                f.path = sketches[-1]
+            f.operation = "new" if not self.part.features else "join"
         if kind in ("extrude", "revolve"):
             if not sketches:
                 self.status.emit("Make a sketch first: New sketch…")

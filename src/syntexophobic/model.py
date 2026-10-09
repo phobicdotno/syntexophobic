@@ -38,7 +38,7 @@ from OCP.GC import GC_MakeArcOfCircle
 from OCP.GeomAbs import GeomAbs_Circle, GeomAbs_Line, GeomAbs_Plane
 from OCP.STEPControl import STEPControl_AsIs, STEPControl_Writer
 from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE
-from OCP.TopExp import TopExp_Explorer
+from OCP.TopExp import TopExp, TopExp_Explorer
 from OCP.collections import List_TopoDS_Shape
 from OCP.TopoDS import TopoDS, TopoDS_Shape
 from OCP.gp import gp_Ax1, gp_Ax2, gp_Circ, gp_Dir, gp_Pln, gp_Pnt, gp_Trsf, gp_Vec
@@ -125,6 +125,20 @@ def _inside(pt, poly) -> bool:
         if (y1 > y) != (y2 > y) and x < x1 + (y - y1) * (x2 - x1) / (y2 - y1):
             hit = not hit
     return hit
+
+
+def _first_edge(wire):
+    from OCP.BRepTools import BRepTools_WireExplorer
+    return BRepTools_WireExplorer(wire).Current()
+
+
+def _last_edge(wire):
+    from OCP.BRepTools import BRepTools_WireExplorer
+    exp, last = BRepTools_WireExplorer(wire), None
+    while exp.More():
+        last = exp.Current()
+        exp.Next()
+    return last
 
 
 def sketch_faces(sk: Sketch) -> list:
@@ -275,7 +289,8 @@ def select_faces(shape, selector: str) -> list:
 class Feature:
     type: str
     name: str = ""
-    sketch: str = ""             # extrude / revolve
+    sketch: str = ""             # extrude / revolve / sweep profile; loft: "a;b;c" bottom to top
+    path: str = ""               # sweep: sketch holding one chain of lines and arcs
     distance: float = 10.0       # extrude: along the sketch normal (negative = other way)
     symmetric: bool = False      # extrude: half each side of the sketch plane
     operation: str = "new"       # new | join | cut | intersect
@@ -316,7 +331,62 @@ class Part:
             raise ModelError("The part has no features yet")
         return shape
 
+    def _solved(self, name: str) -> Sketch:
+        if name not in self.sketches:
+            raise ModelError(f"No sketch called {name!r}")
+        sk = self.sketches[name]
+        res = sk.solve()
+        if not res.ok:
+            raise ModelError(f"Sketch {name!r} has conflicting constraints: {', '.join(res.conflicting)}")
+        return sk
+
+    def _loft(self, f: Feature):
+        from OCP.BRepOffsetAPI import BRepOffsetAPI_ThruSections
+        from OCP.BRepTools import BRepTools
+        names = [n.strip() for n in f.sketch.split(";") if n.strip()]
+        if len(names) < 2:
+            raise ModelError("Loft needs two or more sketches: sketch = \"bottom;top\"")
+        loft = BRepOffsetAPI_ThruSections(True, False)
+        for n in names:
+            loft.AddWire(BRepTools.OuterWire_s(sketch_faces(self._solved(n))[0]))
+        loft.Build()
+        if not loft.IsDone():
+            raise ModelError("Loft failed: the profiles may twist or cross")
+        return loft.Shape()
+
+    def _sweep(self, f: Feature):
+        from OCP.BRepGProp import BRepGProp
+        from OCP.BRepOffsetAPI import BRepOffsetAPI_MakePipe
+        from OCP.GProp import GProp_GProps
+        profile = sketch_faces(self._solved(f.sketch))[0]
+        path_sk = self._solved(f.path)
+        try:
+            segs = path_sk.path_segments()
+        except ValueError as e:
+            raise ModelError(str(e)) from e
+        wire = BRepBuilderAPI_MakeWire()
+        for e in _edges(path_sk, segs):
+            wire.Add(e)
+        spine = wire.Wire()
+        # start the sweep at the end of the path the profile sits on
+        props = GProp_GProps()
+        BRepGProp.SurfaceProperties_s(profile, props)
+        c = props.CentreOfMass()
+        first = BRep_Tool.Pnt_s(TopExp.FirstVertex_s(_first_edge(spine), True))
+        last = BRep_Tool.Pnt_s(TopExp.LastVertex_s(_last_edge(spine), True))
+        if c.Distance(last) < c.Distance(first):
+            spine = TopoDS.Wire(spine.Reversed())
+        pipe = BRepOffsetAPI_MakePipe(spine, profile)
+        pipe.Build()
+        if not pipe.IsDone():
+            raise ModelError("Sweep failed: check the profile sits at one end of the path")
+        return pipe.Shape()
+
     def _tool_body(self, f: Feature):
+        if f.type == "loft":
+            return self._loft(f)
+        if f.type == "sweep":
+            return self._sweep(f)
         sk = self.sketches[f.sketch]
         res = sk.solve()
         if not res.ok:
@@ -358,7 +428,7 @@ class Part:
         return body
 
     def _apply(self, shape, f: Feature):
-        if f.type in ("extrude", "revolve"):
+        if f.type in ("extrude", "revolve", "loft", "sweep"):
             body = self._tool_body(f)
             if shape is None or f.operation == "new":
                 return body if shape is None else BRepAlgoAPI_Fuse(shape, body).Shape()

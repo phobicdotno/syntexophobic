@@ -647,6 +647,31 @@ class Sketch:
                 loops.append(loop)
         return loops
 
+    def path_segments(self) -> list[tuple]:
+        """The non-construction lines and arcs as one chain in order, for a sweep path.
+        Raises ValueError unless they form a single chain (open or closed)."""
+        segs = [(l.a, l.b, ("line", l.a, l.b)) for l in self.lines.values() if not l.construction]
+        segs += [(a.start, a.end, ("arc", a.id)) for a in self.arcs.values() if not a.construction]
+        if not segs:
+            raise ValueError(f"Sketch {self.name!r} has no lines or arcs for a path")
+        degree: dict[str, int] = {}
+        for a, b, _ in segs:
+            degree[a] = degree.get(a, 0) + 1
+            degree[b] = degree.get(b, 0) + 1
+        ends = [p for p, d in degree.items() if d == 1]
+        if any(d > 2 for d in degree.values()) or len(ends) not in (0, 2):
+            raise ValueError(f"Sketch {self.name!r} must be one chain of lines and arcs to be a path")
+        cur = ends[0] if ends else segs[0][0]
+        out, left = [], list(segs)
+        while left:
+            i = next((i for i, (a, b, _) in enumerate(left) if cur in (a, b)), None)
+            if i is None:
+                raise ValueError(f"Sketch {self.name!r} path is not connected")
+            a, b, seg = left.pop(i)
+            out.append(seg)
+            cur = b if a == cur else a
+        return out
+
     # ---- text form ----------------------------------------------------------------------
 
     def dumps(self) -> str:
