@@ -41,6 +41,7 @@ MUTANTS = [
     ("holes attached with a fixed reversal", "model.py",
      "    if (area > 0) != ccw:\n        wire = TopoDS.Wire(wire.Reversed())",
      "    if not ccw:\n        wire = TopoDS.Wire(wire.Reversed())"),
+    ("adaptive leftovers not cleaned up", "cam.py", "        if left.any():\n            leftover", "        if False:\n            leftover"),
     ("first tool change skipped (no M6 T1)", "gcode.py", '            if post["tool_change"] == "M6":', '            if post["tool_change"] == "M6" and current_tool is not None:'),
 ]
 

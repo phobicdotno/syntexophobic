@@ -105,6 +105,20 @@ def _outermost(paths):
     return [child.Contour for child in tree.Childs]
 
 
+def _cells_to_region(mask, x0: float, y0: float, res: float):
+    """Clipper region covering the True cells of a grid mask (cell centres at x0 + i·res)."""
+    import numpy as np
+    rows = []
+    for j in np.nonzero(mask.any(axis=1))[0]:
+        row = mask[j].astype(np.int8)
+        edges = np.flatnonzero(np.diff(np.concatenate([[0], row, [0]])))
+        for a, b in zip(edges[::2], edges[1::2]):            # runs of True cells
+            xa, xb = x0 + (a - 0.5) * res, x0 + (b - 0.5) * res
+            ya, yb = y0 + (j - 0.5) * res, y0 + (j + 0.5) * res
+            rows.append([(xa, ya), (xb, ya), (xb, yb), (xa, yb)])
+    return _boolean(_to_int(rows), [], pyclipper.CT_UNION) if rows else []
+
+
 def _segment_inside(region, a, b) -> bool:
     """Is the straight XY line a-b entirely inside the region (clipper paths)?"""
     if not region:
@@ -468,8 +482,8 @@ def _adaptive(setup: Setup, op: Operation) -> Toolpath:
         material = _boolean(setup.stock_rect(), _offset(forbidden, op.leave), pyclipper.CT_DIFFERENCE)
         # only what a disc on an allowed centre can reach; the wall pass takes the slivers
         material = _boolean(material, _offset(allowed, r - res), pyclipper.CT_INTERSECTION)
-        paths = adaptive.clear_level(_to_mm(allowed), _to_mm(material),
-                                     (s.xmin, s.ymin, s.xmax, s.ymax), r, op.stepover, res)
+        paths, left, (gx0, gy0, gres) = adaptive.clear_level(_to_mm(allowed), _to_mm(material),
+                                                             (s.xmin, s.ymin, s.xmax, s.ymax), r, op.stepover, res)
         inside = _offset(allowed, -res)               # a hair inside, for the hop test
         last = None
         for pts, helix in paths:
@@ -487,6 +501,23 @@ def _adaptive(setup: Setup, op: Operation) -> Toolpath:
                 moves.append(Move("feed", None, None, z, op.plunge))        # in the open
                 rest = pts[1:]
             moves += [Move("feed", x, y, None, op.feed) for x, y in rest]
+        # Whatever the steered walk left (it gives up on awkward spots) is cleared with
+        # ordinary offset rings, so every level is fully cut before the next one: later
+        # rapids and hops rely on that.
+        if left.any():
+            leftover = _cells_to_region(left, gx0, gy0, gres)
+            centres = _boolean(_offset(leftover, r), keep_out, pyclipper.CT_DIFFERENCE)
+            centres = _boolean(centres, allowed, pyclipper.CT_INTERSECTION)
+            while centres:
+                for loop in _to_mm(centres):
+                    if len(loop) < 2:
+                        continue
+                    pts = _ramp_and_lap(loop, clearance, z, op.ramp_angle)
+                    moves += [Move("rapid", None, None, travel), Move("rapid", pts[0][0], pts[0][1], None),
+                              Move("rapid", None, None, pts[0][2])]
+                    moves += [Move("feed", x, y, zz, op.feed) for x, y, zz in pts[1:]]
+                    last = pts[-1][:2]
+                centres = _offset(centres, -op.stepover * tool.diameter)
         # wall pass: the exact boundary, ramped like any other ring
         for loop in _to_mm(_boolean(setup.stock_rect(), keep_out, pyclipper.CT_DIFFERENCE)):
             if len(loop) < 2:

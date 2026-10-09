@@ -61,6 +61,10 @@ All notable changes to Syntexophobic. The format follows
   G-code comment and the reader.
 - **Text** in sketches (Text tool): any installed font, as closed outlines with the
   letters' holes, ready to extrude, cut or V-carve.
+- Adaptive clearing always finishes a level: whatever the steered walk leaves (it gives up
+  on awkward spots or at its path limit) is cleared with offset rings before the wall
+  pass. Found when a reordering experiment left material that later rapids hit; the
+  in-order rapid check caught it.
 - Roughing and adaptive stay low between passes when the hop stays inside this level's
   allowed area (lift to just above the previous level instead of over the top). Time
   estimates can include rapids (`rapid_rate`). The gain on the test enclosure is small

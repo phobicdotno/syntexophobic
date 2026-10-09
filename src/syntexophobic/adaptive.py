@@ -182,12 +182,16 @@ def rasterize(paths_mm, x0, y0, res, shape) -> np.ndarray:
     return mask
 
 
+MAX_PATHS = 500
+
+
 def clear_level(allowed_mm, material_mm, bbox, r: float, stepover: float, res: float | None = None):
     """Tool-centre paths (lists of (x, y) mm, plus 'helix' flag) that clear `material_mm`
     with the centre kept inside `allowed_mm`.
 
-    Returns [(points, helix)] where helix=True means the path starts with a helical entry
-    (the caller ramps down along its first circle).
+    Returns ([(points, helix)], remaining material mask, (x0, y0, res)). helix=True means
+    the path starts with a helical entry (the caller ramps down along its first circle).
+    The mask shows what the steered walk did not reach, for the caller to clean up.
     """
     D = 2 * r
     res = res or max(0.05, D / 40)
@@ -206,7 +210,7 @@ def clear_level(allowed_mm, material_mm, bbox, r: float, stepover: float, res: f
     stride = max(1, int(0.25 * D / res))
     paths = []
     to_mm = lambda pts: [(x0 + px * res, y0 + py * res) for px, py in pts]   # noqa: E731
-    for _ in range(500):
+    for _ in range(MAX_PATHS):
         if not M.any():
             break
         si, sj = _find_start(A, M, rc, target, stride)
@@ -241,4 +245,4 @@ def clear_level(allowed_mm, material_mm, bbox, r: float, stepover: float, res: f
             _clear(M, float(si), float(sj), rc + 2 * stride)
             continue
         paths.append((to_mm(out[:n]), helix))
-    return paths
+    return paths, M, (x0, y0, res)
