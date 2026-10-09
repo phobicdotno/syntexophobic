@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QSlider, QSplitter, QStackedWidget, QToolBar, QVBoxLayout, QWidget,
 )
 
-from . import geometry
+from . import desktop, geometry
 from .job import Operation, Tool
 from .project import Project
 
@@ -1330,11 +1330,15 @@ def _dark_palette(app: QApplication):
 def run(path: str | None = None) -> int:
     # VTK renders through X11; under Wayland, Qt must use XWayland for the GL view to embed.
     os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
+    # the window's WM_CLASS is (RESOURCE_NAME, application name): "syntexophobic", "Syntexophobic",
+    # matching the menu entry, where it would otherwise be "__main__.py"
+    os.environ.setdefault("RESOURCE_NAME", desktop.APP_ID)
     app = QApplication(sys.argv)
-    app.setApplicationName("Syntexophobic")
+    app.setApplicationName(desktop.WM_CLASS)
     app.setOrganizationName("phobic")
-    app.setDesktopFileName("syntexophobic")
-    app.setWindowIcon(QIcon(str(Path(__file__).with_name("assets") / "syntexophobic.svg")))
+    app.setDesktopFileName(desktop.APP_ID)
+    app.setWindowIcon(QIcon(str(desktop.SVG)))
+    desktop.integrate()                            # before the window, so the shell matches it at once
     _dark_palette(app)
     win = MainWindow()
     win.show()

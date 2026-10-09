@@ -16,6 +16,14 @@ every release, read from this file.
 **Interface**
 - View → *Full screen* (F11).
 
+**Install**
+- The program icon shows in the dock, the window switcher and the app grid. GNOME takes a
+  window's icon only from a menu entry that matches it, so the AppImage now adds its own
+  entry and icon to ~/.local/share/applications and ~/.local/share/icons when it starts
+  (updated when the AppImage moves; an entry you wrote yourself is left alone; set
+  SYNTEXOPHOBIC_NO_DESKTOP_ENTRY=1 to skip it). The window's class is now
+  syntexophobic / Syntexophobic, and the .AppImage file carries an icon for file managers.
+
 ## v0.6.1 (build 8) — 2026-10-09
 
 **Fixes**

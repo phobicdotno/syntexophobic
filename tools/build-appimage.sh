@@ -49,6 +49,10 @@ exec "$HERE/usr/python/bin/python3" -m syntexophobic "$@"
 RUN
 chmod +x "$APPDIR/AppRun"
 cp src/syntexophobic/assets/syntexophobic.svg "$APPDIR/syntexophobic.svg"
+# .DirIcon: the icon file managers and AppImage launchers show for the .AppImage file itself
+QT_QPA_PLATFORM=offscreen "$APPDIR/usr/python/bin/python3" -c "
+import sys; from PySide6.QtGui import QGuiApplication; from syntexophobic import desktop
+app = QGuiApplication([]); open(sys.argv[1], 'wb').write(desktop.png(256))" "$APPDIR/.DirIcon"
 cat > "$APPDIR/syntexophobic.desktop" <<DESK
 [Desktop Entry]
 Type=Application
@@ -56,6 +60,7 @@ Name=Syntexophobic
 Comment=Parametric CAD and CAM for CNC routers
 Exec=syntexophobic %f
 Icon=syntexophobic
+StartupWMClass=Syntexophobic
 Categories=Graphics;Engineering;
 Terminal=false
 DESK
