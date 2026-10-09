@@ -40,6 +40,7 @@ class Release:
     asset: str = ""            # AppImage file name
     asset_url: str = ""        # API url of the AppImage (needs the token, as the repo is private)
     asset_size: int = 0
+    blocks_url: str = ""       # API url of <AppImage>.blocks, for downloading only what changed
 
 
 @dataclass
@@ -109,9 +110,9 @@ def token() -> str:
 
 # ---- the check --------------------------------------------------------------------------
 
-def _request(url: str, tok: str, accept: str = "application/vnd.github+json"):
+def _request(url: str, tok: str, accept: str = "application/vnd.github+json", **headers):
     req = urllib.request.Request(url, headers={"Accept": accept, "User-Agent": "syntexophobic",
-                                               "X-GitHub-Api-Version": "2022-11-28"})
+                                               "X-GitHub-Api-Version": "2022-11-28", **headers})
     if tok:
         req.add_header("Authorization", f"Bearer {tok}")
     return urllib.request.urlopen(req, timeout=20)
@@ -135,10 +136,12 @@ def releases(data: list[dict]) -> list[Release]:
     for d in data:
         if d.get("draft") or d.get("prerelease") or parse_version(d.get("tag_name", "")) is None:
             continue
-        app = next((a for a in d.get("assets", []) if a.get("name", "").endswith(".AppImage")), {})
+        assets = d.get("assets", [])
+        app = next((a for a in assets if a.get("name", "").endswith(".AppImage")), {})
+        blocks = next((a for a in assets if app and a.get("name") == app["name"] + ".blocks"), {})
         out.append(Release(d["tag_name"].lstrip("v"), d["tag_name"], d.get("name") or d["tag_name"],
                            d.get("body") or "", d.get("html_url", ""),
-                           app.get("name", ""), app.get("url", ""), app.get("size", 0)))
+                           app.get("name", ""), app.get("url", ""), app.get("size", 0), blocks.get("url", "")))
     out.sort(key=lambda r: parse_version(r.version), reverse=True)
     return out
 
@@ -221,24 +224,91 @@ def download(url: str, dest: Path, tok: str, size: int = 0,
         raise
 
 
+def download_range(url: str, tok: str, start: int, end: int) -> bytes:
+    """Bytes [start, end) of a release asset."""
+    try:
+        with _request(url, tok, "application/octet-stream", Range=f"bytes={start}-{end - 1}") as r:
+            data = r.read()
+            if r.status != 206 or len(data) != end - start:
+                raise UpdateError(f"GitHub sent {len(data)} bytes, not the {end - start} asked for")
+            return data
+    except (urllib.error.URLError, OSError) as e:
+        raise UpdateError(f"download failed ({getattr(e, 'reason', e)})") from e
+
+
+def patch(release: Release, current: Path, dest: Path, tok: str,
+          progress: Callable[[float, str], None] | None = None,
+          get: Callable[[str, str, int, int], bytes] = download_range,
+          read: Callable[[str, str], bytes] | None = None) -> int:
+    """Builds the new AppImage at dest from the blocks the running one already has and
+    downloads only the rest (see delta.py). Returns the bytes downloaded. Raises UpdateError
+    (or ValueError) when that does not work out; the caller then downloads the whole file."""
+    from . import delta
+    if not release.blocks_url:
+        raise UpdateError("the release has no block index")
+    say = progress or (lambda f, what: None)
+    raw = (read or _read)(release.blocks_url, tok)
+    idx = delta.Index.from_bytes(raw)
+    if release.asset_size and idx.size != release.asset_size:
+        raise UpdateError("the block index is for another file")
+    found = delta.find(current, idx, lambda f: say(f, "Comparing"))
+    spans = delta.ranges(found, idx.block, idx.size)
+    need = sum(b - a for a, b in spans)
+    if need > idx.size * 0.4 or len(spans) > 400:
+        raise UpdateError("too much has changed for a partial download")
+    parts, got = {}, 0
+    for a, b in spans:
+        parts[a] = get(release.asset_url, tok, a, b)
+        got += b - a
+        say(got / max(need, 1), "Downloading")
+    part = dest.with_name(dest.name + ".part")
+    try:
+        delta.assemble(current, idx, found, parts, part)
+        part.chmod(0o755)
+        os.replace(part, dest)
+    finally:
+        part.unlink(missing_ok=True)
+    return need + len(raw)
+
+
+def _read(url: str, tok: str) -> bytes:
+    try:
+        with _request(url, tok, "application/octet-stream") as r:
+            return r.read()
+    except (urllib.error.URLError, OSError) as e:
+        raise UpdateError(f"download failed ({getattr(e, 'reason', e)})") from e
+
+
 @dataclass
 class Installed:
     path: Path                 # the new AppImage
     links: list[Path]          # links now pointing at it
     start: Path                # what to run to start the new version
+    downloaded: int = 0        # bytes fetched: only the changed blocks when the patch worked
 
 
 def install(release: Release, current: Path, tok: str | None = None,
-            progress: Callable[[float], None] | None = None,
-            fetch: Callable[..., None] = download) -> Installed:
+            progress: Callable[[float, str], None] | None = None,
+            fetch: Callable[..., None] = download, patch: Callable[..., int] | None = patch) -> Installed:
     """Puts the new AppImage next to the running one and moves the links that started the
-    running one over to it. The old file stays, so pointing the link back undoes it."""
+    running one over to it. The old file stays, so pointing the link back undoes it.
+    Downloads only what changed when the release has a block index, else (or when that
+    fails) the whole AppImage."""
     if not release.asset_url:
         raise UpdateError(f"release {release.tag} has no AppImage")
+    tok = token() if tok is None else tok
     dest = current.resolve().parent / release.asset
     links = links_to(current)
+    got = 0
     if dest != current.resolve():
-        fetch(release.asset_url, dest, token() if tok is None else tok, release.asset_size, progress)
+        try:
+            if patch is None or not release.blocks_url:
+                raise UpdateError("no block index")
+            got = patch(release, current.resolve(), dest, tok, progress)
+        except (UpdateError, ValueError, OSError):
+            fetch(release.asset_url, dest, tok, release.asset_size,
+                  progress and (lambda f: progress(f, "Downloading")))
+            got = release.asset_size
     for link in links:
         repoint(link, dest)
-    return Installed(dest, links, links[0] if links else dest)
+    return Installed(dest, links, links[0] if links else dest, got)

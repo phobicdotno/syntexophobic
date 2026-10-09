@@ -141,7 +141,7 @@ def test_update_bar(tmp_path, monkeypatch):
     monkeypatch.setattr(update, "running_appimage", lambda: appimage)
 
     def install(release, current, progress):
-        progress(0.5)
+        progress(0.5, "Downloading")
         return update.Installed(tmp_path / release.asset, [tmp_path / "Syntexophobic.AppImage"],
                                 tmp_path / "Syntexophobic.AppImage")
     bar.show_update(fake())

@@ -17,7 +17,7 @@ SKIP_KEY = "update/skip"
 class _Signals(QObject):
     done = Signal(object)
     failed = Signal(str)
-    progress = Signal(float)
+    progress = Signal(float, str)
 
 
 class _Job(QRunnable):
@@ -178,8 +178,8 @@ class UpdateBar(QFrame):
         self._start(_Job(lambda progress: install(up.latest, app, progress=progress)),
                     self._installed, self._install_failed, self._progress)
 
-    def _progress(self, f: float):
-        self.b_update.setText(f"Downloading {f:.0%}")
+    def _progress(self, f: float, what: str):
+        self.b_update.setText(f"{what} {f:.0%}")
 
     def _installed(self, done: update.Installed):
         self.installed = done
@@ -191,7 +191,10 @@ class UpdateBar(QFrame):
         self.b_update.hide()
         self.b_skip.hide()
         self.b_restart.show()
-        self.changed.emit(f"Installed Syntexophobic {self.pending.latest.version}.")
+        size = self.pending.latest.asset_size
+        fetched = (f" Downloaded {done.downloaded / 1e6:.1f} MB of {size / 1e6:.0f} MB (only what changed)."
+                   if size and 0 < done.downloaded < size else "")
+        self.changed.emit(f"Installed Syntexophobic {self.pending.latest.version}.{fetched}")
 
     def _install_failed(self, err: str):
         self.b_update.setText("Try again")
