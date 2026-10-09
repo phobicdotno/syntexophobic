@@ -998,7 +998,12 @@ class MainWindow(QMainWindow):
             self.play_slider.setValue(len(result.frames) - 1)
             self.play_slider.blockSignals(False)
             self.play_action.setVisible(True)
-        if result.gouge_cells:
+        if result.rapid_hits:
+            name, (x, y, z), d = max(result.rapid_hits, key=lambda h: h[2])
+            self.viewer.show_tool((x, y, z), 2.0)
+            self.status.setText(f"Rapid into stock: {len(result.rapid_hits)} rapid moves hit material, the worst "
+                                f"{d:.2f} mm deep in {name} at X{x:.1f} Y{y:.1f} Z{z:.1f} (marked). Do not run this file.")
+        elif result.gouge_cells:
             self.status.setText(f"Gouge: the tool cuts up to {result.gouge_depth:.2f} mm into the part "
                                 f"({result.gouge_cells} cells, shown red). Do not run this file.")
         else:

@@ -56,11 +56,18 @@ def main() -> int:
             tps = p.toolpaths()
         r = simulate.simulate(p.setup(), tps, res=args.res)
         print(f"grid {r.grid.nx} x {r.grid.ny} at {args.res} mm, {r.removed_cm3:.1f} cm³ removed")
+        bad = False
         if r.gouge_cells:
             print(f"GOUGE: up to {r.gouge_depth:.3f} mm into the part in {r.gouge_cells} cells")
-            return 1
-        print("no gouges")
-        return 0
+            bad = True
+        if r.rapid_hits:
+            name, (x, y, z), d = max(r.rapid_hits, key=lambda h: h[2])
+            print(f"RAPID INTO STOCK: {len(r.rapid_hits)} rapids hit material; worst {d:.2f} mm in {name} "
+                  f"at X{x:.2f} Y{y:.2f} Z{z:.2f}")
+            bad = True
+        if not bad:
+            print("no gouges, no rapids into stock")
+        return 1 if bad else 0
     if args.cmd == "new":
         from pathlib import Path
         from .project import Project

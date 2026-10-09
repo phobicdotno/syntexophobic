@@ -46,6 +46,7 @@ class Result:
     gouge_cells: int
     removed_cm3: float
     frames: list = field(default_factory=list)   # (operation, tool tip (x, y, z), tool Ø, stock)
+    rapid_hits: list = field(default_factory=list)   # (operation, (x, y, z), depth) where a rapid hits stock
 
     def gouges(self, tol: float = 0.02) -> np.ndarray:
         return _normal_depth(self.part, self.stock, self.grid.res) > tol
@@ -154,28 +155,103 @@ def _cut(be, grid, stock, P, tp, res):
     return flat.reshape(grid.ny, grid.nx)
 
 
+def _runs(tp, step: float):
+    """Feed points in runs, each followed by the rapid moves (as segments) before the next
+    run: [(feed points (n, 3), [((x, y, z), (x, y, z)), ...])], in machine order."""
+    pos = [(k, (x, y, z)) for k, x, y, z, _ in tp.positions()]
+    runs, feeds, rapids = [], [], []
+    for (k0, a), (k1, b) in zip(pos, pos[1:]):
+        if k1 == "feed":
+            if rapids:
+                runs.append((feeds, rapids))
+                feeds, rapids = [], []
+            feeds.append((a, b))
+        else:
+            rapids.append((a, b))
+    runs.append((feeds, rapids))
+    out = []
+    for segs, rap in runs:
+        if segs:
+            a = np.array([s[0] for s in segs], float)
+            b = np.array([s[1] for s in segs], float)
+            n = np.maximum(1, np.ceil(np.hypot(*(b - a)[:, :2].T) / step).astype(int))
+            seg = np.repeat(np.arange(len(a)), n)
+            first = np.repeat(np.cumsum(n) - n, n)
+            t = (np.arange(n.sum()) - first + 1) / n[seg]
+            P = a[seg] + (b[seg] - a[seg]) * t[:, None]
+        else:
+            P = np.empty((0, 3))
+        out.append((P, rap))
+    return out
+
+
+@njit(cache=True)
+def _rapid_depth(stock, x0, y0, res, ax, ay, az, bx, by, bz, r):
+    """How deep (mm) a tool of radius r moving in a straight rapid from a to b goes into
+    the stock (0 = clear), and where."""
+    ny, nx = stock.shape
+    L = math.sqrt((bx - ax) ** 2 + (by - ay) ** 2)
+    n = max(1, int(L / (res * 0.5)) + 1)
+    worst, wx, wy, wz = 0.0, 0.0, 0.0, 0.0
+    ri = int(r / res) + 1
+    for s in range(n + 1):
+        t = s / n
+        px, py, pz = ax + (bx - ax) * t, ay + (by - ay) * t, az + (bz - az) * t
+        ci, cj = int(round((px - x0) / res)), int(round((py - y0) / res))
+        for j in range(max(cj - ri, 0), min(cj + ri + 1, ny)):
+            dy = y0 + j * res - py
+            for i in range(max(ci - ri, 0), min(ci + ri + 1, nx)):
+                dx = x0 + i * res - px
+                if dx * dx + dy * dy <= r * r:
+                    d = stock[j, i] - pz
+                    if d > worst:
+                        worst, wx, wy, wz = d, px, py, pz
+    return worst, wx, wy, wz
+
+
 def simulate(setup, toolpaths, res: float = 0.25, backend=None, snapshots: int = 0) -> Result:
-    """Cut the stock with every toolpath. With snapshots > 0, also keep about that many
-    copies of the stock along the way, in cutting order, for playback (Result.frames)."""
+    """Cut the stock with every toolpath in machine order. Rapid moves are checked against
+    the stock as it is when they happen (Result.rapid_hits). With snapshots > 0, also keep
+    about that many copies of the stock along the way, for playback (Result.frames)."""
     be = backend or compute.get()
     xp = be.xp
     grid = Grid.over(setup.stock, res)
     stock = xp.full((grid.ny, grid.nx), setup.stock.zmax, dtype=xp.float64)
-    paths = [(tp, _feed_points(tp, res)) for tp in toolpaths]
-    total = sum(len(P) for _, P in paths) or 1
-    frames = []
-    for tp, P in paths:
-        if not len(P):
-            continue
-        if not snapshots:
-            stock = _cut(be, grid, stock, P, tp, res)
-            continue
-        pieces = max(1, round(snapshots * len(P) / total))
-        bounds = np.linspace(0, len(P), pieces + 1).astype(int)
-        for a, b in zip(bounds, bounds[1:]):
-            if b > a:
-                stock = _cut(be, grid, stock, P[a:b], tp, res)
-                frames.append((tp.op.name, tuple(P[b - 1]), tp.tool_diameter, be.to_numpy(stock).copy()))
+    runs = [(tp, _runs(tp, res)) for tp in toolpaths]
+    total = sum(len(P) for _, rr in runs for P, _ in rr) or 1
+    every = max(1, total // snapshots) if snapshots else 0
+    done, next_frame = 0, every
+    frames, hits = [], []
+    for tp, rr in runs:
+        r = tp.tool_diameter / 2 - res * 0.25
+        # group consecutive runs into chunks of a few thousand points: the cutting kernels
+        # are fastest on big batches, and rapids are checked between chunks in order
+        chunk, chunk_rapids = [], []
+        def flush():
+            nonlocal stock, chunk, chunk_rapids, done, next_frame
+            if chunk:
+                P = np.vstack(chunk)
+                stock = _cut(be, grid, stock, P, tp, res)
+                done += len(P)
+                if every and done >= next_frame:
+                    frames.append((tp.op.name, tuple(P[-1]), tp.tool_diameter, be.to_numpy(stock).copy()))
+                    next_frame += every
+            host = be.to_numpy(stock) if chunk_rapids else None
+            for (a, b) in chunk_rapids:
+                depth, x, y, z = _rapid_depth(host, grid.x0, grid.y0, res, *a, *b, max(r, res))
+                if depth > 0.05:
+                    hits.append((tp.op.name, (x, y, z), depth))
+            chunk, chunk_rapids = [], []
+        for P, rapids in rr:
+            if len(P):
+                chunk.append(P)
+            if rapids:
+                chunk_rapids = rapids
+                flush()
+        flush()
+    if frames:                                   # the last frame is the finished stock
+        name, tip, dia, _ = frames[-1]
+        frames[-1] = (name, tip, dia, be.to_numpy(stock).copy())
     stock = be.to_numpy(stock)
     part = part_heightmap(setup.shape, grid)
     # V-carving cuts into the part on purpose: inside its shapes the part surface is
@@ -192,7 +268,7 @@ def simulate(setup, toolpaths, res: float = 0.25, backend=None, snapshots: int =
     depth = _normal_depth(part, stock, res)
     removed = float(np.sum(setup.stock.zmax - stock)) * res * res / 1000.0
     return Result(grid, stock, part, float(max(depth.max(), 0.0)),
-                  int((depth > 0.02).sum()), removed, frames)
+                  int((depth > 0.02).sum()), removed, frames, hits)
 
 
 def _normal_depth(part, stock, res: float) -> np.ndarray:

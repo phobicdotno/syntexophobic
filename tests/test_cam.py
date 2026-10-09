@@ -467,3 +467,23 @@ def test_vcarve_cuts_v_walls_inside_the_outline(pocket_part, tmp_path):
     back = gcode.read(p.gcode(tps), p.job, p.setup().stock)
     assert back[0].tool_shape == "vbit" and abs(back[0].vbit_k - 1.0) < 1e-9
     assert res.gouge_cells == 0                     # carving inside the shape is intended
+
+
+def test_rapids_are_checked_against_the_stock_in_order(pocket_part, tmp_path):
+    from syntexophobic import simulate
+    from syntexophobic.job import Operation
+    p = Project.create(tmp_path / "rapid", pocket_part)
+    p.job.operations = [Operation(type="adaptive", tool=1, stepdown=6, stepover=0.15, bottom=10.0),
+                        Operation(type="finish", tool=1, stepdown=3, leave=0.0, bottom=10.0),
+                        Operation(type="drill", tool=1, stepdown=3)]
+    p.save_job()
+    res = simulate.simulate(p.setup(), p.toolpaths(), res=0.25)
+    assert res.rapid_hits == [], res.rapid_hits[:3]
+    # a rapid straight through the uncut block, then one at the same height after it is cut
+    bad = cam.Toolpath(Operation(name="Bad"), 6.0, moves=[
+        cam.Move("rapid", -10, 20, 20), cam.Move("rapid", None, None, 12),
+        cam.Move("rapid", 70, 20, None),                                  # through the stock: crash
+        cam.Move("feed", 70, 30, 12, 500), cam.Move("feed", -10, 30, 12, 500),   # cut a slot at z 12
+        cam.Move("rapid", -10, 30, 12), cam.Move("rapid", 70, 30, None)])        # in the slot: fine
+    hits = simulate.simulate(p.setup(), [bad], res=0.25).rapid_hits
+    assert len(hits) == 1 and hits[0][2] > 3.5 and abs(hits[0][1][1] - 20) < 1e-6

@@ -61,6 +61,9 @@ All notable changes to Syntexophobic. The format follows
   G-code comment and the reader.
 - **Text** in sketches (Text tool): any installed font, as closed outlines with the
   letters' holes, ready to extrude, cut or V-carve.
+- **Rapid moves are checked**: the simulation runs in machine order and tests every rapid
+  against the stock as it is at that moment; a rapid into material is reported (window
+  and `simulate`, which exits 1) with where and how deep.
 - **Simulation playback**: the simulation keeps about 40 snapshots in cutting order; a
   slider in the toolbar shows the stock at any moment with the tool drawn where it is.
 - **Section view** (View > Section > X / Y / Z): cuts the model, its edges and the
