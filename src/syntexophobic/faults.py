@@ -34,7 +34,7 @@ from .automation import STATE
 REPO = "phobicdotno/syntexophobic"
 API = f"https://api.github.com/repos/{REPO}"
 LABEL = "fault-report"
-SHOTS_BRANCH = "fault-reports"          # screenshots are committed here (issues take no uploads)
+SHOTS_BRANCH = "fault-screenshots"        # screenshots are committed here (issues take no uploads)
 LOG = STATE / "syntexophobic.log"
 MARK = "<!-- fault-signature: {} -->"
 
