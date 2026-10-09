@@ -336,3 +336,42 @@ def test_sketch_on_a_slanted_face():
     # square planes stay named: a face looking up becomes XY with an offset
     assert Sketch.on_plane("top", (3, 4, 12.5), (0, 0, 1)).plane == "XY"
     assert Sketch.on_plane("top", (3, 4, 12.5), (0, 0, 1)).offset == 12.5
+
+
+def test_parameters_drive_sketch_and_features(tmp_path):
+    from syntexophobic.params import ParameterError, evaluate, resolve
+    base = Sketch()
+    ls = base.rectangle(0, 0, 50, 30)
+    base.constrain("fixed", base.lines[ls[0]].a)
+    w = base.constrain("distance", ls[0], value=50)
+    next(k for k in base.constraints if k.id == w).expr = "width"
+    d = base.constrain("distance", ls[1], value=30)
+    next(k for k in base.constraints if k.id == d).expr = "width * 0.6"
+    holes = Sketch()
+    holes.circle((10, 15), 2)
+    part = Part("Box", [Feature("extrude", sketch="base", distance="thick"),
+                        Feature("extrude", sketch="holes", distance="thick", operation="cut",
+                                count="floor_holes", spacing="width / 4", direction="X")],
+                {"base": base, "holes": holes},
+                parameters={"width": "60", "thick": "width / 10", "floor_holes": "3"})
+    v = volume(part.build())
+    assert abs(v - (60 * 36 * 6 - 3 * math.pi * 4 * 6)) < 1e-2
+    part.parameters["width"] = "80"                       # one change, everything follows
+    assert abs(volume(part.build()) - (80 * 48 * 8 - 3 * math.pi * 4 * 8)) < 1e-2
+    part.save(tmp_path)
+    back = Part.load(tmp_path / "model.toml")
+    assert back.parameters == part.parameters and abs(volume(back.build()) - volume(part.build())) < 1e-6
+    assert 'distance = "thick"' in (tmp_path / "model.toml").read_text()
+    assert 'expr = "width * 0.6"' in (tmp_path / "sketches" / "base.toml").read_text()
+
+    assert evaluate("2 * (3 + 4) ** 2 - sqrt(16) + 2 * inch", {}) == 2 * 49 - 4 + 50.8
+    with pytest.raises(ParameterError, match="loop"):
+        resolve({"a": "b + 1", "b": "a * 2"})
+    with pytest.raises(ParameterError, match="Unknown"):
+        resolve({"a": "nope + 1"})
+    for evil in ("__import__('os').system('true')", "().__class__", "open('x')", "[1][0]"):
+        with pytest.raises(ParameterError):
+            evaluate(evil, {})
+    part.parameters["thick"] = "missing * 2"
+    with pytest.raises(ModelError, match="Unknown parameter"):
+        part.build()

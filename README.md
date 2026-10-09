@@ -44,6 +44,9 @@ A part is a list of features in `model.toml`, built top to bottom:
 | **Shell** | wall thickness, faces to open |
 | **Mirror** | YZ, XZ or XY plane |
 
+**Parameters** (`width = 80`, `wall = 2.5`, `depth = width / 4 - wall`) can be used in
+sketch dimensions and in feature values; change one and the whole part follows.
+
 Edges and faces are picked by clicking them in the 3D view (stored as `@x,y,z` and found
 again after a rebuild), or with short selectors: `|Z` (vertical edges), `#Z` (horizontal),
 `>Z` / `<Z` (top / bottom face), `%LINE`, `%CIRCLE`, and `A&B` for both. Click a flat face

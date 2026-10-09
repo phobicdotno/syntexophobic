@@ -83,6 +83,8 @@ class DataForm(QWidget):
 
     def __init__(self, obj=None, parent=None):
         super().__init__(parent)
+        self.expressions: set[str] = set()      # fields edited as "number or expression"
+        self.check_expression = None            # callback(text) -> error message or None
         self.layout_ = QFormLayout(self)
         self.layout_.setLabelAlignment(Qt.AlignRight)
         self.obj = None
@@ -114,6 +116,24 @@ class DataForm(QWidget):
             if name == "type":            # different fields apply: rebuild the form
                 QTimer.singleShot(0, lambda: self.set(self.obj, self.only))
 
+        if name in self.expressions:
+            w = QLineEdit(f"{value:g}" if isinstance(value, (int, float)) else str(value))
+            w.setToolTip("A number, or an expression with parameters, e.g. width / 2")
+
+            def commit():
+                text = w.text().strip()
+                try:
+                    num = float(text)
+                    store(int(round(num)) if "int" in str(ftype) else num)
+                    w.setStyleSheet("")
+                except ValueError:
+                    err = self.check_expression(text) if self.check_expression else None
+                    w.setStyleSheet("color: #e5534b" if err else "")
+                    w.setToolTip(err or f"= {text}")
+                    if not err:
+                        store(text)
+            w.editingFinished.connect(commit)
+            return w
         if name in CHOICES:
             w = QComboBox()
             w.addItems(CHOICES[name])
@@ -608,7 +628,12 @@ class MainWindow(QMainWindow):
         from .design_ui import sketch_toolbar
         from .sketcher import SketchView
         self.finish_sketch(save=False)
-        view = SketchView(self.part.sketches[name])
+        sk = self.part.sketches[name]
+        try:
+            sk.param_values = self.part.parameter_values()
+        except Exception:
+            sk.param_values = {}
+        view = SketchView(sk)
         view.changed.connect(self._design_changed)
         view.status.connect(lambda t: self.status.setText(f"{name}: {t}"))
         page = QWidget()

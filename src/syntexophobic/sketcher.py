@@ -361,13 +361,25 @@ class SketchView(QGraphicsView):
         else:
             self.status.emit("Dimension needs: a line, two points, a point and a line, a circle or arc, or two lines")
             return False
+        expr = None
         if value is None:
             unit = "°" if kind == "angle" else "mm"
-            value, ok = QInputDialog.getDouble(self, "Dimension", f"{kind.capitalize()} ({unit})",
-                                               round(current, 3), -1e6, 1e6, 3)
-            if not ok:
+            text, ok = QInputDialog.getText(self, "Dimension",
+                                            f"{kind.capitalize()} ({unit}): a number or an expression like width / 2",
+                                            text=f"{current:.3f}".rstrip("0").rstrip("."))
+            if not ok or not text.strip():
                 return False
-        s.constrain(kind, *refs, value=value)
+            from .params import ParameterError, evaluate
+            try:
+                value = evaluate(text, self.sketch.param_values)
+            except ParameterError as e:
+                self.status.emit(str(e))
+                return False
+            if not _is_plain_number(text):
+                expr = text.strip()
+        cid = s.constrain(kind, *refs, value=value)
+        if expr:
+            next(k for k in s.constraints if k.id == cid).expr = expr
         self.commit()
         return True
 
@@ -543,6 +555,14 @@ class SketchView(QGraphicsView):
         r = QRectF(min(xs) - 10, min(ys) - 10, max(xs) - min(xs) + 20, max(ys) - min(ys) + 20)
         self.fitInView(r, Qt.KeepAspectRatio)
         self.draw()
+
+
+def _is_plain_number(text: str) -> bool:
+    try:
+        float(text)
+        return True
+    except ValueError:
+        return False
 
 
 def _seg_dist(p, a, b) -> float:

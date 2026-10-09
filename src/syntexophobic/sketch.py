@@ -73,6 +73,7 @@ class Constraint:
     refs: list[str]
     value: float | None = None
     id: str = ""
+    expr: str | None = None        # e.g. "width / 2": sets value from the part's parameters
 
 
 # Each constraint type: which entity kinds it takes, and how many equations it adds.
@@ -138,6 +139,7 @@ class Sketch:
     splines: dict[str, Spline] = field(default_factory=dict)
     constraints: list[Constraint] = field(default_factory=list)
     _next: int = 1
+    param_values: dict = field(default_factory=dict, repr=False, compare=False)   # set by the part, not saved
 
     def frame(self):
         """(origin, x axis, y axis, normal) of the sketch plane in model space."""
@@ -631,7 +633,15 @@ class Sketch:
 
     # ---- solving ----------------------------------------------------------------------
 
+    def apply_parameters(self) -> None:
+        """Set dimension values from their expressions (raises params.ParameterError)."""
+        from .params import evaluate
+        for k in self.constraints:
+            if k.expr:
+                k.value = evaluate(k.expr, self.param_values)
+
     def solve(self, max_iter: int = 200, tol: float = 1e-22) -> SolveResult:
+        self.apply_parameters()
         idx = self._layout()
         if not idx:
             return SolveResult(True, 0, 0.0, 0, [])

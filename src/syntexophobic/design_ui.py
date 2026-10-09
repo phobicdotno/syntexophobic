@@ -54,6 +54,7 @@ class DesignPanel(QWidget):
         bl.addWidget(self.l_features)
         grid = QGridLayout()
         for i, (text, slot) in enumerate((
+                ("Parameters…", self.edit_parameters),
                 ("New sketch…", self.new_sketch), ("Sketch on face", self.sketch_on_face),
                 ("Extrude", lambda: self.add("extrude")),
                 ("Revolve", lambda: self.add("revolve")), ("Loft", lambda: self.add("loft")),
@@ -68,6 +69,9 @@ class DesignPanel(QWidget):
         col.addWidget(box)
 
         self.form = DataForm()
+        from .model import NUMERIC
+        self.form.expressions = set(NUMERIC)
+        self.form.check_expression = self._check_expression
         self.form.changed.connect(self._edited)
         fbox = QGroupBox("Feature")
         QVBoxLayout(fbox).addWidget(self.form)
@@ -199,6 +203,88 @@ class DesignPanel(QWidget):
                 text += f" {f.sketch}, {f.operation}"
             item.setText(text + ("  (off)" if f.suppressed else ""))
         self.changed.emit()
+
+    def _check_expression(self, text: str):
+        from .params import ParameterError, evaluate
+        try:
+            evaluate(text, self.part.parameter_values())
+            return None
+        except (ParameterError, ModelError) as e:
+            return str(e)
+
+    def edit_parameters(self) -> None:
+        """Table of named parameters: name, expression, current value."""
+        from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QTableWidget, QTableWidgetItem)
+        from .params import ParameterError, resolve
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Parameters")
+        dlg.resize(520, 360)
+        col = QVBoxLayout(dlg)
+        table = QTableWidget(0, 3)
+        table.setHorizontalHeaderLabels(["Name", "Expression", "Value (mm or count)"])
+        table.horizontalHeader().setStretchLastSection(True)
+        col.addWidget(table)
+        note = QLabel()
+        note.setWordWrap(True)
+        col.addWidget(note)
+
+        def add_row(name="", expr=""):
+            r = table.rowCount()
+            table.insertRow(r)
+            table.setItem(r, 0, QTableWidgetItem(name))
+            table.setItem(r, 1, QTableWidgetItem(expr))
+            item = QTableWidgetItem("")
+            item.setFlags(item.flags() & ~item.flags().ItemIsEditable)
+            table.setItem(r, 2, item)
+
+        def rows():
+            out = {}
+            for r in range(table.rowCount()):
+                n, e = table.item(r, 0), table.item(r, 1)
+                if n and e and n.text().strip():
+                    out[n.text().strip()] = e.text().strip() or "0"
+            return out
+
+        def refresh():
+            table.blockSignals(True)
+            try:
+                values = resolve(rows())
+                note.setText("Use these names in dimensions and feature values, e.g. width / 2.")
+                note.setStyleSheet("")
+            except ParameterError as e:
+                values = {}
+                note.setText(str(e))
+                note.setStyleSheet("color: #e5534b")
+            for r in range(table.rowCount()):
+                n = table.item(r, 0).text().strip() if table.item(r, 0) else ""
+                table.item(r, 2).setText(f"{values[n]:g}" if n in values else "")
+            table.blockSignals(False)
+
+        for name, expr in self.part.parameters.items():
+            add_row(name, expr)
+        table.itemChanged.connect(lambda _: refresh())
+        buttons = QHBoxLayout()
+        b_add, b_del = QPushButton("Add"), QPushButton("Remove")
+        b_add.clicked.connect(lambda: (add_row(f"p{table.rowCount() + 1}", "10"), refresh()))
+        b_del.clicked.connect(lambda: (table.removeRow(table.currentRow()), refresh()))
+        buttons.addWidget(b_add)
+        buttons.addWidget(b_del)
+        buttons.addStretch()
+        col.addLayout(buttons)
+        box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        box.accepted.connect(dlg.accept)
+        box.rejected.connect(dlg.reject)
+        col.addWidget(box)
+        refresh()
+        if dlg.exec() == QDialog.Accepted:
+            try:
+                resolve(rows())
+            except ParameterError as e:
+                self.status.emit(f"Parameters not saved: {e}")
+                return
+            self.part.parameters = rows()
+            self.changed.emit()
+            self.status.emit(f"{len(self.part.parameters)} parameters.")
 
     # ---- editing ----------------------------------------------------------------------
 

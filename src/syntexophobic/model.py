@@ -335,22 +335,51 @@ class Feature:
     suppressed: bool = False
 
 
+NUMERIC = ("distance", "angle", "radius", "thickness", "spacing", "count")
+
+
 @dataclass
 class Part:
     name: str = "Part"
     features: list[Feature] = field(default_factory=list)
     sketches: dict[str, Sketch] = field(default_factory=dict)
+    parameters: dict[str, str] = field(default_factory=dict)     # name -> expression
+
+    def parameter_values(self) -> dict[str, float]:
+        from .params import ParameterError, resolve
+        try:
+            return resolve(self.parameters)
+        except ParameterError as e:
+            raise ModelError(str(e)) from e
+
+    def _resolved(self, f: Feature, values: dict) -> Feature:
+        """The feature with expression fields replaced by numbers."""
+        from dataclasses import replace
+        from .params import ParameterError, evaluate
+        changes = {}
+        for name in NUMERIC:
+            v = getattr(f, name)
+            if isinstance(v, str):
+                try:
+                    num = evaluate(v, values)
+                except ParameterError as e:
+                    raise ModelError(f"{f.name or f.type}: {e}") from e
+                changes[name] = int(round(num)) if name == "count" else num
+        return replace(f, **changes) if changes else f
 
     # ---- evaluation -------------------------------------------------------------------
 
     def build(self, upto: int | None = None) -> TopoDS_Shape:
         """Evaluate features in order (all, or the first `upto`) into one solid."""
+        values = self.parameter_values()
+        for sk in self.sketches.values():
+            sk.param_values = values
         shape = None
         for i, f in enumerate(self.features[:upto]):
             if f.suppressed:
                 continue
             try:
-                shape = self._apply(shape, f)
+                shape = self._apply(shape, self._resolved(f, values))
             except ModelError:
                 raise
             except Exception as e:  # OpenCascade raises plain RuntimeErrors / Standard_Failure
@@ -493,10 +522,15 @@ class Part:
         (folder / "sketches").mkdir(parents=True, exist_ok=True)
         defaults = asdict(Feature(type=""))
         out = ["[part]", f'name = "{self.name}"', ""]
+        if self.parameters:
+            out.append("[parameters]")
+            out += [f'{k} = "{v}"' for k, v in self.parameters.items()]
+            out.append("")
         for f in self.features:
             out.append("[[features]]")
             for k, v in asdict(f).items():
                 if k == "type" or v != defaults[k]:     # only what differs: short, readable diffs
+                    # (numeric fields may hold an expression string such as "width / 2")
                     out.append(f"{k} = " + ('"' + v + '"' if isinstance(v, str) else
                                              ("true" if v else "false") if isinstance(v, bool) else repr(v)))
             out.append("")
@@ -510,7 +544,8 @@ class Part:
         path = Path(path)
         d = tomllib.loads(path.read_text())
         part = cls(name=d.get("part", {}).get("name", "Part"),
-                   features=[Feature(**f) for f in d.get("features", [])])
+                   features=[Feature(**f) for f in d.get("features", [])],
+                   parameters={k: str(v) for k, v in d.get("parameters", {}).items()})
         for f in sorted((path.parent / "sketches").glob("*.toml")):
             part.sketches[f.stem] = Sketch.load(f)
         return part

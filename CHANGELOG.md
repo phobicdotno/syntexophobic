@@ -52,6 +52,12 @@ All notable changes to Syntexophobic. The format follows
   it. Sketch planes can be custom (origin, X direction, normal, stored in the sketch
   file); faces square to an axis still become XY / XZ / YZ with an offset. The normal
   points out of the material, so a positive extrude adds and a negative one cuts.
+- **Parameters**: named values and expressions (`width = 80`, `depth = width / 4 - wall`)
+  in `model.toml`, usable in sketch dimensions and feature values (distance, angle,
+  radius, thickness, pattern count and spacing). Change one and the part follows.
+  Expressions are arithmetic only (checked with `ast`), so a shared model file cannot run
+  code. Parameters dialog in the Design panel; dimensions and feature fields accept
+  expressions and mark invalid ones red.
 - **DXF import and export** (File menu, `dxf.py`): lines, arcs, circles, polylines with
   bulges, splines and ellipses; touching end points are merged so outlines become closed
   profiles; inch drawings are scaled to mm. Sketches export as mm DXF.
