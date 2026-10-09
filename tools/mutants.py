@@ -44,6 +44,9 @@ MUTANTS = [
     ("adaptive leftovers not cleaned up", "cam.py", "        if left.any():\n            leftover", "        if False:\n            leftover"),
     ("arc direction swapped (G2/G3)", "gcode.py", 'out.append(("G3 " if ccw else "G2 ")', 'out.append(("G2 " if ccw else "G3 ")'),
     ("bottom side not mirrored back", "simulate.py", "        bottom = 2 * cz - under[::-1, :]", "        bottom = 2 * cz - under"),
+    ("rough tool kept inside the stock outline", "cam.py",
+     "    region = _boolean(_offset(setup.stock_rect(), 0.9 * r), _offset(forbidden, r + op.leave),",
+     "    region = _boolean(setup.stock_rect(), _offset(forbidden, r + op.leave),"),
     ("first tool change skipped (no M6 T1)", "gcode.py", '            if post["tool_change"] == "M6":', '            if post["tool_change"] == "M6" and current_tool is not None:'),
 ]
 

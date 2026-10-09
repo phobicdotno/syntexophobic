@@ -231,6 +231,7 @@ class MainWindow(QMainWindow):
         self.spacemouse.connected.connect(self._space_status)
         self._space_status(self.spacemouse.is_connected)
         self.design_panel.status.connect(self.status.setText)
+        self._start_control_server()
         self._enable(False)
 
     # ---- layout -----------------------------------------------------------------------
@@ -786,10 +787,118 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Could not open", str(e))
 
+    # ---- remote control (MCP / Claude Code) ------------------------------------------------
+
+    def _start_control_server(self):
+        """Listen for commands from `syntexophobic mcp` (Claude Code) on a local socket."""
+        from PySide6.QtNetwork import QLocalServer
+        from . import automation
+        self.session = automation.Session()
+        self.session.window = self
+        automation.STATE.mkdir(parents=True, exist_ok=True)
+        QLocalServer.removeServer(str(automation.SOCKET))
+        self.control = QLocalServer(self)
+        self.control.setSocketOptions(QLocalServer.UserAccessOption)      # only this user
+        if self.control.listen(str(automation.SOCKET)):
+            self.control.newConnection.connect(self._control_connection)
+
+    def _control_connection(self):
+        conn = self.control.nextPendingConnection()
+        conn.setProperty("buf", b"")
+
+        def readable():
+            buf = bytes(conn.property("buf") or b"") + bytes(conn.readAll())
+            conn.setProperty("buf", buf)
+            if not buf.endswith(b"\n"):
+                return
+            import json
+            from . import automation
+            try:
+                req = json.loads(buf.decode())
+                self.status.setText(f"Claude: {req['cmd']}…")
+                QApplication.processEvents()
+                result = automation.run(self.session, req["cmd"], req.get("args") or {})
+                self._after_automation(req["cmd"])
+                reply = {"ok": True, "result": result}
+            except Exception as e:  # report every failure back to Claude
+                reply = {"ok": False, "error": f"{type(e).__name__}: {e}"}
+            conn.write((json.dumps(reply) + "\n").encode())
+            conn.flush()
+            conn.disconnectFromServer()
+        conn.readyRead.connect(readable)
+
+    def _after_automation(self, cmd: str):
+        """Show what a remote command changed."""
+        s = self.session
+        if cmd in ("status", "get_sketch", "history", "diff", "screenshot", "view"):
+            return
+        if s.project is not self.project:
+            self.load(s.project)
+        else:
+            self.project.reload()
+            if self.part is not None:
+                from .model import Part
+                row = self.design_panel.l_features.currentRow()
+                self.part = Part.load(self.project.folder / self.project.job.model)
+                self.design_panel.set_part(self.part)
+                self.design_panel.l_features.setCurrentRow(max(row, 0))
+            self._fill_job()
+            self._refresh_model()
+            self._refresh_history()
+        if cmd == "generate" and s.toolpaths:
+            self.c_workspace.setCurrentText("Manufacture")
+            self._generated(s.toolpaths)
+        elif cmd == "simulate" and s.last_simulation is not None:
+            self.c_workspace.setCurrentText("Manufacture")
+            self.toolpaths = s.toolpaths
+            self._simulated(s.last_simulation)
+        if hasattr(self, "undo"):
+            self.undo.record()
+        self.status.setText(f"Claude: {cmd} done.")
+
+    def screenshot(self, path: str) -> str:
+        """The window as a PNG, with the 3D view painted in (a plain grab shows it black)."""
+        import tempfile
+        from PySide6.QtCore import QPoint, QRect
+        from PySide6.QtGui import QImage
+        from vtkmodules.vtkIOImage import vtkPNGWriter
+        from vtkmodules.vtkRenderingCore import vtkWindowToImageFilter
+        for _ in range(5):
+            QApplication.processEvents()
+        shot = self.grab().toImage()
+        if self.viewer.isVisible():
+            self.viewer.GetRenderWindow().Render()
+            f = vtkWindowToImageFilter()
+            f.SetInput(self.viewer.GetRenderWindow())
+            f.ReadFrontBufferOff()
+            f.Update()
+            tmp = Path(tempfile.mkdtemp()) / "view.png"
+            w = vtkPNGWriter()
+            w.SetFileName(str(tmp))
+            w.SetInputConnection(f.GetOutputPort())
+            w.Write()
+            p = QPainter(shot)
+            r = QRect(self.viewer.mapTo(self, QPoint(0, 0)), self.viewer.size())
+            p.drawImage(r, QImage(str(tmp)).scaled(r.size()))
+            p.end()
+        shot = shot.scaledToWidth(min(shot.width(), 1600), Qt.SmoothTransformation)
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        shot.save(path)
+        return path
+
+    def automation_view(self, preset: str, workspace: str) -> dict:
+        if workspace:
+            self.c_workspace.setCurrentText(workspace)
+        (self.viewer.view_top if preset == "top" else self.viewer.view_iso)()
+        return {"view": preset, "workspace": self.c_workspace.currentText()}
+
     def load(self, project: Project):
         from .project import Undo
         self.finish_sketch(save=False)
         self.project = project
+        if hasattr(self, "session"):
+            self.session.project = project
+            self.session.toolpaths = []
         self.undo = Undo(project.folder)
         self.toolpaths = []
         if project.job.model.endswith(".toml"):
@@ -957,6 +1066,8 @@ class MainWindow(QMainWindow):
     def _generated(self, toolpaths):
         self.a_generate.setEnabled(True)
         self.toolpaths = toolpaths
+        if hasattr(self, "session"):
+            self.session.toolpaths = toolpaths
         self.viewer.clear_simulation()
         self.play_action.setVisible(False)
         self.sim_result = None

@@ -544,3 +544,22 @@ def test_arc_output_machines_the_same_part(tmp_path):
     assert replayed.gouge_cells == 0 and replayed.rapid_hits == []
     # cells right at a wall can flip between cut and uncut over a few µm: allow a handful
     assert (np.abs(direct.stock - replayed.stock) > 0.02).mean() < 0.001
+
+
+def test_rough_clears_a_margin_narrower_than_the_tool(tmp_path):
+    """3 mm of stock beside the part, 3.3 mm tool keep-out: roughing must still clear that
+    strip (the tool may reach past the stock edge), so no later move plunges into it."""
+    from syntexophobic import automation as A, simulate
+    s = A.Session()
+    s.new_design(str(tmp_path / "m"), "m")
+    s.add_sketch("plate")
+    s.sketch_draw("plate", "rectangle", x0=0, y0=0, x1=80, y1=40)
+    s.add_feature("extrude", sketch="plate", distance=10)
+    s.add_feature("fillet", radius=6, edges="|Z")
+    s.set_stock(top_offset=0.0, margin=3.0)
+    s.generate()
+    r = simulate.simulate(s.project.setup(), s.toolpaths, res=0.1)
+    assert r.rapid_hits == [] and r.gouge_cells == 0, r.rapid_hits[:2]
+    xs, ys = r.grid.centres()
+    j, i = int(round((20 - ys[0]) / 0.1)), int(round((81.5 - xs[0]) / 0.1))
+    assert r.stock[j, i] <= 0.0 + 1e-6                         # the strip beside the part is cut

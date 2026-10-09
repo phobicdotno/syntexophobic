@@ -19,6 +19,8 @@ def main() -> int:
     sm.add_argument("project")
     sm.add_argument("--res", type=float, default=0.25, help="grid size in mm (default 0.25)")
     sm.add_argument("--gcode", help="simulate this G-code file instead of the project's toolpaths")
+    sub.add_parser("mcp", help="MCP server on stdio, for Claude Code (drives the open window, or works headless)")
+    sub.add_parser("install-mcp", help="register the MCP server with Claude Code (user scope)")
     sub.add_parser("backends", help="list compute backends and the devices they would use")
     ap.add_argument("path", nargs="?", help="project folder or STEP file to open")
     ap.add_argument("--backend", help="compute backend: auto (default), numpy, cupy")
@@ -27,6 +29,20 @@ def main() -> int:
         import os
         os.environ["SYNTEXOPHOBIC_BACKEND"] = args.backend
 
+    if args.cmd == "mcp":
+        from .mcp_server import main as serve
+        serve()
+        return 0
+    if args.cmd == "install-mcp":
+        import shutil
+        import subprocess
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[2]
+        uv = shutil.which("uv") or str(Path.home() / ".local" / "bin" / "uv")
+        cmd = ["claude", "mcp", "add", "--scope", "user", "syntexophobic", "--",
+               uv, "run", "--project", str(root), "syntexophobic", "mcp"]
+        print(" ".join(cmd))
+        return subprocess.call(cmd)
     if args.cmd == "backends":
         from . import compute
         for name, device in compute.available().items():

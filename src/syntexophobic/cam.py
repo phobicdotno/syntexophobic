@@ -358,7 +358,11 @@ def _rings(op: Operation, forbidden, setup: "Setup", r: float, diameter: float, 
     if op.type == "profile":
         outer = _outermost(_offset(forbidden, r + op.leave))
         return [outer] if outer else []
-    region = _boolean(setup.stock_rect(), _offset(forbidden, r + op.leave), pyclipper.CT_DIFFERENCE)
+    # The tool centre may go up to 0.9 r outside the stock: otherwise a strip of stock
+    # narrower than r + leave between the part and the stock edge is never cut, and later
+    # moves plunge into it.
+    region = _boolean(_offset(setup.stock_rect(), 0.9 * r), _offset(forbidden, r + op.leave),
+                      pyclipper.CT_DIFFERENCE)
     if op.rest_from is not None:
         region = _rest_region(setup, op, forbidden, region, r)
     rings = []
@@ -649,8 +653,8 @@ def _generate(setup: Setup, op: Operation) -> Toolpath:
     stay_low = op.type == "rough" and op.rest_from is None
     for z in levels:
         forbidden = _boolean(forbidden, setup.slice_region(z), pyclipper.CT_UNION)
-        allowed = (_boolean(setup.stock_rect(), _offset(forbidden, r + op.leave), pyclipper.CT_DIFFERENCE)
-                   if stay_low else [])
+        allowed = (_boolean(_offset(setup.stock_rect(), 0.9 * r), _offset(forbidden, r + op.leave),
+                            pyclipper.CT_DIFFERENCE) if stay_low else [])
         last = None
         for ring in _rings(op, forbidden, setup, r, tool.diameter, z):
             for loop in _to_mm(ring):

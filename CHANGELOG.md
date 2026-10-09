@@ -6,12 +6,20 @@ All notable changes to Syntexophobic. The format follows
 ## [Unreleased]
 
 ### Added
-- `tools/mutants.py`: puts seventeen known bugs back one at a time (part ignored by roughing,
+- **Drive Syntexophobic from Claude** over MCP: `syntexophobic mcp` is an MCP server
+  (stdio) with 36 tools covering projects, parameters, sketches (draw, constrain, edit,
+  DXF), features, stock, machine, tools, operations, toolpaths, simulation, G-code,
+  history, views and screenshots. With the window open, every call runs in the window
+  (a local socket, this user only) so changes appear live; otherwise it works headless
+  on the project files. `syntexophobic install-mcp` registers it with Claude Code. It
+  uses Claude Code's own login, not an API key.
+- `tools/mutants.py`: puts eighteen known bugs back one at a time (part ignored by roughing,
   missing tool radius, drop-cutter without edges or faces, flipped work offset, tabs not
   lifted, no ramp, adaptive without keep-out, pecks from the hole top, a too-narrow ball
   waterline, no first `M6`, a lazy point simplifier, loop outlines chained from the wrong
   end, holes attached with a fixed reversal, adaptive leftovers not cleaned up, G2/G3 swapped, bottom side
-  not mirrored) and checks that the tests fail for each. All seventeen are caught;
+  not mirrored, rough tool kept inside the stock outline) and checks that the tests fail
+  for each. All eighteen are caught;
   the waterline one first survived, which led to a test on vertical walls.
 - **Sketch** (`sketch.py`): points, lines, circles and arcs with 20 constraint types
   (coincident, horizontal, vertical, parallel, perpendicular, equal, distance, horizontal /
@@ -179,6 +187,9 @@ All notable changes to Syntexophobic. The format follows
 - Assemblies are sliced per solid, so touching or overlapping parts stay correct.
 
 ### Fixed
+- Roughing kept the tool centre inside the stock outline, so a strip of stock narrower
+  than the tool keep-out (3 mm margin vs 3.3 mm) was never cut, and later moves plunged
+  into it. Found the first time Claude drove the window over MCP and simulated the result.
 - The outline used for holes and V-carving compared each segment with the previous
   segment's start instead of its end, which scrambled shapes with long straight strokes
   (an "N" came out as a filled box). A test checks the area of N, Z, M and W.
