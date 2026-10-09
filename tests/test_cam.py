@@ -489,19 +489,21 @@ def test_rapids_are_checked_against_the_stock_in_order(pocket_part, tmp_path):
     assert len(hits) == 1 and hits[0][2] > 3.5 and abs(hits[0][1][1] - 20) < 1e-6
 
 
-def test_adaptive_leftovers_are_always_cleared(pocket_part, tmp_path, monkeypatch):
+def test_adaptive_leftovers_are_always_cleared(tmp_path, monkeypatch):
     """If the steered walk gives up early, ordinary rings must still clear the level, so
-    nothing is left for later rapids to hit."""
+    nothing is left for later rapids to hit. The demo plate's pocket is far wider than the
+    final wall pass can reach, so only the cleanup can clear its middle."""
     import numpy as np
     from syntexophobic import adaptive, simulate
     from syntexophobic.job import Operation
-    monkeypatch.setattr(adaptive, "MAX_PATHS", 3)
-    p = Project.create(tmp_path / "left", pocket_part)
-    p.job.operations = [Operation(type="adaptive", tool=1, stepdown=6, stepover=0.15, leave=0.0, bottom=10.0)]
+    monkeypatch.setattr(adaptive, "MAX_PATHS", 1)       # one path: the pocket is never reached
+    p = Project.create(tmp_path / "left", DEMO)
+    p.job.operations = [Operation(type="adaptive", tool=1, stepdown=9, stepover=0.15, leave=0.0, bottom=12.0)]
     p.save_job()
-    res = simulate.simulate(p.setup(), p.toolpaths(), res=0.2)
+    res = simulate.simulate(p.setup(), p.toolpaths(), res=0.25)
     assert res.rapid_hits == [] and res.gouge_cells == 0
     xs, ys = res.grid.centres()
     X, Y = np.meshgrid(xs, ys)
-    pocket = (X > 18.5) & (X < 41.5) & (Y > 13.5) & (Y < 26.5) & (np.hypot(X - 30, Y - 20) > 7.5)
-    assert res.stock[pocket].max() <= 10.0 + 1e-6               # every level cut to the floor
+    # the pocket (20..80 x 15..55, floor Z 12) away from its walls and the two bosses
+    middle = (X > 26) & (X < 74) & (Y > 21) & (Y < 49) & (np.hypot(X - 38, Y - 35) > 12) & (np.hypot(X - 62, Y - 35) > 12)
+    assert res.stock[middle].max() <= 12.0 + 1e-6
