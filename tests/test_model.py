@@ -245,3 +245,34 @@ def test_simplifier_never_strays_from_the_samples():
         a, b = kept[max(i - 1, 0)], kept[min(i, len(kept) - 1)]
         t = 0 if b[0] == a[0] else (px - a[0]) / (b[0] - a[0])
         assert abs(a[2] + t * (b[2] - a[2]) - pz) < 0.0031
+
+
+def test_rough_and_ball_finish_gentle_curves_without_gouging(tmp_path):
+    """Stand-in for a real enclosure lid: a long, gently arched top (R200 over 90 mm), the
+    kind of surface where a careless point simplifier merges whole passes into straight
+    moves that cut into it. Adaptive roughing, ball finishing, simulated end to end."""
+    from syntexophobic import job as jobfile, simulate
+    from syntexophobic.history import History
+    from syntexophobic.job import Job, Operation, Tool
+    from syntexophobic.project import Project
+    arch = Sketch(plane="XZ")                          # 90 mm wide, 10 mm high, top an R200 arc
+    p0, p1, p2, p3 = arch.point(0, 0), arch.point(90, 0), arch.point(90, 10), arch.point(0, 10)
+    arch.line(p0, p1)
+    arch.line(p1, p2)
+    arch.arc((45, 10 - math.sqrt(200 ** 2 - 45 ** 2)), p2, p3)
+    arch.line(p3, p0)
+    part = Part("Lid", [Feature("extrude", sketch="arch", distance=-50),
+                        Feature("fillet", radius=4, edges="|Z")], {"arch": arch})
+    folder = tmp_path / "lid"
+    part.save(folder)
+    jobfile.save(Job(name="lid", model="model.toml",
+                     tools=[Tool(1, "6 mm", 6.0, 2, "flat"), Tool(2, "3 mm ball", 3.0, 2, "ball")],
+                     operations=[Operation(type="adaptive", tool=1, stepdown=6.0, stepover=0.15, leave=0.3, bottom=1.0),
+                                 Operation(type="parallel", tool=2, stepover=0.15, leave=0.0, bottom=1.0)]),
+                 folder / jobfile.JOB_FILE)
+    History(folder).init()
+    p = Project(folder)
+    res = simulate.simulate(p.setup(), p.toolpaths(), res=0.2)
+    assert res.gouge_cells == 0, f"gouge {res.gouge_depth:.3f} mm in {res.gouge_cells} cells"
+    left = (res.stock - res.part)[np.isfinite(res.part) & (res.part > 2.0)]
+    assert np.percentile(left, 95) < 0.15
