@@ -52,6 +52,9 @@ All notable changes to Syntexophobic. The format follows
   it. Sketch planes can be custom (origin, X direction, normal, stored in the sketch
   file); faces square to an axis still become XY / XZ / YZ with an offset. The normal
   points out of the material, so a positive extrude adds and a negative one cuts.
+- **Section view** (View > Section > X / Y / Z): cuts the model, its edges and the
+  simulated stock with a plane, moved with a slider in the toolbar; it stays while the
+  part is rebuilt or re-simulated.
 - **Tool library** shared by all projects (`~/.config/syntexophobic/tools.toml`), started
   with common inch and metric bits: *From library…* copies a tool into the job with the
   next free number, *Save to library* keeps a job's tool for later.

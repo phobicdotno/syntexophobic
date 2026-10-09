@@ -431,5 +431,29 @@ class Viewer(QVTKRenderWindowInteractor):
         elif number == 1:
             self.view_iso()
 
+    # ---- section ----------------------------------------------------------------------
+
+    def set_section(self, axis: str | None, fraction: float = 0.5) -> None:
+        """Cut the model, edges and simulated stock with a plane across `axis` (X, Y, Z),
+        at `fraction` (0..1) of the model's size; None removes the cut."""
+        from vtkmodules.vtkCommonDataModel import vtkPlane
+        actors = [a for a in (self._model, self._edges, self._sim, self._stock) if a]
+        for a in actors:
+            a.GetMapper().RemoveAllClippingPlanes()
+        if axis and self._model:
+            b = self._model.GetBounds()
+            k = "XYZ".index(axis)
+            pos = b[2 * k] + (b[2 * k + 1] - b[2 * k]) * fraction
+            plane = vtkPlane()
+            origin = [0.0, 0.0, 0.0]
+            origin[k] = pos
+            normal = [0.0, 0.0, 0.0]
+            normal[k] = -1.0                     # keep the side below the plane
+            plane.SetOrigin(*origin)
+            plane.SetNormal(*normal)
+            for a in actors:
+                a.GetMapper().AddClippingPlane(plane)
+        self.GetRenderWindow().Render()
+
     def refresh(self) -> None:
         self.GetRenderWindow().Render()

@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDockWidget, QDoubleSpinBox, QFileDialog,
     QFormLayout, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
     QListWidgetItem, QMainWindow, QMessageBox, QPlainTextEdit, QPushButton, QSpinBox,
-    QSplitter, QStackedWidget, QToolBar, QVBoxLayout, QWidget,
+    QSlider, QSplitter, QStackedWidget, QToolBar, QVBoxLayout, QWidget,
 )
 
 from . import geometry
@@ -300,6 +300,23 @@ class MainWindow(QMainWindow):
         self.c_model = act("Model", lambda on: self.viewer.set_model_visible(on), "model", "M", m_view, True)
 
         m_view.addSeparator()
+        m_section = m_view.addMenu("Section")
+        group = QActionGroup(self)
+        for label in ("Off", "X", "Y", "Z"):
+            a = m_section.addAction(label)
+            a.setCheckable(True)
+            a.setChecked(label == "Off")
+            group.addAction(a)
+            a.triggered.connect(lambda _=False, ax=label: self.set_section(None if ax == "Off" else ax))
+        self.section_slider = QSlider(Qt.Horizontal)
+        self.section_slider.setRange(0, 1000)
+        self.section_slider.setValue(500)
+        self.section_slider.setMaximumWidth(220)
+        self.section_slider.setToolTip("Section position")
+        self.section_slider.valueChanged.connect(lambda v: self.set_section(self.section_axis))
+        self.section_slider_action = tb.addWidget(self.section_slider)
+        self.section_slider_action.setVisible(False)
+        self.section_axis = None
         self.a_measure = m_view.addAction("Measure")
         self.a_measure.setCheckable(True)
         self.a_measure.setShortcut(QKeySequence("D"))
@@ -474,6 +491,13 @@ class MainWindow(QMainWindow):
         dock.setMinimumWidth(330)
         self.addDockWidget(Qt.LeftDockWidgetArea, dock)
         self.design_dock = dock
+
+    def set_section(self, axis):
+        self.section_axis = axis
+        self.section_slider_action.setVisible(axis is not None)
+        self.viewer.set_section(axis, self.section_slider.value() / 1000)
+        if axis:
+            self.status.setText(f"Section across {axis}: drag the slider in the toolbar.")
 
     def _picked(self, kind, point, shift):
         if self.a_measure.isChecked():
@@ -668,6 +692,7 @@ class MainWindow(QMainWindow):
         self.project.reload()
         self.viewer.show_model(shape)
         self.viewer.show_stock(self.project.setup().stock)
+        self.viewer.set_section(self.section_axis, self.section_slider.value() / 1000)
         self.viewer.refresh()
         self.toolpaths = []
         b = geometry.bounding_box(shape)
@@ -769,6 +794,7 @@ class MainWindow(QMainWindow):
             self.status.setText(f"{e}. Start with New sketch…, draw a closed shape, then Extrude.")
             return
         self.viewer.show_model(shape)
+        self.viewer.set_section(self.section_axis, self.section_slider.value() / 1000)
         s = p.setup()
         self.viewer.show_stock(s.stock)
         self.viewer.show_toolpaths([], False)
@@ -938,6 +964,7 @@ class MainWindow(QMainWindow):
         self.c_model.setChecked(False)
         self.c_paths.setChecked(False)
         self.viewer.show_simulation(result)
+        self.viewer.set_section(self.section_axis, self.section_slider.value() / 1000)
         if result.gouge_cells:
             self.status.setText(f"Gouge: the tool cuts up to {result.gouge_depth:.2f} mm into the part "
                                 f"({result.gouge_cells} cells, shown red). Do not run this file.")
