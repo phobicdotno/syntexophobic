@@ -524,11 +524,11 @@ class MainWindow(QMainWindow):
         r = self.sim_result
         if r is None or not r.frames:
             return
-        name, tip, dia, stock = r.frames[i]
+        name, tip, dia, stock, (shape, k) = r.frames[i]
         self.viewer.show_simulation(replace(r, stock=stock))
         self.viewer.set_section(self.section_axis, self.section_slider.value() / 1000)
         last = i == len(r.frames) - 1
-        self.viewer.show_tool(None if last else tip, dia)
+        self.viewer.show_tool(None if last else tip, dia, shape=shape, k=k)
         self.status.setText(f"Playback {i + 1}/{len(r.frames)}: {name}" + ("  (end)" if last else ""))
 
     def set_section(self, axis):

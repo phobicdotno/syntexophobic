@@ -22,6 +22,9 @@ every release, read from this file.
   end out of its slot is no longer reported as a rapid into stock (a full-diameter flat
   cylinder "hit" the groove walls); moving sideways at depth still is.
 
+**Interface**
+- Playback draws the cutter in its own shape: flat, ball end, or a V-bit's cone.
+
 **Fixes**
 - Exporting a design as STEP no longer prints OpenCascade's transfer statistics.
 

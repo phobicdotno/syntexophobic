@@ -252,7 +252,8 @@ def simulate(setup, toolpaths, res: float = 0.25, backend=None, snapshots: int =
                 stock = _cut(be, grid, stock, P, tp, res)
                 done += len(P)
                 if every and done >= next_frame:
-                    frames.append((tp.op.name, tuple(P[-1]), tp.tool_diameter, be.to_numpy(stock).copy()))
+                    frames.append((tp.op.name, tuple(P[-1]), tp.tool_diameter, be.to_numpy(stock).copy(),
+                                   (getattr(tp, "tool_shape", "flat"), float(getattr(tp, "vbit_k", 1.0) or 1.0))))
                     next_frame += every
             host = be.to_numpy(stock) if chunk_rapids else None
             for (a, b) in chunk_rapids:
@@ -271,8 +272,8 @@ def simulate(setup, toolpaths, res: float = 0.25, backend=None, snapshots: int =
         maps[side] = stock
     stock = maps["top"]
     if frames:                                   # the last frame is the finished stock
-        name, tip, dia, _ = frames[-1]
-        frames[-1] = (name, tip, dia, be.to_numpy(stock).copy())
+        name, tip, dia, _, tool = frames[-1]
+        frames[-1] = (name, tip, dia, be.to_numpy(stock).copy(), tool)
     stock = be.to_numpy(stock)
     part = part_heightmap(setup.shape, grid)
     bottom = under = None

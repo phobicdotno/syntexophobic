@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import math
+
+import numpy as np
+
 import vtkmodules.vtkInteractionStyle  # noqa: F401  (registers interactor styles)
 import vtkmodules.vtkRenderingOpenGL2  # noqa: F401  (registers the OpenGL backend)
 from PySide6.QtCore import Signal
@@ -408,23 +412,38 @@ class Viewer(QVTKRenderWindowInteractor):
             self._sim = None
         self.show_tool(None)
 
-    def show_tool(self, tip, diameter: float = 6.0, length: float = 25.0) -> None:
-        """A cutter standing with its tip at `tip` (x, y, z); None hides it."""
-        from vtkmodules.vtkFiltersSources import vtkCylinderSource
+    def show_tool(self, tip, diameter: float = 6.0, length: float = 25.0, shape: str = "flat",
+                  k: float = 1.0) -> None:
+        """A cutter standing with its tip at `tip` (x, y, z), drawn in its own shape (flat,
+        ball, or a V-bit with k = width per depth); None hides it."""
+        from vtkmodules.vtkFiltersModeling import vtkRotationalExtrusionFilter
         if self._tool:
             self.ren.RemoveActor(self._tool)
             self._tool = None
         if tip is not None:
-            cyl = vtkCylinderSource()
-            cyl.SetRadius(diameter / 2)
-            cyl.SetHeight(length)
-            cyl.SetResolution(32)
+            r = diameter / 2
+            if shape == "ball":
+                profile = [(r * math.sin(a), r - r * math.cos(a)) for a in np.linspace(0, math.pi / 2, 12)]
+            elif shape == "vbit":
+                profile = [(0.0, 0.0), (r, r / max(k, 1e-3))]
+            else:
+                profile = [(0.0, 0.0), (r, 0.0)]
+            profile += [(r, max(length, profile[-1][1] + 1)), (0.0, max(length, profile[-1][1] + 1))]
+            pts, line = vtkPoints(), vtkCellArray()
+            for x, z in profile:
+                pts.InsertNextPoint(x, 0.0, z)
+            line.InsertNextCell(len(profile), list(range(len(profile))))
+            poly = vtkPolyData()
+            poly.SetPoints(pts)
+            poly.SetLines(line)
+            spin = vtkRotationalExtrusionFilter()          # the profile turned about Z
+            spin.SetInputData(poly)
+            spin.SetResolution(36)
             mapper = vtkPolyDataMapper()
-            mapper.SetInputConnection(cyl.GetOutputPort())
+            mapper.SetInputConnection(spin.GetOutputPort())
             self._tool = vtkActor()
             self._tool.SetMapper(mapper)
-            self._tool.RotateX(90)                     # the source stands along Y
-            self._tool.SetPosition(tip[0], tip[1], tip[2] + length / 2)
+            self._tool.SetPosition(tip[0], tip[1], tip[2])
             self._tool.GetProperty().SetColor(0.85, 0.87, 0.90)
             self._tool.GetProperty().SetOpacity(0.85)
             self.ren.AddActor(self._tool)
