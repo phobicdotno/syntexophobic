@@ -37,6 +37,7 @@ LABELS = {
     "stepover": "Stepover (× tool Ø)", "leave": "Leave on walls", "feed": "Feed (mm/min)",
     "plunge": "Plunge (mm/min)", "bottom": "Bottom Z", "rpm": "Spindle (rpm)",
     "safe_z": "Safe height", "top_offset": "Material above part", "margin": "Margin around part",
+    "width": "Stock X size (0 = margin)", "depth": "Stock Y size (0 = margin)", "height": "Stock Z size (0 = to part bottom)",
     "rest_from": "Rest after tool", "hole_min": "Smallest hole Ø", "hole_max": "Largest hole Ø",
     "material": "Stock material", "up": "Model axis facing up", "ramp_angle": "Ramp angle (°)", "tabs": "Tabs per outline", "zero": "Work zero", "post": "Post-processor",
 }
@@ -350,7 +351,12 @@ class MainWindow(QMainWindow):
         row = QHBoxLayout()
         b_add = QPushButton("Add tool")
         b_add.clicked.connect(self.add_tool)
-        row.addWidget(b_add)
+        b_lib = QPushButton("From library…")
+        b_lib.clicked.connect(self.tool_from_library)
+        b_save = QPushButton("Save to library")
+        b_save.clicked.connect(self.tool_to_library)
+        for b in (b_add, b_lib, b_save):
+            row.addWidget(b)
         row.addStretch()
         tl.addWidget(self.l_tools)
         tl.addLayout(row)
@@ -818,6 +824,8 @@ class MainWindow(QMainWindow):
             self.viewer.show_stock(p.setup().stock)
             self.viewer.refresh()
         self._mark_stale()
+        if p.setup().warning:
+            self.status.setText(p.setup().warning + " Check the stock size.")
         self._refresh_history_status()
 
     def _mark_stale(self):
@@ -835,6 +843,26 @@ class MainWindow(QMainWindow):
         self._job_edited()
         material = feeds.MATERIALS[self.project.job.stock.material].label
         self.status.setText(f"{op.name}: {material} → " + ", ".join(f"{k} {v:g}" for k, v in values.items()))
+
+    def tool_from_library(self):
+        from . import library
+        tools = library.load()
+        labels = [f"{t.name}  (Ø{t.diameter:g}, {t.shape})" for t in tools]
+        label, ok = QInputDialog.getItem(self, "Tool library", f"Add to this job (library: {library.path()})",
+                                         labels, 0, False)
+        if ok:
+            new = library.into_job(self.project.job, tools[labels.index(label)])
+            self._fill_job()
+            self.l_tools.setCurrentRow(len(self.project.job.tools) - 1)
+            self._job_edited()
+            self.status.setText(f"Added T{new.id} {new.name}.")
+
+    def tool_to_library(self):
+        from . import library
+        row = self.l_tools.currentRow()
+        if 0 <= row < len(self.project.job.tools):
+            library.add(self.project.job.tools[row])
+            self.status.setText(f"Saved {self.project.job.tools[row].name} to {library.path()}.")
 
     def add_tool(self):
         tools = self.project.job.tools

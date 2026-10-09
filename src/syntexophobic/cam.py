@@ -137,10 +137,18 @@ class Setup:
             cache["slicer"] = geometry.MeshSlicer(shape)
             cache["holes"] = geometry.find_holes(shape)
         self.part = cache["part"]
-        m = job.stock.margin
-        self.stock = geometry.Box(self.part.xmin - m, self.part.ymin - m, self.part.zmin,
-                                  self.part.xmax + m, self.part.ymax + m,
-                                  self.part.zmax + job.stock.top_offset)
+        st, b = job.stock, self.part
+        top = b.zmax + st.top_offset
+        cx, cy = (b.xmin + b.xmax) / 2, (b.ymin + b.ymax) / 2
+        hx = st.width / 2 if st.width > 0 else (b.xmax - b.xmin) / 2 + st.margin
+        hy = st.depth / 2 if st.depth > 0 else (b.ymax - b.ymin) / 2 + st.margin
+        bottom = top - st.height if st.height > 0 else b.zmin
+        self.stock = geometry.Box(cx - hx, cy - hy, bottom, cx + hx, cy + hy, top)
+        if st.width and st.width < b.xmax - b.xmin or st.depth and st.depth < b.ymax - b.ymin \
+                or st.height and bottom > b.zmin + 1e-6:
+            self.warning = "The stock is smaller than the part."
+        else:
+            self.warning = ""
         self.flats = cache["flats"]
         self._slices: dict[float, list] = cache["slices"]
         self.slicer: geometry.MeshSlicer = cache["slicer"]

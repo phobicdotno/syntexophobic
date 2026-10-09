@@ -395,3 +395,26 @@ def test_ball_waterline_on_vertical_walls(pocket_part, tmp_path):
     p.job.operations = [Operation(type="finish", name="Waterline", tool=1, stepdown=0.5, leave=0.0, bottom=10.0)]
     res = simulate.simulate(p.setup(), p.toolpaths(), res=0.05)
     assert res.gouge_cells == 0, f"gouge {res.gouge_depth:.3f} mm in {res.gouge_cells} cells"
+
+
+def test_tool_library_and_exact_stock(pocket_part, tmp_path, monkeypatch):
+    from syntexophobic import library
+    from syntexophobic.job import Tool
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    tools = library.load()                                 # starter library created
+    assert any(abs(t.diameter - 6.35) < 1e-9 for t in tools) and library.path().exists()
+    library.add(Tool(99, "Custom 4 mm ball", 4.0, 3, "ball"))
+    assert library.load()[-1].name == "Custom 4 mm ball"            # numbers are given per job
+    p = Project.create(tmp_path / "lib", pocket_part)
+    new = library.into_job(p.job, library.load()[-1])
+    assert new.id == 2 and p.job.tools[-1].shape == "ball"
+
+    # exact blank 80 x 50 x 20, centred on the 60 x 40 x 15 part, 1 mm above it
+    p.job.stock.width, p.job.stock.depth, p.job.stock.height = 80, 50, 20
+    p.save_job()
+    s = p.setup().stock
+    assert (s.xmax - s.xmin, s.ymax - s.ymin, s.zmax - s.zmin) == (80, 50, 20)
+    assert (s.xmin, s.ymin, s.zmax) == (-10, -5, 16) and p.setup().warning == ""
+    p.job.stock.width = 50
+    p.save_job()
+    assert "smaller" in p.setup().warning

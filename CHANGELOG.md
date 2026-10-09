@@ -52,6 +52,11 @@ All notable changes to Syntexophobic. The format follows
   it. Sketch planes can be custom (origin, X direction, normal, stored in the sketch
   file); faces square to an axis still become XY / XZ / YZ with an offset. The normal
   points out of the material, so a positive extrude adds and a negative one cuts.
+- **Tool library** shared by all projects (`~/.config/syntexophobic/tools.toml`), started
+  with common inch and metric bits: *From library…* copies a tool into the job with the
+  next free number, *Save to library* keeps a job's tool for later.
+- **Exact stock size** (X, Y, Z), centred on the part, with a warning when the blank is
+  smaller than the part; the margin is still used when no size is set.
 - **Measure** (View menu, D): click an edge or face for its length, diameter or area;
   click a second one for the minimum distance with ΔX/ΔY/ΔZ, drawn as a line.
 - **Hole** feature: simple, counterbore or 90° countersink holes on every free point of

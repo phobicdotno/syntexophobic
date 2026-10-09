@@ -22,8 +22,11 @@ class Tool:
 class Stock:
     up: str = "+Z"            # which model axis points up at the machine
     material: str = "hardwood"   # feeds.MATERIALS key, for suggested feeds and speeds
-    margin: float = 3.0       # extra material around the part in X and Y
+    margin: float = 3.0       # extra material around the part in X and Y (when no size is set)
     top_offset: float = 1.0   # extra material above the part top, faced off first
+    width: float = 0.0        # exact blank size in X, Y, Z (0 = part + margin); centred on
+    depth: float = 0.0        # the part in X and Y, top at part top + top_offset
+    height: float = 0.0
 
 
 @dataclass
