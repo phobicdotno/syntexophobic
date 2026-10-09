@@ -297,6 +297,8 @@ def test_feeds_and_speeds_suggestions():
     small = feeds.suggest("hardwood", Tool(2, "1/8", 3.175, 2), Operation(type="rough"), Machine(rpm=18000))
     assert small["feed"] < rough["feed"]                      # thinner chip for a smaller cutter
     assert feeds.suggest("hdpe", Tool(3, "big", 12, 4), Operation(), Machine(rpm=24000))["feed"] == feeds.MAX_FEED
+    ad = feeds.suggest("hardwood", end6, Operation(type="adaptive"), Machine(rpm=18000))
+    assert ad["stepdown"] == 6.0 and ad["stepover"] == 0.15 and ad["feed"] > rough["feed"]   # chip thinning
     job = Job()
     job.stock.material = "mdf"
     op = job.operations[0]
@@ -326,3 +328,58 @@ def test_rest_machining_only_cuts_what_the_big_tool_left(pocket_part, tmp_path):
     xs, ys = res.grid.centres()
     j, i = int(round((10.6 - ys[0]) / 0.1)), int(round((15.6 - xs[0]) / 0.1))   # 0.85 mm from the corner
     assert res.stock[j, i] <= 10.0 + 1e-6          # the 6 mm tool alone leaves this at the top (Z 16)
+
+
+def _engagement(tp, stock, r, cell=0.1):
+    """Worst and 95th-percentile cutter engagement (fraction of the diameter) over all flat
+    feed moves, each level measured on a fresh full block (what each level must remove)."""
+    import math
+    from syntexophobic import adaptive as ad
+    x0, y0 = stock.xmin - 2 * r, stock.ymin - 2 * r
+    shape = (int((stock.ymax - stock.ymin + 4 * r) / cell), int((stock.xmax - stock.xmin + 4 * r) / cell))
+    block = [[(stock.xmin, stock.ymin), (stock.xmax, stock.ymin), (stock.xmax, stock.ymax), (stock.xmin, stock.ymax)]]
+    hist, worst = [], 0.0
+    for level in tp.levels:
+        m = ad.rasterize(block, x0, y0, cell, shape)
+        prev = max([l for l in tp.levels if l > level + 1e-9], default=stock.zmax)
+        last = None
+        for kind, x, y, z, f in tp.positions():
+            if last is not None and kind == "feed" and level - 1e-9 <= min(z, last[2]) < prev - 1e-9:
+                flat = abs(last[2] - z) < 1e-9 and abs(z - level) < 1e-9
+                n = max(1, math.ceil(math.dist(last[:2], (x, y)) / 0.6))
+                st = math.dist(last[:2], (x, y)) / n
+                for k in range(1, n + 1):
+                    px, py = last[0] + (x - last[0]) * k / n, last[1] + (y - last[1]) * k / n
+                    if flat and st > 0.3:
+                        e = ad._cut_area(m, (px - x0) / cell, (py - y0) / cell, r / cell) * cell * cell / (st * 2 * r)
+                        worst = max(worst, e)
+                        hist.append(e)
+                    ad._clear(m, (px - x0) / cell, (py - y0) / cell, r / cell)
+            last = (x, y, z)
+    hist.sort()
+    return worst, (hist[int(len(hist) * 0.95)] if hist else 0.0)
+
+
+def test_adaptive_clears_without_gouging_and_never_slots(pocket_part, tmp_path):
+    from syntexophobic import simulate
+    from syntexophobic.job import Operation
+    p = Project.create(tmp_path / "adapt", pocket_part)
+    op = Operation(type="adaptive", name="Adaptive", tool=1, stepdown=6.0, stepover=0.15, leave=0.0, bottom=10.0)
+    p.job.operations = [op]
+    tp = cam.generate(p.setup(), op)
+    res = simulate.simulate(p.setup(), [tp], res=0.2)
+    assert res.gouge_cells == 0, f"gouge {res.gouge_depth:.3f}"
+    xs, ys = res.grid.centres()
+    pocket = [(x, y) for x in (20, 30, 40) for y in (14, 20, 26) if math.hypot(x - 30, y - 20) > 4 + 3.2]
+    for x, y in pocket:                                  # pocket floor cleared around the boss
+        j, i = int(round((y - ys[0]) / 0.2)), int(round((x - xs[0]) / 0.2))
+        assert res.stock[j, i] <= 10.0 + 1e-6, (x, y, res.stock[j, i])
+
+    # engagement per level on a fresh block: adaptive stays near its stepover,
+    # concentric roughing buries the cutter in a full-width slot
+    worst, p95 = _engagement(tp, p.setup().stock, 3.0)
+    rough = cam.generate(p.setup(), Operation(type="rough", tool=1, stepdown=6.0, stepover=0.45, leave=0.0, bottom=10.0))
+    rough_worst, _ = _engagement(rough, p.setup().stock, 3.0)
+    assert rough_worst > 0.9                                 # the slotting this replaces
+    assert p95 < 0.35, f"95% of adaptive cuts under 0.35 D, got {p95:.2f}"
+    assert worst < 0.75, f"worst adaptive engagement {worst:.2f} of the diameter"

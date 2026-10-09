@@ -355,9 +355,67 @@ def _rest_region(setup: Setup, op: Operation, forbidden, region, r: float):
     return _boolean(region, _offset(material, r + 0.2), pyclipper.CT_INTERSECTION)
 
 
+def _adaptive(setup: Setup, op: Operation) -> Toolpath:
+    """Constant-engagement roughing level by level (see adaptive.py), then a wall pass."""
+    from . import adaptive
+    tool = setup.job.tool(op.tool)
+    r = tool.diameter / 2
+    top = setup.stock.zmax
+    bottom = setup.part.zmin if op.bottom is None else op.bottom
+    levels = cutting_levels(top, bottom, op.stepdown, setup.flats)
+    safe = top + setup.job.machine.safe_z
+    travel, clearance = top + 1.0, top + 0.5
+    tp = Toolpath(op, tool.diameter, levels=levels)
+    moves = tp.moves
+    moves.append(Move("rapid", None, None, safe))
+    res = max(0.05, tool.diameter / 40)
+    s = setup.stock
+    forbidden: list = []
+    for z in levels:
+        forbidden = _boolean(forbidden, setup.slice_region(z), pyclipper.CT_UNION)
+        keep_out = _offset(forbidden, r + op.leave)
+        # the centre may leave the stock (to start in the open), never come near the part;
+        # shrunk by a cell so grid rounding cannot step over the line
+        allowed = _boolean(_offset(setup.stock_rect(), r + 2.0), keep_out, pyclipper.CT_DIFFERENCE)
+        allowed = _offset(allowed, -res * 1.5)
+        material = _boolean(setup.stock_rect(), _offset(forbidden, op.leave), pyclipper.CT_DIFFERENCE)
+        # only what a disc on an allowed centre can reach; the wall pass takes the slivers
+        material = _boolean(material, _offset(allowed, r - res), pyclipper.CT_INTERSECTION)
+        paths = adaptive.clear_level(_to_mm(allowed), _to_mm(material),
+                                     (s.xmin, s.ymin, s.xmax, s.ymax), r, op.stepover, res)
+        for pts, helix in paths:
+            if len(pts) < 2:
+                continue
+            moves += [Move("rapid", None, None, travel), Move("rapid", pts[0][0], pts[0][1], None),
+                      Move("rapid", None, None, clearance)]
+            if helix:
+                circle = pts[:25]
+                ramp = _ramp_and_lap(circle[:-1], clearance, z, op.ramp_angle or 3.0)
+                moves += [Move("feed", x, y, zz, op.feed) for x, y, zz in ramp[1:]]
+                moves.append(Move("feed", circle[-1][0], circle[-1][1], z, op.feed))
+                rest = pts[25:]
+            else:
+                moves.append(Move("feed", None, None, z, op.plunge))        # in the open
+                rest = pts[1:]
+            moves += [Move("feed", x, y, None, op.feed) for x, y in rest]
+        # wall pass: the exact boundary, ramped like any other ring
+        for loop in _to_mm(_boolean(setup.stock_rect(), keep_out, pyclipper.CT_DIFFERENCE)):
+            if len(loop) < 2:
+                continue
+            pts = _ramp_and_lap(loop, clearance, z, op.ramp_angle)
+            moves += [Move("rapid", None, None, travel), Move("rapid", pts[0][0], pts[0][1], None),
+                      Move("rapid", None, None, pts[0][2])]
+            moves += [Move("feed", x, y, zz, op.feed) for x, y, zz in pts[1:]]
+        clearance = z + 0.5
+    moves.append(Move("rapid", None, None, safe))
+    return tp
+
+
 def generate(setup: Setup, op: Operation) -> Toolpath:
     if op.type in ("drill", "bore"):
         return _holes(setup, op)
+    if op.type == "adaptive":
+        return _adaptive(setup, op)
     tool = setup.job.tool(op.tool)
     r = tool.diameter / 2
     top = setup.stock.zmax

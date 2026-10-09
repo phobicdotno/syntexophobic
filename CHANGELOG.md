@@ -17,6 +17,12 @@ All notable changes to Syntexophobic. The format follows
   join, cut or intersect; linear and circular patterns; fillet, chamfer, shell and mirror.
   Edges and faces are chosen with short selectors (`|Z`, `#Z`, `>Z`, `<Z`, `%CIRCLE`,
   `A&B`) that stay valid when the design changes. STEP export.
+- **Adaptive clearing** (`adaptive` operation): the tool is steered step by step so the
+  cut stays near the stepover instead of slotting; it drops in outside the stock or next
+  to cleared material, helixes into closed pockets, and ends each level with an exact
+  wall pass. On the test pocket the worst bite falls from 1.0 to 0.53 × diameter and 95 %
+  of cuts stay under 0.17 × diameter. Compiled with numba. Feeds suggestion for adaptive:
+  deep stepdown, small stepover, feed raised by the radial chip-thinning factor.
 - **Undo / redo** (Edit menu, Ctrl+Z / Ctrl+Shift+Z) for design and job edits, over
   snapshots of the project's text files. Rapid edits merge into one step; undoing a step
   that created a sketch removes it again.

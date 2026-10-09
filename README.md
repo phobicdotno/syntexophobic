@@ -82,6 +82,7 @@ That area, grown by the tool radius (plus *leave*), is cut out of the stock outl
 | Operation | What it does |
 |---|---|
 | **rough** | clears everything left with concentric offset rings |
+| **adaptive** | clears with a steered tool that keeps the cut near the stepover (no slotting), for deep passes |
 | **finish** | follows every wall once per level |
 | **profile** | follows only the outermost silhouette, for cut-outs; supports **tabs** |
 
@@ -122,7 +123,7 @@ Slicing and simulation run through a pluggable backend with a numpy-compatible A
 
 ## Not there yet
 
-Splines, sketches on slanted faces, adaptive clearing and 3D finishing. See
+Splines, sketches on slanted faces and 3D finishing. See
 [CHANGELOG.md](CHANGELOG.md) for what changed.
 
 Screenshots are made from `examples/demo-plate.step` and a small designed bracket by

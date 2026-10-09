@@ -48,7 +48,15 @@ def suggest(material_key: str, tool: Tool, op: Operation, machine: Machine) -> d
     rpm = machine.rpm or m.rpm
     feed = min(MAX_FEED, rpm * max(tool.flutes, 1) * chipload(m, tool.diameter))
     out = {"feed": round(feed, -1), "plunge": round(feed / 3, -1)}
-    if op.type == "rough":
+    if op.type == "adaptive":
+        # light radial cut, deep axial: thin chips, so feed up by the chip-thinning factor
+        ae = 0.10 if m.doc < 0.1 else 0.15
+        thinning = 1 / (1 - (1 - 2 * ae) ** 2) ** 0.5
+        afeed = min(MAX_FEED, feed * thinning)
+        depth = tool.diameter * (0.5 if m.doc < 0.1 else 1.0)
+        out = {"feed": round(afeed, -1), "plunge": round(feed / 3, -1),
+               "stepdown": round(depth, 2), "stepover": ae}
+    elif op.type == "rough":
         out |= {"stepdown": round(tool.diameter * m.doc, 2), "stepover": m.stepover}
     elif op.type in ("finish", "profile"):
         out |= {"stepdown": round(tool.diameter * m.doc * 2, 2), "feed": round(feed * 0.8, -1)}

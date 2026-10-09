@@ -35,7 +35,7 @@ class Machine:
 
 @dataclass
 class Operation:
-    type: str = "rough"       # rough | finish (all walls) | profile (outside only) | drill | bore
+    type: str = "rough"       # rough | adaptive | finish (all walls) | profile (outside only) | drill | bore
     name: str = "Rough"
     tool: int = 1
     stepdown: float = 1.5

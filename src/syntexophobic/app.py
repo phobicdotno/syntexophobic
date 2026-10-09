@@ -22,7 +22,7 @@ from .job import Operation, Tool
 from .project import Project
 
 CHOICES = {
-    "type": ["rough", "finish", "profile", "drill", "bore"],
+    "type": ["rough", "adaptive", "finish", "profile", "drill", "bore"],
     "up": list(geometry.UP_AXES),
     "zero": ["stock", "model"],
     "post": ["carbide", "grbl"],
@@ -43,6 +43,7 @@ OPTIONAL = {"bottom": "model bottom", "hole_min": "auto", "hole_max": "auto", "r
 # Operation fields that mean nothing for a given type are hidden from the form.
 HIDDEN = {
     "rough": {"tabs", "tab_width", "tab_height", "hole_min", "hole_max"},
+    "adaptive": {"tabs", "tab_width", "tab_height", "hole_min", "hole_max", "rest_from"},
     "finish": {"stepover", "hole_min", "hole_max", "rest_from"},
     "profile": {"stepover", "hole_min", "hole_max", "rest_from"},
     "drill": {"stepover", "leave", "feed", "ramp_angle", "tabs", "tab_width", "tab_height", "rest_from"},
