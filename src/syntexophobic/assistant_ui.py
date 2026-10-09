@@ -8,19 +8,22 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import shutil
 from pathlib import Path
 
-from PySide6.QtCore import QProcess, Qt
+from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QRunnable, Qt, QThreadPool, Signal
 from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QTextBrowser,
                                QVBoxLayout, QWidget)
 
-from . import automation
+from . import automation, faults
 
 PROMPT = ("You are working inside Syntexophobic, a parametric CAD/CAM program for CNC routers, "
           "through its MCP tools. Start with status. Keep sketches fully constrained, check "
           "simulate before calling anything safe to run, and take a screenshot to show results. "
-          "Answer briefly; the user sees the window update as you work.")
+          "Answer briefly; the user sees the window update as you work. If a tool fails or "
+          "misbehaves, or you cannot do what the user asked, call report_problem with what you "
+          "tried and what went wrong (it files a GitHub issue for the developer), then tell the user.")
 
 
 def mcp_config() -> Path:
@@ -63,11 +66,34 @@ def parse(line: str):
                 args = block.get("input", {})
                 brief = ", ".join(f"{k}={v}" for k, v in list(args.items())[:3])
                 out.append(("tool", f"{name}({brief[:120]})"))
+    elif t == "user" and isinstance(ev.get("message", {}).get("content"), list):
+        for block in ev["message"]["content"]:
+            if block.get("type") == "tool_result" and block.get("is_error"):
+                text = faults.result_text(block.get("content")).strip() or "(no error message)"
+                out.append(("tool_error", text[:300]))
     elif t == "result":
         if ev.get("is_error"):
             out.append(("error", str(ev.get("result", "failed"))))
         out.append(("done", ev.get("session_id", "")))
     return out
+
+
+class _Signals(QObject):
+    done = Signal(object)
+
+
+class _Report(QRunnable):
+    def __init__(self, fn):
+        super().__init__()
+        self.fn, self.signals = fn, _Signals()
+
+    def run(self):
+        try:
+            filed = self.fn()
+        except Exception as e:  # no login, offline, GitHub refused: say nothing
+            faults.log.warning("fault report not filed: %s", e)
+            filed = None
+        self.signals.done.emit(filed)
 
 
 class AssistantPanel(QWidget):
@@ -77,6 +103,9 @@ class AssistantPanel(QWidget):
         self.session_id: str | None = None
         self.proc: QProcess | None = None
         self._buf = b""
+        self.turn: faults.Turn | None = None
+        self._stopped = False
+        self.pool = QThreadPool(self)
         col = QVBoxLayout(self)
         self.log = QTextBrowser()
         self.log.setOpenExternalLinks(True)
@@ -124,8 +153,12 @@ class AssistantPanel(QWidget):
             body = f'<p style="margin:8px 0 2px 0"><b>You:</b> {html.escape(text)}</p>'
         elif kind == "tool":
             body = f'<div style="color:#8a929c;font-family:monospace;font-size:11px">→ {html.escape(text)}</div>'
+        elif kind == "tool_error":
+            body = f'<div style="color:#e5534b;font-family:monospace;font-size:11px">✗ {html.escape(text)}</div>'
         elif kind == "error":
             body = f'<p style="color:#e5534b">{html.escape(text)}</p>'
+        elif kind == "reported":
+            body = f'<p style="color:#8a929c"><i>{text}</i></p>'          # our own HTML
         else:
             from PySide6.QtGui import QTextDocument
             doc = QTextDocument()
@@ -158,6 +191,8 @@ class AssistantPanel(QWidget):
         text = self.input.toPlainText().strip()
         if not text or self.proc is not None:
             return
+        self.turn = faults.Turn(text)
+        self._stopped = False
         if self.attached:
             text += "\n\nAttached image(s), look at them with the Read tool: " + ", ".join(self.attached) + \
                     ". Use trace_image for outlines or add_relief for a height relief, or model the shape " \
@@ -168,6 +203,9 @@ class AssistantPanel(QWidget):
         self.proc = QProcess(self)
         cwd = str(self.window.project.folder) if self.window.project else str(Path.home())
         self.proc.setWorkingDirectory(cwd)
+        env = QProcessEnvironment.systemEnvironment()
+        env.insert("SYNTEXOPHOBIC_PANEL", "1")            # report_problem: the panel files the report
+        self.proc.setProcessEnvironment(env)
         self.proc.readyReadStandardOutput.connect(self._read)
         self.proc.finished.connect(self._finished)
         self._buf = b""
@@ -180,7 +218,10 @@ class AssistantPanel(QWidget):
         self._buf += bytes(self.proc.readAllStandardOutput())
         *lines, self._buf = self._buf.split(b"\n")
         for line in lines:
-            for kind, text in parse(line.decode(errors="replace")):
+            line = line.decode(errors="replace")
+            if self.turn is not None:
+                self.turn.feed_line(line)
+            for kind, text in parse(line):
                 if kind == "session" and text:
                     self.session_id = text
                 elif kind == "done":
@@ -192,14 +233,45 @@ class AssistantPanel(QWidget):
         err = bytes(self.proc.readAllStandardError()).decode(errors="replace").strip()
         if code != 0 and err:
             self._add("error", err[-800:])
+            if self.turn is not None and not self.turn.run_error and not self._stopped:
+                self.turn.run_error = err[-2000:]
         self.proc = None
+        if self.turn is not None and not self._stopped:
+            self.report(self.turn)
+        self.turn = None
         self.b_send.setEnabled(True)
         self.b_stop.setEnabled(False)
         self.note.setText("Uses your Claude Code login. Claude only gets Syntexophobic's tools here.")
 
     def stop(self):
         if self.proc is not None:
+            self._stopped = True                      # stopped by the user: not a fault
             self.proc.kill()
+
+    def report(self, turn: faults.Turn):
+        """A turn that went wrong is filed on GitHub in the background; the chat gets the link.
+        Without a GitHub login or network nothing is shown."""
+        why = turn.fault()
+        if not why or os.environ.get("SYNTEXOPHOBIC_NO_FAULT_REPORTS"):
+            return
+        faults.log.warning("assistant fault: %s; request %r", why, turn.request[:200])
+        shot = None
+        try:
+            shot = Path(self.window.screenshot(str(automation.STATE / "fault-screenshot.png")))
+        except Exception as e:  # a missing picture must not stop the report
+            faults.log.warning("fault screenshot failed: %s", e)
+        project = str(self.window.project.folder) if getattr(self.window, "project", None) else ""
+        job = _Report(lambda: faults.report(turn, shot, project))
+        job.signals.done.connect(self._reported)
+        job.setAutoDelete(False)
+        self._job = job                                   # kept alive until the next report
+        self.pool.start(job)
+
+    def _reported(self, filed):
+        if filed is None:
+            return
+        what = "Reported this to GitHub" if filed.new else "Added this to the GitHub issue"
+        self._add("reported", f'{what}: <a href="{html.escape(filed.url)}">#{filed.number}</a>')
 
     def new_chat(self):
         self.stop()

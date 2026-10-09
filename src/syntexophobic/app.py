@@ -940,7 +940,7 @@ class MainWindow(QMainWindow):
             if not buf.endswith(b"\n"):
                 return
             import json
-            from . import automation
+            from . import automation, faults
             try:
                 req = json.loads(buf.decode())
                 self.status.setText(f"Claude: {req['cmd']}…")
@@ -949,6 +949,11 @@ class MainWindow(QMainWindow):
                 self._after_automation(req["cmd"])
                 reply = {"ok": True, "result": result}
             except Exception as e:  # report every failure back to Claude
+                what = buf[:300].decode(errors="replace").strip()
+                if isinstance(e, automation.CommandError):            # a refusal, not a crash
+                    faults.log.warning("command %s refused: %s", what, e)
+                else:
+                    faults.log.exception("command %s failed", what)
                 reply = {"ok": False, "error": f"{type(e).__name__}: {e}"}
             conn.write((json.dumps(reply) + "\n").encode())
             conn.flush()
@@ -1383,6 +1388,9 @@ def run(path: str | None = None) -> int:
     app.setWindowIcon(QIcon(str(desktop.SVG)))
     desktop.integrate()                            # before the window, so the shell matches it at once
     _dark_palette(app)
+    from . import faults
+    faults.setup_logging()
+    faults.log.info("Syntexophobic %s started", faults.environment().get("Version"))
     win = MainWindow()
     win.show()
     if path:

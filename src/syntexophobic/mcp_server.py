@@ -8,12 +8,14 @@ the project files directly. Uses Claude Code's own login: no API key is involved
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from mcp.server.mcpserver import Image, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
 from . import automation as A
+from . import faults
 
 INSTRUCTIONS = """Syntexophobic is a parametric CAD + CAM program for CNC routers (GRBL / Carbide Motion).
 A project is a folder with job.toml (stock, machine, tools, operations), model.toml (designed
@@ -45,6 +47,16 @@ def _call(cmd: str, **args):
         raise ToolError(str(e) or f"{cmd} failed") from e
     except Exception as e:
         raise ToolError(f"{type(e).__name__}: {e}" if str(e) else type(e).__name__) from e
+
+
+def _run(cmd: str, args: dict):
+    try:
+        return _run(cmd, args)
+    except Exception as e:
+        faults.log.warning("mcp %s(%s) failed: %s: %s", cmd, json.dumps(args, default=str)[:300], type(e).__name__, e)
+        if not str(e).strip():                 # never hand Claude an empty error
+            raise A.CommandError(f"{cmd} failed with {type(e).__name__} and no message") from e
+        raise
 
 
 def _run(cmd: str, args: dict):
@@ -345,6 +357,32 @@ def new_variant(name: str) -> str:
     return _out(_call("new_variant", name=name))
 
 
+# ---- problems ----------------------------------------------------------------------------------
+
+@server.tool()
+def report_problem(summary: str, details: str = "") -> str:
+    """Report a fault to the developer as a GitHub issue: call this when a tool fails or
+    behaves wrongly, or when you cannot do what the user asked. summary: one line of what
+    went wrong; details: what you tried, the calls and errors, what the window showed. The
+    version, OS and log are added. Then tell the user."""
+    if os.environ.get("SYNTEXOPHOBIC_PANEL"):          # the Assistant panel files it with the whole chat
+        return _out({"noted": True, "note": "The Assistant panel files this on GitHub when your answer is done."})
+    turn = faults.Turn(request="(asked through Claude Code outside the Assistant panel)")
+    turn.reported.append(f"{summary}\n\n{details}".strip())
+    shot = None
+    try:
+        shot = Path(A.send("screenshot", {})["image"])
+    except Exception:
+        pass
+    try:
+        filed = faults.report(turn, shot)
+    except faults.FaultError as e:
+        return _out({"reported": False, "reason": str(e)})
+    if filed is None:
+        return _out({"reported": False, "reason": "fault reports are turned off"})
+    return _out({"reported": True, "issue": filed.url, "new_issue": filed.new})
+
+
 # ---- window -----------------------------------------------------------------------------------
 
 @server.tool()
@@ -361,4 +399,5 @@ def screenshot() -> Image:
 
 
 def main() -> None:
+    faults.setup_logging()
     server.run("stdio")
