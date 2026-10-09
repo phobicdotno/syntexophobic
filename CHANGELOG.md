@@ -17,6 +17,11 @@ every release, read from this file.
   a depth in stepdown passes; open lines are cut back and forth without lifting. Like
   V-carving, the engraved band is expected in the simulation's gouge check.
 
+**Sketch**
+- Single-line text (sketch Text tool, MCP `stroke_text`): Hershey lettering in nine styles
+  (futural, script, cursive, times, gothic...) as open strokes that engraving cuts once,
+  where outline text gets both sides of every letter cut.
+
 **Simulation**
 - The rapid check uses the tool's real shape: lifting a V-bit out of its groove or a ball
   end out of its slot is no longer reported as a rapid into stock (a full-diameter flat
@@ -30,6 +35,7 @@ every release, read from this file.
 
 **Testing**
 - Import: an STL as a body, a STEP cutting it, the saved project rebuilt and machined.
+- Single-line text: cap height, every stroke engraved exactly once.
 - Engrave: on the lines, depth, no lifts on open lines, only the band cut; rapids with
   V-bits and ball ends. Four new mutants (23 in all); `tools/mutants.py <words>` runs
   only the matching ones.

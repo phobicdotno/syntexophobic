@@ -227,6 +227,15 @@ class Sketch:
             made += [self.line(ids[i], ids[(i + 1) % len(ids)]) for i in range(len(ids))]
         return made
 
+    def stroke_text(self, text: str, x: float, y: float, height: float = 10.0, font: str = "futural") -> list[str]:
+        """Single-line text (open strokes, for engraving), baseline starting at (x, y)."""
+        from .fonttext import strokes
+        made = []
+        for stroke in strokes(text, height, font):
+            ids = [self.point(round(x + px, 4), round(y + py, 4)) for px, py in stroke]
+            made += [self.line(ids[i], ids[i + 1]) for i in range(len(ids) - 1)]
+        return made
+
     def trace_image(self, path, x: float, y: float, width: float, threshold: float = 0.5,
                     invert: bool = False) -> list[str]:
         """Outlines of an image's dark areas (light with invert) as closed line loops,

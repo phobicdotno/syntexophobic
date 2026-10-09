@@ -42,3 +42,32 @@ def outlines(text: str, height: float, font: str = "DejaVu Sans", tol: float = 0
             keep = _keep(np.vstack([pts, pts[:1]]), tol)[:-1]
             polys.append([(float(x), float(y)) for x, y, _ in pts[keep]])
     return [p for p in polys if len(p) >= 3]
+
+
+STROKE_FONTS = ("futural", "futuram", "scripts", "scriptc", "cursive", "timesr", "rowmans", "rowmand", "gothiceng")
+
+
+def strokes(text: str, height: float, font: str = "futural") -> list[list[tuple[float, float]]]:
+    """Single-line (Hershey) lettering for engraving: open polylines in mm, baseline at
+    y = 0 from x = 0, capital letters `height` tall. Each stroke is cut once, where outline
+    text would cut both sides of every letter."""
+    from HersheyFonts import HersheyFonts
+    if font not in STROKE_FONTS:
+        raise ValueError(f"Unknown single-line font {font!r}; fonts: {', '.join(STROKE_FONTS)}")
+    hf = HersheyFonts()
+    hf.load_default_font(font)
+    hf.normalize_rendering(100)
+    ys = [y for seg in hf.lines_for_text("H") for _, y in seg]
+    base, cap = min(ys), max(ys)
+    k = height / (cap - base)
+    out: list[list[tuple[float, float]]] = []
+    for (x1, y1), (x2, y2) in hf.lines_for_text(text):
+        a, b = (x1 * k, (y1 - base) * k), (x2 * k, (y2 - base) * k)
+        if out and abs(out[-1][-1][0] - a[0]) < 1e-9 and abs(out[-1][-1][1] - a[1]) < 1e-9:
+            out[-1].append(b)                       # the stroke goes on
+        else:
+            out.append([a, b])
+    if out:
+        x0 = min(x for s in out for x, _ in s)
+        out = [[(x - x0, y) for x, y in s] for s in out]
+    return out

@@ -250,3 +250,39 @@ def test_loop_outline_matches_the_shape_for_long_strokes():
         true_area = sum(abs(_area(p)) for p in outlines(ch, 16))
         got = sum(abs(_area(_loop_polygon(sk, l, 48))) for l in sk.profiles())
         assert abs(got - true_area) < 1e-6 * true_area + 1e-9, (ch, got, true_area)
+
+
+def test_single_line_text_is_engraved_once_per_stroke(tmp_path):
+    from syntexophobic import cam
+    from syntexophobic.fonttext import strokes
+    from syntexophobic.job import Operation, Tool
+    from syntexophobic.model import Feature, Part
+    from syntexophobic.project import Project
+    h = strokes("H", 10.0)
+    ys = [y for s in h for _, y in s]
+    assert min(ys) == pytest.approx(0.0, abs=1e-9) and max(ys) == pytest.approx(10.0, abs=1e-9)
+    assert len(h) == 3                                   # two uprights and the bar
+    with pytest.raises(ValueError, match="Unknown single-line font"):
+        strokes("x", 5, "Comic Sans")
+
+    base, label = Sketch(), Sketch(offset=10)
+    base.rectangle(0, 0, 80, 30)
+    made = label.stroke_text("HELLO", 5, 10, 10)
+    assert len(made) > 10 and all(len(label.lines[i].a) for i in made)
+    Project.create_design(tmp_path / "sign", "sign")
+    part = Part("sign", [Feature("extrude", "board", sketch="base", distance=10)], {"base": base, "label": label})
+    part.save(tmp_path / "sign")
+    p = Project(tmp_path / "sign")
+    p.job.tools = [Tool(1, "60° V-bit", 6.35, 1, "vbit", 60.0)]
+    p.job.operations = [Operation(type="engrave", tool=1, source="label", max_depth=0.5, stepdown=0.5)]
+    p.job.stock.top_offset = 0.0
+    p.save_job()
+    stroke_len = sum(math.dist(s[i], s[i + 1]) for s in strokes("HELLO", 10) for i in range(len(s) - 1))
+    tp = p.toolpaths()[0]
+    cut = 0.0
+    last = None
+    for k, x, y, z, f in tp.positions():
+        if last is not None and k == "feed" and z == last[2]:
+            cut += math.dist(last[:2], (x, y))
+        last = (x, y, z)
+    assert cut == pytest.approx(stroke_len, rel=1e-6)    # one pass: every stroke exactly once

@@ -217,6 +217,8 @@ class Session:
             made = sk.spline([tuple(p) for p in a["points"]], closed=bool(a.get("closed", False)), construction=c)
         elif shape == "text":
             made = sk.text(a["text"], a["x"], a["y"], a.get("height", 10.0), a.get("font", "DejaVu Sans"))
+        elif shape == "stroke_text":
+            made = sk.stroke_text(a["text"], a["x"], a["y"], a.get("height", 10.0), a.get("font", "futural"))
         else:
             raise CommandError(f"Unknown shape {shape!r}")
         return self._sketch_result(part, sk, made)

@@ -102,7 +102,9 @@ again after a rebuild), or with short selectors: `|Z` (vertical edges), `#Z` (ho
 ![Sketch editor: fully constrained base sketch, the hole selected](docs/screenshots/sketch.png)
 
 Lines, rectangles, circles, arcs, splines, polygons, slots, text and points on the XY, XZ or YZ
-plane (with an offset), or on any flat face of the part. Corner fillet, offset, mirror and trim work on existing geometry.
+plane (with an offset), or on any flat face of the part. Text comes as outlines in any
+installed font (to extrude or V-carve) or as single-line Hershey lettering (to engrave: each
+stroke is cut once). Corner fillet, offset, mirror and trim work on existing geometry.
 Clicking near a point reuses it. Constraints: coincident, horizontal, vertical, parallel,
 perpendicular, equal, tangent, concentric, midpoint, point on line/circle, fixed,
 symmetric, plus dimensions for length, distance, diameter and angle. Geometry is blue while
@@ -156,6 +158,8 @@ That area, grown by the tool radius (plus *leave*), is cut out of the stock outl
   outline that does not close falls back to the exact section.
 
 ![A sign V-carved with a 60° V-bit from sketch text, simulated](docs/screenshots/vcarve.png)
+
+![Single-line script and capitals engraved with a 60° V-bit, simulated](docs/screenshots/engrave.png)
 
 ![A domed cap after adaptive roughing and 3 mm ball-end parallel finishing, simulated](docs/screenshots/finish3d.png)
 

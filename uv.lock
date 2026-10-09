@@ -464,6 +464,14 @@ wheels = [
 ]
 
 [[package]]
+name = "hershey-fonts"
+version = "2.1.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/67/7b/6b42706a7a7bc88aa4aea1d19793c7d44709c4bf115ffeb5216b0ffe2dce/Hershey_Fonts-2.1.0-py2.py3-none-any.whl", hash = "sha256:e53ef56bdef231f10f0576a6570f49fcc8442e45115028bc52a7ade15d824581", size = 63934, upload-time = "2021-09-13T14:55:23.223Z" },
+]
+
+[[package]]
 name = "httpcore2"
 version = "2.13.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1515,6 +1523,7 @@ source = { editable = "." }
 dependencies = [
     { name = "cadquery-ocp" },
     { name = "ezdxf" },
+    { name = "hershey-fonts" },
     { name = "mcp" },
     { name = "numba" },
     { name = "numpy" },
@@ -1538,6 +1547,7 @@ requires-dist = [
     { name = "cadquery-ocp", specifier = ">=8.0.1.1.0" },
     { name = "cupy-cuda12x", marker = "extra == 'cuda'", specifier = ">=13" },
     { name = "ezdxf", specifier = ">=1.4.4" },
+    { name = "hershey-fonts", specifier = ">=2.1.0" },
     { name = "mcp", specifier = ">=2.3.0" },
     { name = "numba", specifier = ">=0.68.0" },
     { name = "numpy", specifier = ">=2.5.3" },

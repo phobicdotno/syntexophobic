@@ -226,8 +226,15 @@ class SketchView(QGraphicsView):
             if ok and text.strip():
                 h, ok = QInputDialog.getDouble(self, "Text", "Height of capital letters (mm)", 10.0, 0.5, 1000, 2)
                 if ok:
-                    s.text(text, round(pos.x(), 3), round(pos.y(), 3), h)
-                    self.commit()
+                    from .fonttext import STROKE_FONTS
+                    kinds = ["Outlines (to extrude or V-carve)"] + [f"Single line: {f} (to engrave)" for f in STROKE_FONTS]
+                    kind, ok = QInputDialog.getItem(self, "Text", "Lettering", kinds, 0, False)
+                    if ok and kind.startswith("Single line"):
+                        s.stroke_text(text, round(pos.x(), 3), round(pos.y(), 3), h, kind.split(": ")[1].split()[0])
+                        self.commit()
+                    elif ok:
+                        s.text(text, round(pos.x(), 3), round(pos.y(), 3), h)
+                        self.commit()
         elif self.tool == "trim":
             hit = self.at(pos)
             if hit in s.lines:

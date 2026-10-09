@@ -120,7 +120,9 @@ def sketch_draw(sketch: str, shape: str, params: dict) -> str:
     """Draw in a sketch (sketch coordinates, mm). shape and params:
     point {x, y} | line {x1, y1, x2, y2} | rectangle {x0, y0, x1, y1} | circle {cx, cy, r} |
     arc {cx, cy, x1, y1, x2, y2} (counter-clockwise from 1 to 2) | polygon {cx, cy, r, sides} |
-    slot {x0, y0, x1, y1, width} | spline {points: [[x, y], ...], closed} | text {text, x, y, height}.
+    slot {x0, y0, x1, y1, width} | spline {points: [[x, y], ...], closed} | text {text, x, y, height}
+    (outlines, to extrude or V-carve) | stroke_text {text, x, y, height, font} (single-line, for
+    engrave; fonts futural, futuram, scripts, scriptc, cursive, timesr, rowmans, rowmand, gothiceng).
     Add "construction": true for reference geometry. Returns the new ids and the solver state."""
     return _out(_call("sketch_draw", sketch=sketch, shape=shape, **params))
 
