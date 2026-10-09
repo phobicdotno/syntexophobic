@@ -211,6 +211,9 @@ def _scrolling(body: QWidget) -> QScrollArea:
 
 
 class MainWindow(QMainWindow):
+    NO_PROJECT_NOTE = "No project is open.\nUse File > New design… to model a part, or open a STEP file."
+    STEP_NOTE = "This project machines an imported STEP file.\nUse File > New design… to model a part here."
+
     def __init__(self):
         super().__init__()
         from .viewer import Viewer   # VTK import after QApplication exists
@@ -530,8 +533,7 @@ class MainWindow(QMainWindow):
         self.design_panel.edit_sketch.connect(self.open_sketch)
         self.design_panel.selection.connect(self._show_selection)
         self.viewer.picked.connect(self._picked)
-        self.design_note = QLabel("This project machines an imported STEP file.\n"
-                                  "Use File > New design… to model a part here.")
+        self.design_note = QLabel(self.NO_PROJECT_NOTE)       # until a project is open
         self.design_note.setWordWrap(True)
         body = QWidget()
         col = QVBoxLayout(body)
@@ -989,6 +991,7 @@ class MainWindow(QMainWindow):
         else:
             self.part = None
         self.design_panel.setVisible(self.part is not None)
+        self.design_note.setText(self.STEP_NOTE)
         self.design_note.setVisible(self.part is None)
         self.setWindowTitle(f"Syntexophobic — {project.job.name}")
         self._fill_job()

@@ -74,6 +74,30 @@ def test_mcp_server_over_stdio(tmp_path):
     assert len(tools) >= 30
 
 
+def test_mcp_tool_errors_carry_their_message(tmp_path):
+    """A failing tool tells Claude why (the MCP server would otherwise send only
+    "Error executing tool new_design")."""
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+
+    blocker = tmp_path / "file"
+    blocker.write_text("not a folder")
+    env = dict(os.environ, XDG_CACHE_HOME=str(tmp_path / "cache"))
+    params = StdioServerParameters(command=sys.executable, args=["-m", "syntexophobic", "mcp"], env=env)
+
+    async def go():
+        async with stdio_client(params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                bad = await session.call_tool("new_design", {"folder": str(blocker / "box"), "name": "box"})
+                none = await session.call_tool("set_parameter", {"name": "w", "expression": "3"})
+                return bad, none
+
+    bad, none = asyncio.run(go())
+    assert bad.is_error and "NotADirectoryError" in bad.content[0].text and str(blocker) in bad.content[0].text
+    assert none.is_error and "No project open" in none.content[0].text
+
+
 def test_assistant_command_and_stream_parsing():
     from syntexophobic import assistant_ui as U
     args = U.command("make a plate", None, "/tmp")
