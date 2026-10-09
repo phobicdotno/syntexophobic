@@ -33,6 +33,14 @@ MUTANTS = [
     ("ball waterline widens bands by their lower width", "cam.py",
      "            out = _boolean(out, _offset(above, width(higher_h) + leave), pyclipper.CT_UNION)",
      "            out = _boolean(out, _offset(above, width(h) + leave), pyclipper.CT_UNION)"),
+    ("point simplifier compares neighbours only", "surface.py",
+     "        if worst > tol * tol:\n            keep[at] = True",
+     "        if worst > tol * tol and False:\n            keep[at] = True"),
+    ("loop outline chained from the segment start", "model.py",
+     "        end = seg_pts[-1]\n", "        end = seg_pts[0]\n"),
+    ("holes attached with a fixed reversal", "model.py",
+     "    if (area > 0) != ccw:\n        wire = TopoDS.Wire(wire.Reversed())",
+     "    if not ccw:\n        wire = TopoDS.Wire(wire.Reversed())"),
     ("first tool change skipped (no M6 T1)", "gcode.py", '            if post["tool_change"] == "M6":', '            if post["tool_change"] == "M6" and current_tool is not None:'),
 ]
 
