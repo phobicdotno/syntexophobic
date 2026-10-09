@@ -19,6 +19,15 @@ rm -f "$APPDIR"/usr/python/lib/python3.12/EXTERNALLY-MANAGED
 "$UV" pip install --python "$APPDIR/usr/python/bin/python3" build/wheel/syntexophobic-"$VERSION"-*.whl
 # trim what the program never uses: Qt's web engine, QML, multimedia, most of VTK...
 "$APPDIR/usr/python/bin/python3" tools/appimage_prune.py "$APPDIR"
+# Qt's xcb plugin needs the xcb-util and xkb libraries, which many desktops lack (libxcb-cursor0 above
+# all); they go next to libQt6XcbQpa, whose RUNPATH is $ORIGIN, so the bundled copies win
+QTLIB="$APPDIR"/usr/python/lib/python3.12/site-packages/PySide6/Qt/lib
+for lib in libxcb-cursor.so.0 libxcb-icccm.so.4 libxcb-image.so.0 libxcb-keysyms.so.1 \
+           libxcb-render-util.so.0 libxcb-util.so.1 libxcb-xkb.so.1 libxkbcommon-x11.so.0; do
+    src=$(/sbin/ldconfig -p | awk -v l="$lib" '$1 == l && /x86-64/ {print $NF; exit}')
+    [ -n "$src" ] || { echo "$lib not found on this machine; install its libxcb-* package" >&2; exit 1; }
+    cp -L "$src" "$QTLIB/$lib"
+done
 find "$APPDIR/usr/python" -name __pycache__ -prune -exec rm -rf {} +
 rm -rf "$APPDIR"/usr/python/lib/python3.12/{test,idlelib,tkinter,turtledemo} \
        "$APPDIR"/usr/python/lib/python3.12/site-packages/{pip,setuptools}* \
