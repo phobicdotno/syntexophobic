@@ -276,3 +276,39 @@ def test_rough_and_ball_finish_gentle_curves_without_gouging(tmp_path):
     assert res.gouge_cells == 0, f"gouge {res.gouge_depth:.3f} mm in {res.gouge_cells} cells"
     left = (res.stock - res.part)[np.isfinite(res.part) & (res.part > 2.0)]
     assert np.percentile(left, 95) < 0.15
+
+
+def test_waterline_ball_finish_on_a_dome(tmp_path):
+    """Waterline (finish op) with a ball end: contours at fine steps; no gouges, and the
+    steep rim (where raster passes leave the most) comes out close."""
+    from syntexophobic import job as jobfile, simulate
+    from syntexophobic.history import History
+    from syntexophobic.job import Job, Operation, Tool
+    from syntexophobic.project import Project
+    prof = Sketch(plane="XZ")
+    o, a, b = prof.point(0, 0), prof.point(20, 0), prof.point(0, 20)
+    prof.line(o, a)
+    prof.arc(o, a, b)
+    axis = prof.line(b, o)
+    plinth = Sketch(offset=-5)
+    plinth.rectangle(-25, -25, 25, 25)
+    dome = Part("Dome", [Feature("revolve", sketch="prof", axis=axis),
+                         Feature("extrude", sketch="plinth", distance=5, operation="join")],
+                {"prof": prof, "plinth": plinth})
+    folder = tmp_path / "wl"
+    dome.save(folder)
+    jobfile.save(Job(name="wl", model="model.toml", tools=[Tool(1, "6 mm ball", 6.0, 2, "ball")],
+                     operations=[Operation(type="finish", name="Waterline", tool=1, stepdown=0.4, leave=0.0,
+                                           bottom=0.0)]), folder / jobfile.JOB_FILE)
+    History(folder).init()
+    p = Project(folder)
+    res = simulate.simulate(p.setup(), p.toolpaths(), res=0.1)
+    assert res.gouge_cells == 0, f"gouge {res.gouge_depth:.3f} mm"
+    xs, ys = res.grid.centres()
+    X, Y = np.meshgrid(xs, ys)
+    rim = (np.hypot(X, Y) > 15) & (np.hypot(X, Y) < 19.5)        # steep: 49° to 77°
+    # material left, measured perpendicular to the surface (on a 77° wall a 0.07 mm skin
+    # reads as 0.3 mm in Z): the keep-out is designed to be at most r/40 too wide
+    left = -simulate._normal_depth(res.part, res.stock, 0.1)[rim]
+    assert np.percentile(left, 95) < 0.1, f"{np.percentile(left, 95):.3f} mm left on the rim"
+    assert np.percentile(left, 5) > -0.02

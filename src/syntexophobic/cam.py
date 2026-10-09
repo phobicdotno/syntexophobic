@@ -249,8 +249,48 @@ def _lift_over_tabs(points, centres, reach: float, tab_top: float):
     return out
 
 
-def _rings(op: Operation, forbidden, setup: "Setup", r: float, diameter: float):
+def ball_keep_out(setup: "Setup", z: float, r: float, leave: float, samples: int = 40):
+    """Where a ball end's centre line may not go with its tip at height z.
+
+    The ball touches material from its tip up to its equator: at height z + h it is
+    sqrt(r² - (r - h)²) wide. So the keep-out is the union, over heights between z and
+    z + r, of the material at or above that height widened by the ball's width there.
+    Above the equator the full radius applies."""
+    zmax = setup.stock.zmax
+    out: list = []
+    above: list = []
+    # sample at equal steps of the ball's width (not height): each band is then widened
+    # by at most r/samples more than it needs, from the tip to the equator
+    hs = sorted({r - math.sqrt(max(r * r - (r * k / samples) ** 2, 0.0)) for k in range(samples + 1)},
+                reverse=True)
+    width = lambda h: r if h >= r else math.sqrt(max(r * r - (r - h) ** 2, 0.0))   # noqa: E731
+    higher_h = r
+    for h in hs:                                      # top down, so `above` accumulates
+        zz = z + h
+        if zz <= zmax:
+            above = _boolean(above, setup.slice_region(zz), pyclipper.CT_UNION)
+        if above:
+            # material at heights between this sample and the next one up is in `above`
+            # too; the ball is widest at the top of that band, so widen by that width
+            out = _boolean(out, _offset(above, width(higher_h) + leave), pyclipper.CT_UNION)
+        higher_h = h
+    # material higher than the equator: everything there, widened by the full radius
+    higher = []
+    for zz in sorted({lv for lv in setup.flats if lv > z + r} | {zmax - 1e-3}, reverse=True):
+        higher = _boolean(higher, setup.slice_region(zz), pyclipper.CT_UNION)
+    if higher:
+        out = _boolean(out, _offset(higher, r + leave), pyclipper.CT_UNION)
+    return out
+
+
+def _rings(op: Operation, forbidden, setup: "Setup", r: float, diameter: float, z: float | None = None):
     """Closed paths for one level, in cutting order."""
+    ball = setup.job.tool(op.tool).shape == "ball"
+    if op.type in ("finish", "profile") and ball:
+        keep = ball_keep_out(setup, z, r, op.leave)
+        if op.type == "profile":
+            keep = _outermost(keep)
+        return [keep] if keep else []
     if op.type == "finish":
         return [_offset(forbidden, r + op.leave)] if forbidden else []
     if op.type == "profile":
@@ -453,7 +493,7 @@ def _generate(setup: Setup, op: Operation) -> Toolpath:
     clearance = top + 0.5
     for z in levels:
         forbidden = _boolean(forbidden, setup.slice_region(z), pyclipper.CT_UNION)
-        for ring in _rings(op, forbidden, setup, r, tool.diameter):
+        for ring in _rings(op, forbidden, setup, r, tool.diameter, z):
             for loop in _to_mm(ring):
                 if len(loop) < 2:
                     continue

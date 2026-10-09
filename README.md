@@ -84,7 +84,7 @@ That area, grown by the tool radius (plus *leave*), is cut out of the stock outl
 |---|---|
 | **rough** | clears everything left with concentric offset rings |
 | **adaptive** | clears with a steered tool that keeps the cut near the stepover (no slotting), for deep passes |
-| **finish** | follows every wall once per level |
+| **finish** | follows every wall once per level; with a ball end it is waterline finishing for steep 3D walls |
 | **profile** | follows only the outermost silhouette, for cut-outs; supports **tabs** |
 | **parallel** | 3D finishing: raster passes riding on the surface (exact drop-cutter, flat or ball end) |
 
@@ -125,7 +125,7 @@ Slicing and simulation run through a pluggable backend with a numpy-compatible A
 
 ## Not there yet
 
-Sketches on slanted faces, more 3D finishing strategies (waterline, scallop). See
+Sketches on slanted faces, scallop finishing. See
 [CHANGELOG.md](CHANGELOG.md) for what changed.
 
 Screenshots are made from `examples/demo-plate.step` and a small designed bracket by

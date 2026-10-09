@@ -383,3 +383,15 @@ def test_adaptive_clears_without_gouging_and_never_slots(pocket_part, tmp_path):
     assert rough_worst > 0.9                                 # the slotting this replaces
     assert p95 < 0.35, f"95% of adaptive cuts under 0.35 D, got {p95:.2f}"
     assert worst < 0.75, f"worst adaptive engagement {worst:.2f} of the diameter"
+
+
+def test_ball_waterline_on_vertical_walls(pocket_part, tmp_path):
+    """Vertical walls are where a too-narrow ball keep-out shows: the material does not
+    shrink going up, so every band must be widened by the ball's full width at its top."""
+    from syntexophobic import simulate
+    from syntexophobic.job import Operation, Tool
+    p = Project.create(tmp_path / "ballwl", pocket_part)
+    p.job.tools = [Tool(1, "4 mm ball", 4.0, 2, "ball")]
+    p.job.operations = [Operation(type="finish", name="Waterline", tool=1, stepdown=0.5, leave=0.0, bottom=10.0)]
+    res = simulate.simulate(p.setup(), p.toolpaths(), res=0.05)
+    assert res.gouge_cells == 0, f"gouge {res.gouge_depth:.3f} mm in {res.gouge_cells} cells"

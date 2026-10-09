@@ -6,10 +6,11 @@ All notable changes to Syntexophobic. The format follows
 ## [Unreleased]
 
 ### Added
-- `tools/mutants.py`: puts ten known bugs back one at a time (part ignored by roughing,
+- `tools/mutants.py`: puts eleven known bugs back one at a time (part ignored by roughing,
   missing tool radius, drop-cutter without edges or faces, flipped work offset, tabs not
-  lifted, no ramp, adaptive without keep-out, pecks from the hole top, no first `M6`) and
-  checks that the tests fail for each. All ten are caught.
+  lifted, no ramp, adaptive without keep-out, pecks from the hole top, a too-narrow ball
+  waterline, no first `M6`) and checks that the tests fail for each. All eleven are caught;
+  the waterline one first survived, which led to a test on vertical walls.
 - **Sketch** (`sketch.py`): points, lines, circles and arcs with 20 constraint types
   (coincident, horizontal, vertical, parallel, perpendicular, equal, distance, horizontal /
   vertical distance, radius, diameter, angle, point on line / circle, midpoint, tangent,
@@ -21,6 +22,10 @@ All notable changes to Syntexophobic. The format follows
   join, cut or intersect; linear and circular patterns; fillet, chamfer, shell and mirror.
   Edges and faces are chosen with short selectors (`|Z`, `#Z`, `>Z`, `<Z`, `%CIRCLE`,
   `A&B`) that stay valid when the design changes. STEP export.
+- **Waterline finishing with ball ends**: `finish` and `profile` with a ball-end tool
+  contour each level using the ball's real shape (material from the tip up to the equator,
+  widened by the ball's width at each height, sampled at equal width steps so it is never
+  too narrow and at most r/40 too wide). Pairs with `parallel` for steep walls.
 - **3D finishing** (`parallel` operation): raster passes along X or Y whose height comes
   from an exact drop-cutter on the part's mesh (tool against every nearby triangle's
   corners, edges and face; flat and ball ends), within 8 µm of the true surface. Parallel

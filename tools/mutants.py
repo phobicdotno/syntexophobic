@@ -30,6 +30,9 @@ MUTANTS = [
      "        allowed = _boolean(_offset(setup.stock_rect(), r + 2.0), keep_out, pyclipper.CT_DIFFERENCE)",
      "        allowed = _offset(setup.stock_rect(), r + 2.0)"),
     ("drill pecks from the hole top", "cam.py", "nxt = max(bottom, depth - op.stepdown)", "nxt = max(bottom, min(depth, h.top) - op.stepdown)"),
+    ("ball waterline widens bands by their lower width", "cam.py",
+     "            out = _boolean(out, _offset(above, width(higher_h) + leave), pyclipper.CT_UNION)",
+     "            out = _boolean(out, _offset(above, width(h) + leave), pyclipper.CT_UNION)"),
     ("first tool change skipped (no M6 T1)", "gcode.py", '            if post["tool_change"] == "M6":', '            if post["tool_change"] == "M6" and current_tool is not None:'),
 ]
 
