@@ -17,7 +17,8 @@ rm -f "$APPDIR"/usr/python/lib/python3.12/EXTERNALLY-MANAGED
 
 "$UV" build --wheel -o build/wheel >/dev/null
 "$UV" pip install --python "$APPDIR/usr/python/bin/python3" build/wheel/syntexophobic-"$VERSION"-*.whl
-# trim what the program never uses
+# trim what the program never uses: Qt's web engine, QML, multimedia, most of VTK...
+"$APPDIR/usr/python/bin/python3" tools/appimage_prune.py "$APPDIR"
 find "$APPDIR/usr/python" -name __pycache__ -prune -exec rm -rf {} +
 rm -rf "$APPDIR"/usr/python/lib/python3.12/{test,idlelib,tkinter,turtledemo} \
        "$APPDIR"/usr/python/lib/python3.12/site-packages/{pip,setuptools}* \

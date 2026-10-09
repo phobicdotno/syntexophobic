@@ -3,6 +3,17 @@
 Each release has a version and a build number; Help → About shows a one-line summary of
 every release, read from this file.
 
+## v0.5.1 (build 6) — 2026-10-09
+
+**Install**
+- The AppImage keeps only the parts of Qt and VTK the program uses (the Qt and VTK modules
+  it imports, the Qt plugins a desktop window needs, and what those link against):
+  Qt's web engine, QML, multimedia and 3D and most of VTK are left out.
+
+**Fixes**
+- The 3D view refits when the part grows beyond the view: a design started from an empty
+  sketch showed one corner of the part, magnified.
+
 ## v0.5.0 (build 5) — 2026-10-09
 
 **Install**

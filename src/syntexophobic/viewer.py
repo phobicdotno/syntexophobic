@@ -175,6 +175,15 @@ class Viewer(QVTKRenderWindowInteractor):
         self.ren.AddActor(self._model)
         self.shape = shape
         self._show_edges(shape)
+        # refit when the part grows out of what the camera was fitted to (a design started
+        # from an empty sketch would otherwise stay zoomed on the origin); shrinking or
+        # editing inside keeps the view the user set
+        b = poly.GetBounds()
+        old = getattr(self, "_fitted", None)
+        pad = 0.1 * max(b[1] - b[0], b[3] - b[2], b[5] - b[4], 1e-6)
+        if old is None or any(b[i] < old[i] - pad for i in (0, 2, 4)) or any(b[i] > old[i] + pad for i in (1, 3, 5)):
+            self.ren.ResetCamera(*b)
+            self._fitted = b
 
     def _show_edges(self, shape) -> None:
         """Model edges as dark lines (CAD look); also what edge picking hits."""
@@ -435,6 +444,7 @@ class Viewer(QVTKRenderWindowInteractor):
         cam.SetPosition(1, -1.4, 1.1)
         cam.SetViewUp(0, 0, 1)
         self.ren.ResetCamera()
+        self._fitted = self.ren.ComputeVisiblePropBounds()
         self.GetRenderWindow().Render()
 
     def view_top(self) -> None:
@@ -443,6 +453,7 @@ class Viewer(QVTKRenderWindowInteractor):
         cam.SetPosition(0, 0, 1)
         cam.SetViewUp(0, 1, 0)
         self.ren.ResetCamera()
+        self._fitted = self.ren.ComputeVisiblePropBounds()
         self.GetRenderWindow().Render()
 
     # ---- 3Dconnexion ------------------------------------------------------------------
