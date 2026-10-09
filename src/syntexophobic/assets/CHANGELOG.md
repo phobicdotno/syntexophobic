@@ -1,0 +1,117 @@
+# Changelog
+
+Each release has a version and a build number; Help → About shows a one-line summary of
+every release, read from this file.
+
+## v0.4.0 (build 4) — 2026-10-09
+
+**About**
+- Help → About shows the logo, the version and build, and "What's new": one line per
+  release with the areas it touched, read from this changelog, so it cannot go stale.
+- `syntexophobic --version`.
+
+**Files**
+- STL → STEP converter: File > Convert STL to STEP…, `syntexophobic convert in.stl
+  out.step` and the MCP tool `convert_stl`. The mesh becomes a closed faceted solid that
+  any CAD program opens. STL files also open directly as CAM projects.
+
+**CAM**
+- Flat levels are grouped by height (within 0.05 mm) and need a real area (0.2 % of the
+  part's footprint): a relief or other faceted solid no longer gets a cutting level for
+  every nearly flat triangle (an image relief went from 171 to 9.5 minutes of adaptive).
+
+**Testing**
+- About: the changelog summary parser, the newest entry matching the version, the dialog.
+- STL round trip: mesh → STEP → volume.
+
+## v0.3.0 (build 3) — 2026-10-09
+
+**Claude**
+- MCP server (`syntexophobic mcp`, 36+ tools: projects, parameters, sketches, features,
+  stock, tools, operations, toolpaths, simulation, G-code, history, views, screenshots).
+  With the window open every call runs in it live (local socket, this user only);
+  otherwise it works on the project files. `syntexophobic install-mcp` registers it with
+  Claude Code. It uses Claude Code's own login: no API key.
+- Assistant panel (View > Assistant, Ctrl+K): chat with Claude inside the program with
+  only Syntexophobic's tools (plus Read for attached pictures); its tool calls drive the
+  window as you watch.
+
+**Images**
+- Trace image (sketch toolbar, MCP): a picture's dark or light areas become closed
+  outlines with their holes, ready to extrude, cut or V-carve.
+- Relief feature: brightness becomes height, built as a watertight faceted solid
+  (about 2 s for a 120 × 120 grid), for 3D finishing.
+- Attach image in the Assistant: Claude looks at the picture and designs a figure from it.
+
+**Design**
+- Multiple bodies: "new" makes a separate body; join, intersect, fillet, chamfer, shell and
+  mirror change a named body; a cut or hole without one goes through all of them.
+- Loft and sweep; Hole feature (simple, counterbore, countersink).
+- Named parameters and safe arithmetic expressions in dimensions and feature values.
+- Picking edges and faces in the 3D view (stored as `@x,y,z`, found again after a rebuild);
+  sketch on any flat face, slanted ones included.
+- Undo / redo; Measure; Section view; STEP / STL export.
+
+**Sketch**
+- Splines, text in any font, corner fillet, offset, mirror, trim, polygon, slot.
+- DXF import and export (polylines with bulges, splines, ellipses, inch drawings).
+
+**CAM**
+- Adaptive clearing (steered constant engagement, guaranteed full clearing of each level).
+- 3D finishing with an exact drop-cutter on the part's mesh (flat and ball ends), ball-end
+  waterline finishing, V-carving with V-bits.
+- Two-sided machining: operations for the bottom after flipping the part over X, one G-code
+  file per side.
+- Tool library shared by all projects; exact stock sizes; G2/G3 arcs (within 5 µm).
+- Stay low between passes when the hop is safe; rapid time in estimates.
+
+**Simulation**
+- Machine-order simulation that checks every rapid against the stock; gouge depth measured
+  along the surface normal; playback slider; both faces of the stock for two-sided jobs.
+
+**Fixes**
+- 3D finishing cut up to 0.7 mm into gentle curves (a point simplifier compared only
+  neighbours): now Douglas-Peucker. Found on a real enclosure.
+- Loop outlines chained from the wrong end of a segment (an "N" carved as a filled box),
+  holes attached with a fixed reversal (text came out filled).
+- Roughing could not reach stock narrower than the tool keep-out beside the part, so later
+  moves plunged into it; found the first time Claude drove the window and simulated.
+- Adaptive could leave material that later rapids hit.
+- An empty OpenCascade result no longer crashes the program later.
+
+**Testing**
+- `tools/mutants.py`: known bugs are put back one at a time; the tests must catch each.
+  Two tests were found blind this way and strengthened.
+
+## v0.2.0 (build 2) — 2026-10-08
+
+**CAM**
+- Ramp entry along the path; profile cut-outs with holding tabs; drilling (full-retract
+  pecks) and helical boring with hole detection; rest machining after a bigger tool.
+- Feeds and speeds suggestions from the stock material.
+- Fast mesh slicing (about 15×) with exact OpenCascade sections as the check.
+
+**Simulation**
+- Stock removal simulation with a gouge check against the part; G-code read back and
+  simulated, so the post-processor is checked end to end.
+
+**G-code**
+- `carbide` post (default) matching Carbide Create's own shapeoko.post: `M6 T<n>` for
+  every tool (BitSetter), `G53 G0 Z-5` safe retracts, `M2`; `grbl` kept for other machines.
+
+**Design**
+- Sketch solver with 20 constraint types and degrees-of-freedom reporting; parametric
+  features (extrude, revolve, patterns, fillet, chamfer, shell, mirror); a Design
+  workspace with a sketch editor; designed parts go straight to CAM.
+
+**Interface**
+- Fusion-style mouse, 3Dconnexion SpaceMouse support through spacenavd, black-and-white
+  toolbar icons with icon / large icon / text-only modes, app icon and launcher.
+- Pluggable compute backends (numpy, CuPy).
+
+## v0.1.0 (build 1) — 2026-10-08
+
+**First version**
+- STEP import with any axis up, Z-level roughing and wall finishing, GRBL output with a
+  stock-corner work zero, git-style history (versions, variants, diffs, restore), a Qt/VTK
+  window with a 3D preview, and a command line.

@@ -25,10 +25,9 @@ PROMPT = ("You are working inside Syntexophobic, a parametric CAD/CAM program fo
 
 def mcp_config() -> Path:
     """MCP config for the assistant: only this program's server."""
-    root = Path(__file__).resolve().parents[2]
-    uv = shutil.which("uv") or str(Path.home() / ".local" / "bin" / "uv")
-    cfg = {"mcpServers": {"syntexophobic": {"command": uv,
-                                             "args": ["run", "--project", str(root), "syntexophobic", "mcp"]}}}
+    cmd = automation.server_command()
+    server = {"command": cmd[0], "args": cmd[1:]}
+    cfg = {"mcpServers": {"syntexophobic": server}}
     path = automation.STATE / "assistant-mcp.json"
     automation.STATE.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(cfg, indent=1))

@@ -22,7 +22,7 @@ class Project:
 
     @classmethod
     def create(cls, folder: str | Path, model: str | Path) -> "Project":
-        """New project folder from a STEP file: copies the model, writes a default job, first commit."""
+        """New project folder from a STEP or STL file: copies the model, writes a default job, first commit."""
         folder, model = Path(folder), Path(model)
         folder.mkdir(parents=True, exist_ok=True)
         if model.resolve().parent != folder.resolve():
@@ -69,7 +69,7 @@ class Project:
                     raise ModelError(f"No body called {self.job.stock.body!r} to machine; bodies: {list(bodies)}")
                 return bodies[self.job.stock.body]
             return part.build()
-        return geometry.load_step(path)
+        return geometry.load_model(path)
 
     def reload(self) -> None:
         """Re-read job.toml and the model (after restoring a version or switching variant)."""

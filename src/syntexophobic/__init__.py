@@ -3,7 +3,7 @@
 import argparse
 import sys
 
-__version__ = "0.1.0"
+__version__ = "0.4.0"
 
 
 def main() -> int:
@@ -12,19 +12,28 @@ def main() -> int:
     g = sub.add_parser("gcode", help="generate G-code for a project without opening the window")
     g.add_argument("project", help="project folder (contains job.toml)")
     g.add_argument("-o", "--output", help="output file (default: <name>.nc in the project)")
-    n = sub.add_parser("new", help="create a project folder from a STEP file")
+    n = sub.add_parser("new", help="create a project folder from a STEP or STL file")
     n.add_argument("step")
     n.add_argument("folder", nargs="?")
     sm = sub.add_parser("simulate", help="simulate the toolpaths and check for gouges (exit 1 if any)")
     sm.add_argument("project")
     sm.add_argument("--res", type=float, default=0.25, help="grid size in mm (default 0.25)")
     sm.add_argument("--gcode", help="simulate this G-code file instead of the project's toolpaths")
+    cv = sub.add_parser("convert", help="convert an STL mesh to a STEP solid")
+    cv.add_argument("stl")
+    cv.add_argument("step", nargs="?", help="output (default: the STL's name with .step)")
+    cv.add_argument("--keep-triangles", action="store_true", help="do not merge flat triangles into faces")
     sub.add_parser("mcp", help="MCP server on stdio, for Claude Code (drives the open window, or works headless)")
     sub.add_parser("install-mcp", help="register the MCP server with Claude Code (user scope)")
     sub.add_parser("backends", help="list compute backends and the devices they would use")
     ap.add_argument("path", nargs="?", help="project folder or STEP file to open")
     ap.add_argument("--backend", help="compute backend: auto (default), numpy, cupy")
+    ap.add_argument("--version", action="store_true", help="print the version and exit")
     args, _ = ap.parse_known_args()
+    if args.version:
+        from .about import build, version
+        print(f"Syntexophobic {version()} (build {build()})")
+        return 0
     if args.backend:
         import os
         os.environ["SYNTEXOPHOBIC_BACKEND"] = args.backend
@@ -34,13 +43,9 @@ def main() -> int:
         serve()
         return 0
     if args.cmd == "install-mcp":
-        import shutil
         import subprocess
-        from pathlib import Path
-        root = Path(__file__).resolve().parents[2]
-        uv = shutil.which("uv") or str(Path.home() / ".local" / "bin" / "uv")
-        cmd = ["claude", "mcp", "add", "--scope", "user", "syntexophobic", "--",
-               uv, "run", "--project", str(root), "syntexophobic", "mcp"]
+        from .automation import server_command
+        cmd = ["claude", "mcp", "add", "--scope", "user", "syntexophobic", "--", *server_command()]
         print(" ".join(cmd))
         return subprocess.call(cmd)
     if args.cmd == "backends":
@@ -84,6 +89,13 @@ def main() -> int:
         if not bad:
             print("no gouges, no rapids into stock")
         return 1 if bad else 0
+    if args.cmd == "convert":
+        from pathlib import Path
+        from . import geometry
+        dst = args.step or str(Path(args.stl).with_suffix(".step"))
+        geometry.stl_to_step(args.stl, dst, not args.keep_triangles)
+        print(f"wrote {dst}")
+        return 0
     if args.cmd == "new":
         from pathlib import Path
         from .project import Project

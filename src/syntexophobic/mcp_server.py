@@ -62,8 +62,15 @@ def status() -> str:
 
 @server.tool()
 def open_project(path: str) -> str:
-    """Open a project folder (with job.toml), or a STEP file (creates a <name>-cam project)."""
+    """Open a project folder (with job.toml), or a STEP or STL file (creates a <name>-cam project)."""
     return _out(_call("open_project", path=path))
+
+
+@server.tool()
+def convert_stl(stl: str, step: str = "", merge_flat: bool = True) -> str:
+    """Convert an STL mesh to a STEP solid (default: next to it with .step). Flat areas become
+    single faces unless merge_flat is false."""
+    return _out(_call("convert_stl", stl=stl, step=step, merge_flat=merge_flat))
 
 
 @server.tool()

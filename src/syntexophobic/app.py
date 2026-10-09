@@ -251,6 +251,8 @@ class MainWindow(QMainWindow):
         bar = self.menuBar()
         m_file, m_edit = bar.addMenu("&File"), bar.addMenu("&Edit")
         m_paths, m_view = bar.addMenu("&Toolpaths"), bar.addMenu("&View")
+        m_help = bar.addMenu("&Help")
+        m_help.addAction("&About Syntexophobic", lambda: __import__("syntexophobic.about", fromlist=["x"]).dialog(self).exec())
         self.a_undo = m_edit.addAction("Undo")
         self.a_undo.setShortcut(QKeySequence.Undo)
         self.a_undo.triggered.connect(lambda: self.undo_redo(False))
@@ -286,7 +288,7 @@ class MainWindow(QMainWindow):
         new_design = m_file.addAction("New design…")
         new_design.setShortcut(QKeySequence("Ctrl+Shift+N"))
         new_design.triggered.connect(self.new_design)
-        act("New from STEP…", self.new_project, "new", "Ctrl+N", m_file)
+        act("New from STEP / STL…", self.new_project, "new", "Ctrl+N", m_file)
         act("Open project…", self.open_project, "open", "Ctrl+O", m_file)
         tb.addSeparator()
         self.a_generate = act("Generate toolpaths", self.generate, "generate", "Ctrl+G", m_paths)
@@ -294,7 +296,8 @@ class MainWindow(QMainWindow):
         self.a_export = act("Export G-code…", self.export_gcode, "export", "Ctrl+E", m_file)
         m_file.addSeparator()
         for text, slot in (("Import DXF as sketch…", self.import_dxf), ("Export sketch as DXF…", self.export_dxf),
-                           ("Export model (STEP / STL)…", self.export_model)):
+                           ("Export model (STEP / STL)…", self.export_model),
+                           ("Convert STL to STEP…", self.convert_stl)):
             m_file.addAction(text).triggered.connect(slot)
         m_file.addSeparator()
         quit_ = m_file.addAction("Quit")
@@ -781,7 +784,7 @@ class MainWindow(QMainWindow):
     # ---- project ----------------------------------------------------------------------
 
     def new_project(self):
-        step, _ = QFileDialog.getOpenFileName(self, "STEP model", str(Path.home()), "STEP (*.step *.stp *.STEP *.STP)")
+        step, _ = QFileDialog.getOpenFileName(self, "Model to machine", str(Path.home()), "Models (*.step *.stp *.stl *.STEP *.STP *.STL)")
         if not step:
             return
         default = str(Path(step).with_suffix("")) + "-cam"
@@ -793,6 +796,24 @@ class MainWindow(QMainWindow):
             target = target / (Path(step).stem + "-cam")
         self.load(Project.create(target, step))
 
+    def convert_stl(self):
+        from . import geometry
+        src, _ = QFileDialog.getOpenFileName(self, "STL to convert", str(Path.home()), "STL (*.stl *.STL)")
+        if not src:
+            return
+        dst, _ = QFileDialog.getSaveFileName(self, "Save STEP", str(Path(src).with_suffix(".step")), "STEP (*.step *.stp)")
+        if not dst:
+            return
+        try:
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+            geometry.stl_to_step(src, dst)
+        except Exception as e:
+            QMessageBox.critical(self, "Could not convert", str(e))
+            return
+        finally:
+            QApplication.restoreOverrideCursor()
+        self.statusBar().showMessage(f"Saved {dst}", 8000)
+
     def open_project(self):
         folder = QFileDialog.getExistingDirectory(self, "Project folder (contains job.toml)", str(Path.home()))
         if folder:
@@ -801,7 +822,7 @@ class MainWindow(QMainWindow):
     def load_path(self, path: str):
         p = Path(path)
         try:
-            if p.suffix.lower() in (".step", ".stp"):
+            if p.suffix.lower() in (".step", ".stp", ".stl"):
                 self.load(Project.create(p.with_name(p.stem + "-cam"), p))
             else:
                 self.load(Project(p))

@@ -1,4 +1,5 @@
 import math
+import pytest
 
 from syntexophobic import cam, geometry
 from syntexophobic.project import Project
@@ -563,3 +564,48 @@ def test_rough_clears_a_margin_narrower_than_the_tool(tmp_path):
     xs, ys = r.grid.centres()
     j, i = int(round((20 - ys[0]) / 0.1)), int(round((81.5 - xs[0]) / 0.1))
     assert r.stock[j, i] <= 0.0 + 1e-6                         # the strip beside the part is cut
+
+
+def test_stl_to_step_round_trip(tmp_path):
+    """A part with a hole, meshed to STL, comes back from STEP as one valid closed solid with
+    the mesh's volume, flat triangles merged into faces; STL also opens as a CAM project."""
+    from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut
+    from OCP.BRepCheck import BRepCheck_Analyzer
+    from OCP.BRepGProp import BRepGProp
+    from OCP.BRepMesh import BRepMesh_IncrementalMesh
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox, BRepPrimAPI_MakeCylinder
+    from OCP.GProp import GProp_GProps
+    from OCP.StlAPI import StlAPI_Writer
+    from OCP.TopAbs import TopAbs_FACE, TopAbs_SOLID
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.gp import gp_Ax2, gp_Dir, gp_Pnt
+    from syntexophobic import geometry
+    from syntexophobic.project import Project
+
+    def vol(s):
+        p = GProp_GProps()
+        BRepGProp.VolumeProperties_s(s, p)
+        return p.Mass()
+
+    def count(s, kind):
+        e, n = TopExp_Explorer(s, kind), 0
+        while e.More():
+            n, _ = n + 1, e.Next()
+        return n
+
+    part = BRepAlgoAPI_Cut(BRepPrimAPI_MakeBox(40, 30, 10).Shape(),
+                           BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(20, 15, -1), gp_Dir(0, 0, 1)), 6, 12).Shape()).Shape()
+    BRepMesh_IncrementalMesh(part, 0.01, False, 0.1, True)
+    w = StlAPI_Writer()
+    w.ASCIIMode = False
+    stl = tmp_path / "plate.stl"
+    assert w.Write(part, str(stl))
+    geometry.stl_to_step(str(stl), str(tmp_path / "plate.step"))
+    back = geometry.load_step(str(tmp_path / "plate.step"))
+    assert BRepCheck_Analyzer(back).IsValid() and count(back, TopAbs_SOLID) == 1
+    assert vol(back) == pytest.approx(40 * 30 * 10 - math.pi * 36 * 10, rel=0.01)
+    assert count(back, TopAbs_FACE) < 200            # top and bottom are one face each, not hundreds of triangles
+    b = geometry.bounding_box(back)
+    assert (b.xmax - b.xmin, b.ymax - b.ymin, b.zmax - b.zmin) == pytest.approx((40, 30, 10), abs=1e-3)
+    p = Project.create(tmp_path / "cam", stl)
+    assert vol(p.shape) == pytest.approx(vol(back), rel=1e-6)

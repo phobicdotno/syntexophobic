@@ -596,7 +596,6 @@ class Part:
         """A solid whose top follows the picture's brightness: an indexed, watertight
         triangle mesh (top grid, side walls, a fan for the bottom) turned into B-rep faces
         and closed into a solid. Exact at the grid points; no fitting or booleans."""
-        from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeShapeOnMesh, BRepBuilderAPI_MakeSolid
         from OCP.Poly import Poly_Triangle, Poly_Triangulation
         from .imaging import relief_grid
         if not f.image:
@@ -613,18 +612,8 @@ class Part:
             mesh.SetNode(k, gp_Pnt(float(x), float(y), float(z)))
         for k, (a, b, c) in enumerate(tris, 1):
             mesh.SetTriangle(k, Poly_Triangle(int(a) + 1, int(b) + 1, int(c) + 1))
-        # faces built on the indexed mesh already share their edges: a shell of them is
-        # closed without sewing (which takes minutes on a fine grid)
-        from OCP.BRep import BRep_Builder
-        from OCP.TopoDS import TopoDS_Shell
-        faces = BRepBuilderAPI_MakeShapeOnMesh(mesh).Shape()
-        shell, builder = TopoDS_Shell(), BRep_Builder()
-        builder.MakeShell(shell)
-        exp = TopExp_Explorer(faces, TopAbs_FACE)
-        while exp.More():
-            builder.Add(shell, exp.Current())
-            exp.Next()
-        return _checked(BRepBuilderAPI_MakeSolid(shell).Solid(), "relief")
+        from .geometry import solid_from_mesh
+        return _checked(solid_from_mesh(mesh, "relief"), "relief")
 
     def _tool_body(self, f: Feature):
         if f.type == "relief":

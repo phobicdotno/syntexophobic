@@ -44,6 +44,67 @@ def load_step(path: str) -> TopoDS_Shape:
     return reader.OneShape()
 
 
+def solid_from_mesh(mesh, what: str = "mesh") -> TopoDS_Shape:
+    """A closed, indexed Poly_Triangulation as a faceted solid. Faces built on one indexed
+    mesh already share their edges, so a shell of them is closed without sewing (which
+    takes minutes on a fine mesh)."""
+    from OCP.BRep import BRep_Builder
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeShapeOnMesh, BRepBuilderAPI_MakeSolid
+    from OCP.BRepCheck import BRepCheck_Analyzer
+    from OCP.BRepGProp import BRepGProp
+    from OCP.GProp import GProp_GProps
+    from OCP.TopoDS import TopoDS_Shell
+    faces = BRepBuilderAPI_MakeShapeOnMesh(mesh).Shape()
+    shell, builder = TopoDS_Shell(), BRep_Builder()
+    builder.MakeShell(shell)
+    exp = TopExp_Explorer(faces, TopAbs_FACE)
+    while exp.More():
+        builder.Add(shell, exp.Current())
+        exp.Next()
+    solid = BRepBuilderAPI_MakeSolid(shell).Solid()
+    if solid.IsNull():
+        raise ValueError(f"{what}: could not make a solid")
+    props = GProp_GProps()
+    BRepGProp.VolumeProperties_s(solid, props)
+    if props.Mass() < 0:                    # triangles wound inwards: turn it inside out
+        solid.Reverse()
+    return solid
+
+
+def load_stl(path: str, merge_flat: bool = True) -> TopoDS_Shape:
+    """An STL file as a solid. Coincident corners are merged on reading; with merge_flat,
+    triangles lying in one plane become one face (a box comes out with 6 faces, not 12
+    triangles), which CAD programs and the CAM's flat detection like better."""
+    from OCP.Message import Message_ProgressRange
+    from OCP.RWStl import RWStl
+    mesh = RWStl.ReadFile_s(str(path), Message_ProgressRange())
+    if mesh is None or mesh.NbTriangles() == 0:
+        raise ValueError(f"Could not read STL file: {path}")
+    solid = solid_from_mesh(mesh, str(path))
+    if merge_flat and mesh.NbTriangles() <= 200_000:
+        from OCP.ShapeUpgrade import ShapeUpgrade_UnifySameDomain
+        u = ShapeUpgrade_UnifySameDomain(solid, True, True, False)
+        u.Build()
+        if not u.Shape().IsNull():
+            solid = u.Shape()
+    return solid
+
+
+def load_model(path: str) -> TopoDS_Shape:
+    """STEP or STL, by extension."""
+    return load_stl(path) if str(path).lower().endswith(".stl") else load_step(path)
+
+
+def stl_to_step(src: str, dst: str, merge_flat: bool = True) -> TopoDS_Shape:
+    from OCP.STEPControl import STEPControl_AsIs, STEPControl_Writer
+    solid = load_stl(src, merge_flat)
+    w = STEPControl_Writer()
+    w.Transfer(solid, STEPControl_AsIs)
+    if w.Write(str(dst)) != IFSelect_RetDone:
+        raise ValueError(f"Could not write STEP file: {dst}")
+    return solid
+
+
 def bounding_box(shape: TopoDS_Shape) -> Box:
     box = Bnd_Box()
     BRepBndLib.AddOptimal_s(shape, box, False, False)
@@ -184,9 +245,15 @@ def orient(shape: TopoDS_Shape, up: str) -> TopoDS_Shape:
     return BRepBuilderAPI_Transform(shape, trsf, True).Shape()
 
 
-def upward_flat_levels(shape: TopoDS_Shape) -> list[float]:
-    """Z heights of horizontal faces that point up: pocket floors, steps and the top."""
-    levels = set()
+def upward_flat_levels(shape: TopoDS_Shape, min_area: float = 1.0) -> list[float]:
+    """Z heights of horizontal faces that point up: pocket floors, steps and the top.
+
+    Faces are grouped by height and a level counts only when its flat area adds up to
+    min_area mm²: on a finely faceted solid (a relief) almost every small triangle is
+    "flat", and each would otherwise become a cutting level of its own."""
+    from OCP.BRepGProp import BRepGProp
+    from OCP.GProp import GProp_GProps
+    area: dict[float, float] = {}
     exp = TopExp_Explorer(shape, TopAbs_FACE)
     while exp.More():
         face = TopoDS.Face(exp.Current())
@@ -197,9 +264,25 @@ def upward_flat_levels(shape: TopoDS_Shape) -> list[float]:
             if face.Orientation() == TopAbs_REVERSED:
                 dz = -dz
             if dz > 0.999:
-                levels.add(round(plane.Location().Z(), 4))
+                props = GProp_GProps()
+                BRepGProp.SurfaceProperties_s(face, props)
+                z = round(plane.Location().Z(), 4)
+                area[z] = area.get(z, 0.0) + props.Mass()
         exp.Next()
-    return sorted(levels)
+    # heights within 0.05 mm are one level (a blurred relief is "flat" at 3.000, 3.001...),
+    # kept at the height with the most flat area; a level needs min_area mm², and at least
+    # 0.2 % of the part's footprint
+    b = bounding_box(shape)
+    need = max(min_area, 0.002 * (b.xmax - b.xmin) * (b.ymax - b.ymin))
+    levels, group = [], []
+    for z in sorted(area):
+        if group and z - group[-1] > 0.05:
+            levels.append(group)
+            group = []
+        group.append(z)
+    if group:
+        levels.append(group)
+    return [max(g, key=lambda z: area[z]) for g in levels if sum(area[z] for z in g) >= need]
 
 
 @dataclass(frozen=True)

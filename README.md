@@ -9,12 +9,26 @@ git-style history instead of a timeline. Built on OpenCascade, Qt and VTK. Linux
 
 ![Roughing (blue) and wall finishing (orange) on the demo plate](docs/screenshots/toolpaths.png)
 
+## Install
+
+It is a Python program (not an npm package). With [uv](https://docs.astral.sh/uv/):
+
+```sh
+uv tool install git+https://github.com/phobicdotno/syntexophobic   # installs the `syntexophobic` command
+uv tool upgrade syntexophobic                                      # later: update
+```
+
+`pipx install git+https://github.com/phobicdotno/syntexophobic` works too. From a clone, put
+`uv run` in front of the commands below.
+
 ## Run
 
 ```sh
 uv run syntexophobic                         # open the window
-uv run syntexophobic part.step               # new project from a STEP file and open it
+uv run syntexophobic part.step               # new project from a STEP (or STL) file and open it
 uv run syntexophobic new part.step [dir]     # create a project folder only
+uv run syntexophobic convert part.stl [out.step]  # STL mesh -> STEP solid
+uv run syntexophobic --version               # version and build (Help > About lists every release)
 uv run syntexophobic gcode <project>         # write G-code without the window
 uv run syntexophobic simulate <project>      # simulate; exits 1 if the tool would gouge the part
 uv run syntexophobic backends                # compute backends and devices

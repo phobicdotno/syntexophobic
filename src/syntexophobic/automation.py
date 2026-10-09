@@ -104,7 +104,7 @@ class Session:
 
     def open_project(self, path: str) -> dict:
         p = Path(path).expanduser()
-        if p.suffix.lower() in (".step", ".stp"):
+        if p.suffix.lower() in (".step", ".stp", ".stl"):
             return self.new_from_step(str(p))
         self.project = Project(p)
         return self.status()
@@ -118,6 +118,15 @@ class Session:
         target = Path(folder).expanduser() if folder else step.with_name(step.stem + "-cam")
         self.project = Project.create(target, step)
         return self.status()
+
+    def convert_stl(self, stl: str, step: str = "", merge_flat: bool = True) -> dict:
+        """STL mesh -> STEP solid (a closed faceted solid; flat areas merged into faces)."""
+        from . import geometry
+        src = Path(stl).expanduser()
+        dst = Path(step).expanduser() if step else src.with_suffix(".step")
+        solid = geometry.stl_to_step(str(src), str(dst), merge_flat)
+        b = geometry.bounding_box(solid)
+        return {"step": str(dst), "size": [round(b.xmax - b.xmin, 3), round(b.ymax - b.ymin, 3), round(b.zmax - b.zmin, 3)]}
 
     def status(self) -> dict:
         p = self.project
@@ -475,6 +484,17 @@ class Session:
         if self.window is None:
             raise CommandError("The view needs the Syntexophobic window open")
         return self.window.automation_view(preset, workspace)
+
+
+def server_command() -> list[str]:
+    """How to start the MCP server: through uv from a clone, or this Python when installed."""
+    import shutil
+    import sys
+    root = Path(__file__).resolve().parents[2]
+    if (root / "pyproject.toml").exists():
+        uv = shutil.which("uv") or str(Path.home() / ".local" / "bin" / "uv")
+        return [uv, "run", "--project", str(root), "syntexophobic", "mcp"]
+    return [sys.executable, "-m", "syntexophobic", "mcp"]
 
 
 COMMANDS = [n for n in dir(Session) if not n.startswith("_") and callable(getattr(Session, n))]
