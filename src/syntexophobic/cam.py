@@ -49,10 +49,20 @@ class Toolpath:
             yield m.kind, x, y, z, m.f
 
     def minutes(self) -> float:
+        """Cutting time (feed moves)."""
         total, last = 0.0, None
         for kind, x, y, z, f in self.positions():
             if last and kind == "feed":
                 total += ((x - last[0]) ** 2 + (y - last[1]) ** 2 + (z - last[2]) ** 2) ** 0.5 / f
+            last = (x, y, z)
+        return total
+
+    def rapid_minutes(self, rate: float = 5000.0) -> float:
+        """Time spent on rapid moves at `rate` mm/min."""
+        total, last = 0.0, None
+        for kind, x, y, z, f in self.positions():
+            if last and kind == "rapid":
+                total += ((x - last[0]) ** 2 + (y - last[1]) ** 2 + (z - last[2]) ** 2) ** 0.5 / rate
             last = (x, y, z)
         return total
 
@@ -93,6 +103,33 @@ def _outermost(paths):
     pc.AddPaths(paths, pyclipper.PT_SUBJECT, True)
     tree = pc.Execute2(pyclipper.CT_UNION, pyclipper.PFT_NONZERO, pyclipper.PFT_NONZERO)
     return [child.Contour for child in tree.Childs]
+
+
+def _segment_inside(region, a, b) -> bool:
+    """Is the straight XY line a-b entirely inside the region (clipper paths)?"""
+    if not region:
+        return False
+    seg = _to_int([[a, b]])[0]
+    if seg[0] == seg[1]:
+        return pyclipper.PointInPolygon(seg[0], region[0]) != 0 if len(region) == 1 else True
+    pc = pyclipper.Pyclipper()
+    pc.AddPath(seg, pyclipper.PT_SUBJECT, False)
+    pc.AddPaths(region, pyclipper.PT_CLIP, True)
+    inside = pyclipper.OpenPathsFromPolyTree(pc.Execute2(pyclipper.CT_INTERSECTION,
+                                                          pyclipper.PFT_NONZERO, pyclipper.PFT_NONZERO))
+    length = sum(math.dist(p[i], p[i + 1]) for p in inside for i in range(len(p) - 1))
+    return length >= math.dist(seg[0], seg[1]) - 2          # within 2 µm
+
+
+def _hop(moves, last, nxt, region, clearance, travel):
+    """Move to the start of the next pass: lift only to the clearance height (just above
+    the level cut before) when the straight hop stays inside the region the tool centre may
+    use at this level, otherwise go over the top."""
+    if last is not None and _segment_inside(region, last, nxt):
+        moves += [Move("rapid", None, None, clearance), Move("rapid", nxt[0], nxt[1], None)]
+    else:
+        moves += [Move("rapid", None, None, travel), Move("rapid", nxt[0], nxt[1], None),
+                  Move("rapid", None, None, clearance)]
 
 
 def _region_from_slices(per_solid):
@@ -433,11 +470,13 @@ def _adaptive(setup: Setup, op: Operation) -> Toolpath:
         material = _boolean(material, _offset(allowed, r - res), pyclipper.CT_INTERSECTION)
         paths = adaptive.clear_level(_to_mm(allowed), _to_mm(material),
                                      (s.xmin, s.ymin, s.xmax, s.ymax), r, op.stepover, res)
+        inside = _offset(allowed, -res)               # a hair inside, for the hop test
+        last = None
         for pts, helix in paths:
             if len(pts) < 2:
                 continue
-            moves += [Move("rapid", None, None, travel), Move("rapid", pts[0][0], pts[0][1], None),
-                      Move("rapid", None, None, clearance)]
+            _hop(moves, last, pts[0], inside, clearance, travel)
+            last = pts[-1]
             if helix:
                 circle = pts[:25]
                 ramp = _ramp_and_lap(circle[:-1], clearance, z, op.ramp_angle or 3.0)
@@ -453,9 +492,9 @@ def _adaptive(setup: Setup, op: Operation) -> Toolpath:
             if len(loop) < 2:
                 continue
             pts = _ramp_and_lap(loop, clearance, z, op.ramp_angle)
-            moves += [Move("rapid", None, None, travel), Move("rapid", pts[0][0], pts[0][1], None),
-                      Move("rapid", None, None, pts[0][2])]
+            _hop(moves, last, pts[0][:2], inside, pts[0][2], travel)
             moves += [Move("feed", x, y, zz, op.feed) for x, y, zz in pts[1:]]
+            last = pts[-1][:2]
         clearance = z + 0.5
     moves.append(Move("rapid", None, None, safe))
     return tp
@@ -574,8 +613,12 @@ def _generate(setup: Setup, op: Operation) -> Toolpath:
     travel = top + 1.0
     forbidden: list = []
     clearance = top + 0.5
+    stay_low = op.type == "rough" and op.rest_from is None
     for z in levels:
         forbidden = _boolean(forbidden, setup.slice_region(z), pyclipper.CT_UNION)
+        allowed = (_boolean(setup.stock_rect(), _offset(forbidden, r + op.leave), pyclipper.CT_DIFFERENCE)
+                   if stay_low else [])
+        last = None
         for ring in _rings(op, forbidden, setup, r, tool.diameter, z):
             for loop in _to_mm(ring):
                 if len(loop) < 2:
@@ -583,11 +626,10 @@ def _generate(setup: Setup, op: Operation) -> Toolpath:
                 pts = _ramp_and_lap(loop, clearance, z, op.ramp_angle)
                 if tabs and z < tab_top:
                     pts = _lift_over_tabs(pts, tabs, reach, tab_top)
-                moves.append(Move("rapid", None, None, travel))
-                moves.append(Move("rapid", pts[0][0], pts[0][1], None))
-                moves.append(Move("rapid", None, None, pts[0][2]))
+                _hop(moves, last, pts[0][:2], allowed, pts[0][2], travel)
                 for x, y, zz in pts[1:]:
                     moves.append(Move("feed", x, y, zz, op.feed))
+                last = pts[-1][:2]
         clearance = z + 0.5
     moves.append(Move("rapid", None, None, safe))
     return tp

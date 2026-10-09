@@ -35,6 +35,7 @@ class Machine:
     post: str = "carbide"     # carbide (Carbide Motion: M6, BitSetter) | grbl (M0 pauses)
     rpm: int = 18000
     safe_z: float = 5.0       # rapid height above the stock top
+    rapid_rate: float = 5000.0   # mm/min, for time estimates
     zero: str = "stock"       # "stock": X0 Y0 front-left corner, Z0 top. "model": CAD origin
 
 

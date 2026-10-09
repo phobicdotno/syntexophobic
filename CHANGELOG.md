@@ -61,6 +61,10 @@ All notable changes to Syntexophobic. The format follows
   G-code comment and the reader.
 - **Text** in sketches (Text tool): any installed font, as closed outlines with the
   letters' holes, ready to extrude, cut or V-carve.
+- Roughing and adaptive stay low between passes when the hop stays inside this level's
+  allowed area (lift to just above the previous level instead of over the top). Time
+  estimates can include rapids (`rapid_rate`). The gain on the test enclosure is small
+  (adaptive rapids 4.7 → 4.6 min): most rapid time is horizontal travel between paths.
 - **Rapid moves are checked**: the simulation runs in machine order and tests every rapid
   against the stock as it is at that moment; a rapid into material is reported (window
   and `simulate`, which exits 1) with where and how deep.
