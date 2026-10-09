@@ -37,6 +37,17 @@ every release, read from this file.
   login (`GH_TOKEN`/`GITHUB_TOKEN`, `gh auth login`, or the token git stores for
   github.com); without one it stays quiet.
 
+**Fault reports**
+- When Claude in the Assistant panel hits a failing tool, gives up on what you asked, or
+  calls the new MCP `report_problem`, the program files a GitHub issue (label
+  `fault-report`) with the version and build, OS, your request, every tool call with its
+  arguments and result, Claude's answer, the window's screenshot and the end of the new log
+  (`~/.cache/syntexophobic/syntexophobic.log`). The same fault again is added to its open
+  issue instead of a new one, and the chat links the issue. Uses your GitHub login like the
+  update check does; without one nothing is sent. `SYNTEXOPHOBIC_NO_FAULT_REPORTS=1`
+  turns it off. Failed tool calls now show in the chat in red, and a tool that fails
+  without a message tells Claude so instead of returning nothing.
+
 **Install**
 - The program icon shows in the dock, the window switcher and the app grid. GNOME takes a
   window's icon only from a menu entry that matches it, so the AppImage now adds its own
@@ -46,6 +57,9 @@ every release, read from this file.
   syntexophobic / Syntexophobic, and the .AppImage file carries an icon for file managers.
 
 **Testing**
+- Fault reports: the box chat from the first report (new_design failing three times) gives
+  one report with the whole story; the same fault in other folders goes to the same issue,
+  a closed issue gets a new one; normal answers are not reported.
 - Updates: version order, drafts and pre-releases left out, no access, a cut download, the
   link moved to the new AppImage, the bar's skip / hide / installed states; delta updates
   rebuild the new file byte for byte from moved blocks, and a bad block falls back to the
@@ -92,17 +106,6 @@ every release, read from this file.
   end out of its slot is no longer reported as a rapid into stock (a full-diameter flat
   cylinder "hit" the groove walls); moving sideways at depth still is.
 
-**Fault reports**
-- When Claude in the Assistant panel hits a failing tool, gives up on what you asked, or
-  calls the new MCP `report_problem`, the program files a GitHub issue (label
-  `fault-report`) with the version and build, OS, your request, every tool call with its
-  arguments and result, Claude's answer, the window's screenshot and the end of the new log
-  (`~/.cache/syntexophobic/syntexophobic.log`). The same fault again is added to its open
-  issue instead of a new one, and the chat links the issue. Uses your GitHub login like the
-  `gh` command or git does; without one nothing is sent. `SYNTEXOPHOBIC_NO_FAULT_REPORTS=1`
-  turns it off. Failed tool calls now show in the chat in red, and a tool that fails
-  without a message tells Claude so instead of returning nothing.
-
 **Interface**
 - Playback draws the cutter in its own shape: flat, ball end, or a V-bit's cone.
 
@@ -110,9 +113,6 @@ every release, read from this file.
 - Exporting a design as STEP no longer prints OpenCascade's transfer statistics.
 
 **Testing**
-- Fault reports: the box chat from the first report (new_design failing three times) gives
-  one report with the whole story; the same fault in other folders goes to the same issue,
-  a closed issue gets a new one; normal answers are not reported.
 - Import: an STL as a body, a STEP cutting it, the saved project rebuilt and machined.
 - Single-line text: cap height, every stroke engraved exactly once.
 - Engrave: on the lines, depth, no lifts on open lines, only the band cut; rapids with
