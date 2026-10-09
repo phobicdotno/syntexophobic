@@ -92,3 +92,15 @@ def test_assistant_command_and_stream_parsing():
     out = [x for line in lines for x in U.parse(line)]
     assert ("session", "s1") in out and ("text", "Drawing it.") in out and ("done", "s1") in out
     assert any(k == "tool" and t.startswith("sketch_draw(") for k, t in out)
+
+
+def test_command_line_opens_a_path(monkeypatch):
+    """`syntexophobic part.step` opens it (argparse alone takes the path for a subcommand)."""
+    import sys
+    import syntexophobic
+    opened = []
+    monkeypatch.setattr("syntexophobic.app.run", lambda p: opened.append(p) or 0)
+    for argv, want in ((["demo"], "demo"), (["--backend", "numpy", "demo"], "demo"), ([], None)):
+        monkeypatch.setattr(sys, "argv", ["syntexophobic", *argv])
+        assert syntexophobic.main() == 0
+        assert opened.pop() == want

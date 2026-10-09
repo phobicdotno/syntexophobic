@@ -11,7 +11,18 @@ git-style history instead of a timeline. Built on OpenCascade, Qt and VTK. Linux
 
 ## Install
 
-It is a Python program (not an npm package). With [uv](https://docs.astral.sh/uv/):
+**One file:** download `Syntexophobic-<version>-x86_64.AppImage`, then
+
+```sh
+chmod +x Syntexophobic-*-x86_64.AppImage
+./Syntexophobic-*-x86_64.AppImage              # the window; add a path or a command as below
+./Syntexophobic-*-x86_64.AppImage install-mcp  # optional: let Claude Code drive it
+```
+
+It carries its own Python and libraries (x86-64 Linux; the window needs X11 or XWayland).
+Build it from a clone with `./tools/build-appimage.sh` (writes `dist/`).
+
+**As a Python tool** (not an npm package), with [uv](https://docs.astral.sh/uv/):
 
 ```sh
 uv tool install git+https://github.com/phobicdotno/syntexophobic   # installs the `syntexophobic` command

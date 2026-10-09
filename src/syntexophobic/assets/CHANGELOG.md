@@ -3,6 +3,24 @@
 Each release has a version and a build number; Help → About shows a one-line summary of
 every release, read from this file.
 
+## v0.5.0 (build 5) — 2026-10-09
+
+**Install**
+- One-file install: `Syntexophobic-<version>-x86_64.AppImage` bundles its own Python and every
+  library (about 500 MB). Download, `chmod +x`, run; nothing else to install.
+  `tools/build-appimage.sh` builds it.
+- From the AppImage, `install-mcp` and the Assistant start the MCP server from the AppImage
+  file itself.
+
+**Fixes**
+- `syntexophobic part.step` and `syntexophobic <project>` were taken for an unknown
+  command; a path now opens as documented.
+- Converting STL to STEP no longer prints OpenCascade's transfer statistics.
+
+**Testing**
+- Command line paths; the AppImage checked in a clean environment (version, convert, new
+  project, simulate, window driven over the control socket, MCP server).
+
 ## v0.4.0 (build 4) — 2026-10-09
 
 **About**

@@ -3,7 +3,7 @@
 import argparse
 import sys
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 
 def main() -> int:
@@ -29,7 +29,16 @@ def main() -> int:
     ap.add_argument("path", nargs="?", help="project folder or STEP file to open")
     ap.add_argument("--backend", help="compute backend: auto (default), numpy, cupy")
     ap.add_argument("--version", action="store_true", help="print the version and exit")
-    args, _ = ap.parse_known_args()
+    argv = sys.argv[1:]
+    # `syntexophobic part.step` / `syntexophobic <project>`: a path, not a command
+    path = next((a for i, a in enumerate(argv)
+                 if not a.startswith("-") and (i == 0 or argv[i - 1] != "--backend")), None)
+    if path is not None and path not in sub.choices:
+        argv = [a for a in argv if a != path]
+    else:
+        path = None
+    args, _ = ap.parse_known_args(argv)
+    args.path = path or args.path
     if args.version:
         from .about import build, version
         print(f"Syntexophobic {version()} (build {build()})")

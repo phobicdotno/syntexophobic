@@ -494,6 +494,8 @@ def server_command() -> list[str]:
     if (root / "pyproject.toml").exists():
         uv = shutil.which("uv") or str(Path.home() / ".local" / "bin" / "uv")
         return [uv, "run", "--project", str(root), "syntexophobic", "mcp"]
+    if os.environ.get("APPIMAGE"):                     # the AppImage file; its Python is in a temporary mount
+        return [os.environ["APPIMAGE"], "mcp"]
     return [sys.executable, "-m", "syntexophobic", "mcp"]
 
 

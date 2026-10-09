@@ -4,3 +4,5 @@ __pycache__/
 *.nc
 *.gcode
 .pytest_cache/
+build/
+dist/
