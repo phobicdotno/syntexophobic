@@ -20,6 +20,7 @@ uv run syntexophobic simulate <project>      # simulate; exits 1 if the tool wou
 uv run syntexophobic backends                # compute backends and devices
 ./tools/install-desktop.sh                   # add it to the app menu
 uv run pytest                                # tests
+uv run python tools/mutants.py               # check the safety tests catch known bugs
 ```
 
 ## How it works

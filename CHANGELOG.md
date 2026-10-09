@@ -6,6 +6,10 @@ All notable changes to Syntexophobic. The format follows
 ## [Unreleased]
 
 ### Added
+- `tools/mutants.py`: puts ten known bugs back one at a time (part ignored by roughing,
+  missing tool radius, drop-cutter without edges or faces, flipped work offset, tabs not
+  lifted, no ramp, adaptive without keep-out, pecks from the hole top, no first `M6`) and
+  checks that the tests fail for each. All ten are caught.
 - **Sketch** (`sketch.py`): points, lines, circles and arcs with 20 constraint types
   (coincident, horizontal, vertical, parallel, perpendicular, equal, distance, horizontal /
   vertical distance, radius, diameter, angle, point on line / circle, midpoint, tangent,

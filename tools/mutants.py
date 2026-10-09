@@ -1,0 +1,56 @@
+"""Mutation check for the safety tests: put known bugs back and make sure a test fails.
+
+Each mutant edits a copy of the source; the tests run against that copy. A mutant that
+'survives' (all tests pass) means the tests would not catch that bug.
+Run: uv run python tools/mutants.py
+"""
+
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+
+MUTANTS = [
+    ("rough ignores the part (empty union)", "cam.py",
+     "        return list(clip) if op == pyclipper.CT_UNION else []", "        return []"),
+    ("tool radius left out of roughing offset", "cam.py",
+     "    region = _boolean(setup.stock_rect(), _offset(forbidden, r + op.leave), pyclipper.CT_DIFFERENCE)\n    if op.rest_from",
+     "    region = _boolean(setup.stock_rect(), _offset(forbidden, op.leave), pyclipper.CT_DIFFERENCE)\n    if op.rest_from"),
+    ("ball drop-cutter ignores triangle edges", "surface.py",
+     "    for k in range(3):                                   # edges", "    for k in range(0):                                   # edges"),
+    ("ball drop-cutter ignores triangle faces", "surface.py", "        if c > 1e-9:\n            if ball:", "        if c > 1e9:\n            if ball:"),
+    ("work offset sign flipped in the post", "gcode.py", "                    v -= o\n", "                    v += o\n"),
+    ("tabs not lifted", "cam.py", "                if tabs and z < tab_top:", "                if False:"),
+    ("ramp ignored (straight plunge)", "cam.py", "    if ramp_angle <= 0 or perimeter < 0.5:", "    if True:"),
+    ("adaptive may touch the part (no keep-out)", "cam.py",
+     "        allowed = _boolean(_offset(setup.stock_rect(), r + 2.0), keep_out, pyclipper.CT_DIFFERENCE)",
+     "        allowed = _offset(setup.stock_rect(), r + 2.0)"),
+    ("drill pecks from the hole top", "cam.py", "nxt = max(bottom, depth - op.stepdown)", "nxt = max(bottom, min(depth, h.top) - op.stepdown)"),
+    ("first tool change skipped (no M6 T1)", "gcode.py", '            if post["tool_change"] == "M6":', '            if post["tool_change"] == "M6" and current_tool is not None:'),
+]
+
+
+def run(name, filename, old, new):
+    tmp = Path(tempfile.mkdtemp())
+    shutil.copytree(ROOT / "src", tmp / "src")
+    path = tmp / "src" / "syntexophobic" / filename
+    text = path.read_text()
+    if old not in text:
+        return name, "PATTERN NOT FOUND (update this mutant)"
+    path.write_text(text.replace(old, new, 1))
+    env = dict(os.environ, PYTHONPATH=str(tmp / "src"), NUMBA_CACHE_DIR=str(tmp / "numba"))
+    r = subprocess.run([sys.executable, "-m", "pytest", "-x", "-q", "-p", "no:cacheprovider", str(ROOT / "tests")],
+                       cwd=tmp, env=env, capture_output=True, text=True)
+    shutil.rmtree(tmp, ignore_errors=True)
+    return name, "caught" if r.returncode != 0 else "SURVIVED"
+
+
+if __name__ == "__main__":
+    results = [run(*m) for m in MUTANTS]
+    for name, verdict in results:
+        print(f"{verdict:10} {name}")
+    sys.exit(0 if all(v == "caught" for _, v in results) else 1)
