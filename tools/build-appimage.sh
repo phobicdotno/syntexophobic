@@ -28,6 +28,10 @@ for lib in libxcb-cursor.so.0 libxcb-icccm.so.4 libxcb-image.so.0 libxcb-keysyms
     [ -n "$src" ] || { echo "$lib not found on this machine; install its libxcb-* package" >&2; exit 1; }
     cp -L "$src" "$QTLIB/$lib"
 done
+# git, for project history, on desktops that have none (Ubuntu ships without it). Every git
+# command the app runs is built into the one binary; it needs only libc, zlib and pcre2.
+mkdir -p "$APPDIR/usr/git"
+cp -L "$(command -v git)" "$APPDIR/usr/git/git"
 find "$APPDIR/usr/python" -name __pycache__ -prune -exec rm -rf {} +
 rm -rf "$APPDIR"/usr/python/lib/python3.12/{test,idlelib,tkinter,turtledemo} \
        "$APPDIR"/usr/python/lib/python3.12/site-packages/{pip,setuptools}* \
@@ -38,6 +42,8 @@ cat > "$APPDIR/AppRun" <<'RUN'
 #!/bin/sh
 HERE=$(dirname "$(readlink -f "$0")")
 export QT_QPA_PLATFORM=${QT_QPA_PLATFORM:-xcb}         # VTK's OpenGL view needs X11/XWayland
+# the bundled git only when the system has none, so a configured system git keeps winning
+command -v git >/dev/null 2>&1 || { export PATH="$HERE/usr/git:$PATH"; export GIT_EXEC_PATH="$HERE/usr/git"; }
 export NUMBA_CACHE_DIR=${NUMBA_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/syntexophobic/numba}
 exec "$HERE/usr/python/bin/python3" -m syntexophobic "$@"
 RUN
