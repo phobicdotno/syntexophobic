@@ -181,9 +181,36 @@ class Viewer(QVTKRenderWindowInteractor):
         if self._edges:
             self.ren.RemoveActor(self._edges)
         self.clear_highlight()
-        self._edge_polylines = geometry.edge_polylines(shape)
-        self._edges = self._lines_actor(self._edge_polylines, (0.10, 0.11, 0.13), 1.4)
+        from OCP.TopAbs import TopAbs_EDGE
+        if len(geometry.unique(shape, TopAbs_EDGE)) > 4000:
+            # a finely faceted solid (a relief, an imported mesh): drawing every triangle edge
+            # turns it into a wireframe, so draw only the creases; edge picking is off for it
+            self._edge_polylines = []
+            self._edges = self._crease_actor()
+        else:
+            self._edge_polylines = geometry.edge_polylines(shape)
+            self._edges = self._lines_actor(self._edge_polylines, (0.10, 0.11, 0.13), 1.4)
         self.ren.AddActor(self._edges)
+
+    def _crease_actor(self):
+        from vtkmodules.vtkFiltersCore import vtkFeatureEdges
+        fe = vtkFeatureEdges()
+        fe.SetInputConnection(self._model.GetMapper().GetInputConnection(0, 0))
+        fe.BoundaryEdgesOff()
+        fe.ManifoldEdgesOff()
+        fe.NonManifoldEdgesOff()
+        fe.FeatureEdgesOn()
+        fe.SetFeatureAngle(40)
+        mapper = vtkPolyDataMapper()
+        mapper.SetInputConnection(fe.GetOutputPort())
+        mapper.ScalarVisibilityOff()
+        actor = vtkActor()
+        actor.SetMapper(mapper)
+        actor.GetProperty().SetColor(0.10, 0.11, 0.13)
+        actor.GetProperty().SetLineWidth(1.4)
+        actor.GetProperty().LightingOff()
+        actor.PickableOff()
+        return actor
 
     def _lines_actor(self, polylines, colour, width):
         pts, lines = vtkPoints(), vtkCellArray()
@@ -220,7 +247,7 @@ class Viewer(QVTKRenderWindowInteractor):
         from vtkmodules.vtkRenderingCore import vtkCellPicker
         picker = vtkCellPicker()
         picker.PickFromListOn()
-        if self._edges:
+        if self._edges and self._edge_polylines:
             picker.AddPickList(self._edges)
             picker.SetTolerance(0.006)
             if picker.Pick(x, y, 0, self.ren) and picker.GetActor() is self._edges:

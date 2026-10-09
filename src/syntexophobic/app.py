@@ -38,10 +38,11 @@ LABELS = {
     "stepover": "Stepover (× tool Ø)", "leave": "Leave on walls", "feed": "Feed (mm/min)",
     "plunge": "Plunge (mm/min)", "bottom": "Bottom Z", "rpm": "Spindle (rpm)",
     "safe_z": "Safe height", "top_offset": "Material above part", "margin": "Margin around part",
-    "width": "Stock X size (0 = margin)", "depth": "Stock Y size (0 = margin)", "height": "Stock Z size (0 = to part bottom)",
+    "Stock.width": "Stock X size (0 = margin)", "Stock.depth": "Stock Y size (0 = margin)",
+    "Stock.height": "Stock Z size (0 = to part bottom)",
     "side": "Side (bottom = after flipping)", "rest_from": "Rest after tool", "source": "Source (sketch or .dxf)", "max_depth": "Max depth",
     "angle": "V angle (°)", "hole_min": "Smallest hole Ø", "hole_max": "Largest hole Ø",
-    "material": "Stock material", "up": "Model axis facing up", "body": "Body to machine (blank = all)", "ramp_angle": "Ramp angle (°)", "tabs": "Tabs per outline", "zero": "Work zero", "post": "Post-processor",
+    "material": "Stock material", "up": "Model axis facing up", "Stock.body": "Body to machine (blank = all)", "ramp_angle": "Ramp angle (°)", "tabs": "Tabs per outline", "zero": "Work zero", "post": "Post-processor",
 }
 AUTO = -99999.0   # spin box value shown as "auto" for an empty optional number
 OPTIONAL = {"bottom": "model bottom", "hole_min": "auto", "hole_max": "auto", "rest_from": "off"}
@@ -110,7 +111,9 @@ class DataForm(QWidget):
             if f.name == "id" or f.name in hidden or (only is not None and f.name not in only):
                 continue
             w = self._editor(f.name, getattr(obj, f.name), f.type)
-            label = LABELS.get(f.name, f.name.replace("_", " ").capitalize())
+            # labels for this kind of object first (Stock.width is not Feature.width)
+            label = LABELS.get(f"{type(obj).__name__}.{f.name}") or LABELS.get(f.name) or \
+                f.name.replace("_", " ").capitalize()
             if f.name == "stepdown" and getattr(obj, "type", "") == "drill":
                 label = "Peck depth"
             self.layout_.addRow(label, w)

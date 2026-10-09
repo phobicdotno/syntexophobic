@@ -38,7 +38,7 @@ def mcp_config() -> Path:
 def command(message: str, session_id: str | None, cwd: str | None) -> list[str]:
     args = ["-p", message, "--output-format", "stream-json", "--verbose",
             "--mcp-config", str(mcp_config()), "--strict-mcp-config",
-            "--tools", "", "--allowedTools", "mcp__syntexophobic",
+            "--tools", "Read", "--allowedTools", "mcp__syntexophobic", "Read",
             "--append-system-prompt", PROMPT]
     if session_id:
         args += ["--resume", session_id]
@@ -93,9 +93,12 @@ class AssistantPanel(QWidget):
         self.b_stop = QPushButton("Stop")
         self.b_stop.clicked.connect(self.stop)
         self.b_stop.setEnabled(False)
+        self.b_attach = QPushButton("Attach image…")
+        self.b_attach.clicked.connect(self.attach)
+        self.attached: list[str] = []
         self.b_new = QPushButton("New chat")
         self.b_new.clicked.connect(self.new_chat)
-        for b in (self.b_send, self.b_stop, self.b_new):
+        for b in (self.b_send, self.b_attach, self.b_stop, self.b_new):
             row.addWidget(b)
         col.addLayout(row)
         self.note = QLabel()
@@ -131,10 +134,36 @@ class AssistantPanel(QWidget):
             body = doc.toHtml()
         self.log.append(body)
 
+    def attach(self):
+        """Pick a picture; it is copied into the project's images/ folder and handed to
+        Claude with the next message."""
+        import shutil
+        from PySide6.QtWidgets import QFileDialog
+        path, _ = QFileDialog.getOpenFileName(self, "Picture for Claude", str(Path.home()),
+                                              "Images (*.png *.jpg *.jpeg *.bmp *.gif *.webp)")
+        if not path:
+            return
+        project = self.window.project
+        if project is not None:
+            dest = project.folder / "images" / Path(path).name
+            dest.parent.mkdir(exist_ok=True)
+            if Path(path).resolve() != dest.resolve():
+                shutil.copy2(path, dest)
+            path = str(dest)
+        self.attached.append(path)
+        self.note.setText(f"Attached {Path(path).name}; it goes with your next message.")
+        if not self.input.toPlainText().strip():
+            self.input.setPlainText("Design a 3D figure from this picture.")
+
     def send(self):
         text = self.input.toPlainText().strip()
         if not text or self.proc is not None:
             return
+        if self.attached:
+            text += "\n\nAttached image(s), look at them with the Read tool: " + ", ".join(self.attached) + \
+                    ". Use trace_image for outlines or add_relief for a height relief, or model the shape " \
+                    "with sketches and features, as fits the request."
+            self.attached = []
         self.input.clear()
         self._add("user", text)
         self.proc = QProcess(self)

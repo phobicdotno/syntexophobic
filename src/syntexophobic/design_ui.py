@@ -6,6 +6,8 @@ from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import (QComboBox, QGridLayout, QGroupBox, QHBoxLayout, QInputDialog,
                                QLabel, QListWidget, QPushButton, QToolBar, QVBoxLayout, QWidget)
 
+from pathlib import Path
+
 from .model import Feature, ModelError, Part
 from .sketch import Sketch
 
@@ -25,9 +27,12 @@ FEATURE_FIELDS = {
     "chamfer": ["name", "body", "radius", "edges", "suppressed"],
     "shell": ["name", "body", "faces", "thickness", "suppressed"],
     "mirror": ["name", "body", "plane", "suppressed"],
+    "relief": ["name", "body", "operation", "image", "width", "depth", "base", "invert", "suppressed"],
     "hole": ["name", "body", "sketch", "hole", "diameter", "depth", "head_diameter", "head_depth", "suppressed"],
 }
-FEATURE_LABELS = {"body": "Body (new: name; else target)", "hole": "Hole type", "depth": "Depth (0 = through)", "head_diameter": "Head Ø",
+FEATURE_LABELS = {"image": "Image (in the project)", "base": "Base thickness", "invert": "Dark is high",
+                  "Feature.body": "Body (new: name; else target)", "Feature.width": "Width",
+                  "Feature.depth": "Depth (hole: 0 = through)", "hole": "Hole type", "depth": "Depth (0 = through)", "head_diameter": "Head Ø",
                   "head_depth": "Counterbore depth", "path": "Path sketch", "radius": "Radius / distance", "edges": "Edges (|Z, >Z, %CIRCLE…)",
                   "faces": "Open faces (>Z, <Z…)", "count": "Pattern count", "spacing": "Pattern spacing",
                   "direction": "Pattern direction", "axis": "Axis (line id)"}
@@ -64,6 +69,7 @@ class DesignPanel(QWidget):
                 ("Sweep", lambda: self.add("sweep")), ("Fillet", lambda: self.add("fillet")),
                 ("Chamfer", lambda: self.add("chamfer")), ("Shell", lambda: self.add("shell")),
                 ("Mirror", lambda: self.add("mirror")), ("Hole", lambda: self.add("hole")),
+                ("Relief…", self.add_relief),
                 ("Edit sketch", self.open_sketch),
                 ("Remove", self.remove), ("Up", lambda: self.move(-1)), ("Down", lambda: self.move(1)))):
             b = QPushButton(text)
@@ -82,7 +88,7 @@ class DesignPanel(QWidget):
         col.addWidget(fbox)
         col.addStretch()
         CHOICES.update(FEATURE_CHOICES)
-        LABELS.update({k: v for k, v in FEATURE_LABELS.items() if k not in LABELS})
+        LABELS.update({k: v for k, v in FEATURE_LABELS.items() if k not in LABELS or "." in k})
 
     # ---- part ------------------------------------------------------------------------
 
@@ -338,6 +344,32 @@ class DesignPanel(QWidget):
         self._fill(len(self.part.features) - 1)
         self.changed.emit()
 
+    def add_relief(self) -> None:
+        """A relief feature from a picture, copied into the project's images/ folder."""
+        import shutil
+        from PySide6.QtWidgets import QFileDialog
+        path, _ = QFileDialog.getOpenFileName(self, "Picture for the relief", str(Path.home()),
+                                              "Images (*.png *.jpg *.jpeg *.bmp *.gif *.webp)")
+        if not path:
+            return
+        folder = Path(getattr(self.part, "folder", "."))
+        dest = folder / "images" / Path(path).name
+        dest.parent.mkdir(exist_ok=True)
+        if Path(path).resolve() != dest.resolve():
+            shutil.copy2(path, dest)
+        width, ok = QInputDialog.getDouble(self, "Relief", "Width (mm)", 100.0, 1, 5000, 2)
+        if not ok:
+            return
+        depth, ok = QInputDialog.getDouble(self, "Relief", "Depth from darkest to lightest (mm)", 5.0, 0.1, 500, 2)
+        if not ok:
+            return
+        f = Feature("relief", name=f"Relief {sum(1 for x in self.part.features if x.type == 'relief') + 1}",
+                    image=str(dest.relative_to(folder)), width=width, depth=depth,
+                    operation="new" if not self.part.features else "join")
+        self.part.features.append(f)
+        self._fill(len(self.part.features) - 1)
+        self.changed.emit()
+
     def remove(self) -> None:
         row = self.l_features.currentRow()
         if 0 <= row < len(self.part.features):
@@ -363,6 +395,33 @@ class DesignPanel(QWidget):
                 return
         if name:
             self.edit_sketch.emit(name)
+
+
+def _trace_dialog(view) -> None:
+    from PySide6.QtWidgets import QFileDialog
+    path, _ = QFileDialog.getOpenFileName(view, "Picture to trace", str(Path.home()),
+                                          "Images (*.png *.jpg *.jpeg *.bmp *.gif *.webp)")
+    if not path:
+        return
+    width, ok = QInputDialog.getDouble(view, "Trace image", "Width of the traced shape (mm)", 80.0, 1, 5000, 2)
+    if not ok:
+        return
+    which, ok = QInputDialog.getItem(view, "Trace image", "Trace the", ["dark areas", "light areas"], 0, False)
+    if not ok:
+        return
+    made = view.sketch.trace_image(path, 0.0, 0.0, width, invert=which.startswith("light"))
+    view.commit()
+    view.fit()
+    view.status.emit(f"Traced {len(made)} lines into {len(view.sketch.profiles())} closed outlines.")
+
+
+def _export_dxf(view) -> None:
+    from PySide6.QtWidgets import QFileDialog
+    from . import dxf
+    path, _ = QFileDialog.getSaveFileName(view, "Save DXF", f"{view.sketch.name}.dxf", "DXF (*.dxf)")
+    if path:
+        dxf.export_dxf(view.sketch, path)
+        view.status.emit(f"Saved {path}")
 
 
 def sketch_toolbar(view, on_finish) -> QWidget:
@@ -402,6 +461,12 @@ def sketch_toolbar(view, on_finish) -> QWidget:
                 ent.construction = not ent.construction
         view.commit()
     a.triggered.connect(toggle_construction)
+    tools.addSeparator()
+    a = tools.addAction("Trace image…")
+    a.setToolTip("Trace a picture's dark areas into outlines")
+    a.triggered.connect(lambda: _trace_dialog(view))
+    a = tools.addAction("Export DXF…")
+    a.triggered.connect(lambda: _export_dxf(view))
     a = tools.addAction("Fit")
     a.triggered.connect(view.fit)
     tools.addSeparator()

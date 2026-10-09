@@ -145,6 +145,32 @@ def import_dxf(path: str, name: str = "", plane: str = "XY", offset: float = 0.0
 
 
 @server.tool()
+def trace_image(sketch: str, path: str, width: float, x: float = 0.0, y: float = 0.0,
+                threshold: float = 0.5, invert: bool = False) -> str:
+    """Trace a picture (PNG/JPG...) into a sketch: its dark areas (light ones with invert)
+    become closed outlines `width` mm wide, holes included, lower-left at (x, y). The image is
+    copied into the project. Extrude, cut or V-carve the result."""
+    return _out(_call("trace_image", sketch=sketch, path=path, width=width, x=x, y=y,
+                      threshold=threshold, invert=invert))
+
+
+@server.tool()
+def add_relief(image: str, width: float = 100.0, depth: float = 5.0, base: float = 3.0,
+               invert: bool = False, name: str = "Relief", operation: str = "new", body: str = "") -> str:
+    """A 3D relief from a picture: brightness becomes height (light = high, or dark with
+    invert), `width` mm wide, `depth` mm from darkest to lightest, on a `base` mm slab.
+    Machine it with a ball end and a 'parallel' operation."""
+    return _out(_call("add_relief", image=image, width=width, depth=depth, base=base, invert=invert,
+                      name=name, operation=operation, body=body))
+
+
+@server.tool()
+def export_sketch_dxf(sketch: str, path: str = "") -> str:
+    """Save a sketch as a DXF drawing (mm). Default: <project>/<sketch>.dxf."""
+    return _out(_call("export_sketch_dxf", sketch=sketch, path=path))
+
+
+@server.tool()
 def add_feature(type: str, fields: dict) -> str:
     """Add a feature at the end of the part. type: extrude | revolve | loft | sweep | hole |
     fillet | chamfer | shell | mirror. fields (as needed): name, sketch, distance (negative =

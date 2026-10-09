@@ -92,6 +92,12 @@ value per line, so diffs read well. Edits in the window are written straight to 
 
 ![Assistant panel: Claude built a parametric coaster live in the window](docs/screenshots/assistant.png)
 
+![Claude turned an attached picture into a relief plaque](docs/screenshots/image-relief.png)
+
+Pictures can become geometry: *Trace image* turns a logo into sketch outlines, *Relief*
+turns brightness into height, and the Assistant's *Attach image* lets Claude design a 3D
+figure from a picture.
+
 ![History panel with a variant and the diff against the current job](docs/screenshots/history.png)
 
 - **Save version** makes a git commit with your note.

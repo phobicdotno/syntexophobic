@@ -500,3 +500,39 @@ def test_bodies_stay_separate_and_one_can_be_machined(tmp_path):
     p.save_job()
     b = p.setup().part
     assert (round(b.zmin, 6), round(b.zmax, 6)) == (30, 35)                # only the lid is machined
+
+
+def _save_png(arr, path):
+    """Save a 0..1 grayscale array (rows top to bottom) as a PNG."""
+    from PySide6.QtGui import QImage
+    a = np.ascontiguousarray((np.clip(arr, 0, 1) * 255).astype(np.uint8))
+    img = QImage(a.data, a.shape[1], a.shape[0], a.shape[1], QImage.Format_Grayscale8)
+    assert img.copy().save(str(path))
+
+
+def test_trace_image_and_relief(tmp_path):
+    # a black ring on white: outline + hole after tracing
+    n = 400
+    yy, xx = np.mgrid[0:n, 0:n]
+    r = np.hypot(xx - n / 2, yy - n / 2)
+    ring = np.where((r < 180) & (r > 90), 0.0, 1.0)
+    _save_png(ring, tmp_path / "ring.png")
+    sk = Sketch()
+    sk.trace_image(tmp_path / "ring.png", 0, 0, width=40)
+    assert len(sk.profiles()) == 2
+    v = Part("Ring", [Feature("extrude", sketch="s", distance=2)], {"s": sk}).build()
+    scale = 40 / n
+    expect = math.pi * ((180 * scale) ** 2 - (90 * scale) ** 2) * 2
+    assert abs(volume(v) - expect) < 0.02 * expect
+
+    # a left-to-right grey ramp as a relief: volume = area x (base + depth / 2)
+    ramp = np.tile(np.linspace(0, 1, 200), (100, 1))
+    _save_png(ramp, tmp_path / "ramp.png")
+    part = Part("Relief", [Feature("relief", image="ramp.png", width=60, depth=4, base=2)], {})
+    part.folder = tmp_path
+    shape = part.build()
+    b = geometry.bounding_box(shape)
+    assert abs((b.xmax - b.xmin) - 60) < 0.05 and abs((b.ymax - b.ymin) - 30 * 99 / 100 * 199 / 199) < 1.0
+    area = (b.xmax - b.xmin) * (b.ymax - b.ymin)
+    assert abs(volume(shape) - area * (2 + 4 / 2)) < 0.03 * area * 4
+    assert abs(b.zmax - 6) < 0.15 and abs(b.zmin) < 1e-6

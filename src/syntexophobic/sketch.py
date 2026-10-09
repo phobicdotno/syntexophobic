@@ -227,6 +227,17 @@ class Sketch:
             made += [self.line(ids[i], ids[(i + 1) % len(ids)]) for i in range(len(ids))]
         return made
 
+    def trace_image(self, path, x: float, y: float, width: float, threshold: float = 0.5,
+                    invert: bool = False) -> list[str]:
+        """Outlines of an image's dark areas (light with invert) as closed line loops,
+        `width` mm wide, lower-left corner at (x, y)."""
+        from .imaging import trace
+        made = []
+        for poly in trace(path, width, threshold, invert):
+            ids = [self.point(x + px, y + py) for px, py in poly]
+            made += [self.line(ids[i], ids[(i + 1) % len(ids)]) for i in range(len(ids))]
+        return made
+
     def spline_samples(self, sid: str, n: int = 64) -> list[tuple[float, float]]:
         """Points along a spline, from the same curve the 3D model uses."""
         from .model import spline_curve

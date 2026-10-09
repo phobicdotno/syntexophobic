@@ -6,6 +6,17 @@ All notable changes to Syntexophobic. The format follows
 ## [Unreleased]
 
 ### Added
+- **3D from images**:
+  - *Trace image* (sketch toolbar, MCP `trace_image`): a picture's dark or light areas
+    become closed outlines with their holes, at a chosen width, ready to extrude, cut or
+    V-carve.
+  - *Relief* feature (Design panel, MCP `add_relief`): brightness becomes height on a base
+    slab, built as a watertight faceted solid (about 2 s for a 120 × 120 grid) to machine
+    with 3D finishing.
+  - *Attach image* in the Assistant: Claude looks at the picture (Read is its only
+    non-Syntexophobic tool) and designs a figure from it with these tools.
+  Pictures are copied into the project's `images/` folder so history keeps them.
+- *Export DXF* in the sketch toolbar and as MCP `export_sketch_dxf`.
 - **Multiple bodies**: a "new" extrude, revolve, loft or sweep makes a separate body
   (named with `body`); join, intersect, fillet, chamfer, shell and mirror change a chosen
   body (the last by default), and a cut or hole without a body goes through all of them.
@@ -196,6 +207,11 @@ All notable changes to Syntexophobic. The format follows
 - Assemblies are sliced per solid, so touching or overlapping parts stay correct.
 
 ### Fixed
+- A failed OpenCascade operation (an empty shape) no longer crashes the program later:
+  every feature's result is checked and reported as an error.
+- Finely faceted solids (reliefs) are drawn with their creases only instead of every
+  triangle edge, and form labels no longer mix up stock and feature fields of the same
+  name.
 - Roughing kept the tool centre inside the stock outline, so a strip of stock narrower
   than the tool keep-out (3 mm margin vs 3.3 mm) was never cut, and later moves plunged
   into it. Found the first time Claude drove the window over MCP and simulated the result.

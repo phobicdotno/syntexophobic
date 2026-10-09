@@ -18,8 +18,8 @@ MUTANTS = [
     ("rough ignores the part (empty union)", "cam.py",
      "        return list(clip) if op == pyclipper.CT_UNION else []", "        return []"),
     ("tool radius left out of roughing offset", "cam.py",
-     "    region = _boolean(setup.stock_rect(), _offset(forbidden, r + op.leave), pyclipper.CT_DIFFERENCE)\n    if op.rest_from",
-     "    region = _boolean(setup.stock_rect(), _offset(forbidden, op.leave), pyclipper.CT_DIFFERENCE)\n    if op.rest_from"),
+     "    region = _boolean(_offset(setup.stock_rect(), 0.9 * r), _offset(forbidden, r + op.leave),",
+     "    region = _boolean(_offset(setup.stock_rect(), 0.9 * r), _offset(forbidden, op.leave),"),
     ("ball drop-cutter ignores triangle edges", "surface.py",
      "    for k in range(3):                                   # edges", "    for k in range(0):                                   # edges"),
     ("ball drop-cutter ignores triangle faces", "surface.py", "        if c > 1e-9:\n            if ball:", "        if c > 1e9:\n            if ball:"),
@@ -70,4 +70,5 @@ if __name__ == "__main__":
     results = [run(*m) for m in MUTANTS]
     for name, verdict in results:
         print(f"{verdict:10} {name}")
+    # a mutant whose code pattern is gone checks nothing: that is a failure too
     sys.exit(0 if all(v == "caught" for _, v in results) else 1)

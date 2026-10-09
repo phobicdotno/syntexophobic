@@ -157,6 +157,39 @@ def _inside(pt, poly) -> bool:
     return hit
 
 
+def relief_mesh(top, cell: float):
+    """Indexed closed mesh over a height grid: (nodes (n, 3), triangles (m, 3) of node
+    indices). Top grid nodes come first, then the bottom border, then the bottom centre."""
+    import numpy as np
+    rows, cols = top.shape
+    X, Y = np.meshgrid(np.arange(cols) * cell, np.arange(rows) * cell)
+    top_xyz = np.stack([X, Y, top], -1).reshape(-1, 3)
+    T = np.arange(rows * cols).reshape(rows, cols)
+    a, b, c, d = T[:-1, :-1].ravel(), T[:-1, 1:].ravel(), T[1:, 1:].ravel(), T[1:, :-1].ravel()
+    tris = [np.stack([a, b, c], 1), np.stack([a, c, d], 1)]
+    # the border of the top, counter-clockwise seen from above
+    border = list(T[0, :]) + list(T[1:, -1]) + list(T[-1, -2::-1]) + list(T[-2:0:-1, 0])
+    base = rows * cols
+    bottom = np.array([[top_xyz[k, 0], top_xyz[k, 1], 0.0] for k in border])
+    centre = base + len(border)
+    nodes = np.concatenate([top_xyz, bottom, [[X.max() / 2, Y.max() / 2, 0.0]]])
+    n = len(border)
+    for i in range(n):
+        t0, t1 = border[i], border[(i + 1) % n]
+        b0, b1 = base + i, base + (i + 1) % n
+        tris.append(np.array([[b0, b1, t1], [b0, t1, t0]]))      # wall, facing out
+        tris.append(np.array([[centre, b1, b0]]))                  # bottom, facing down
+    return nodes, np.concatenate(tris)
+
+
+def _checked(shape, what: str):
+    """OpenCascade returns an empty shape when an operation fails, and crashes later when it
+    is used: turn that into a clear error here."""
+    if shape is None or shape.IsNull():
+        raise ModelError(f"{what} failed (OpenCascade returned nothing): try other values")
+    return shape
+
+
 def _first_edge(wire):
     from OCP.BRepTools import BRepTools_WireExplorer
     return BRepTools_WireExplorer(wire).Current()
@@ -339,6 +372,10 @@ class Feature:
     faces: str = ">Z"            # shell: faces to open
     thickness: float = 2.0       # shell (negative = outward)
     plane: str = "YZ"            # mirror: through the origin
+    image: str = ""              # relief: picture in the project folder (brightness = height)
+    width: float = 100.0         # relief: size in X (Y follows the picture's proportions)
+    base: float = 3.0            # relief: solid thickness under the lowest point
+    invert: bool = False         # relief: dark = high instead of light = high
     hole: str = "simple"         # hole: simple | counterbore | countersink
     diameter: float = 5.0        # hole
     depth: float = 10.0          # hole (0 = through everything)
@@ -351,7 +388,7 @@ class Feature:
 
 
 NUMERIC = ("distance", "angle", "radius", "thickness", "spacing", "count", "diameter", "depth",
-           "head_diameter", "head_depth")
+           "head_diameter", "head_depth", "width", "base")
 
 
 @dataclass
@@ -419,12 +456,12 @@ class Part:
         return bodies
 
     def _apply_to(self, bodies: dict, f: Feature) -> None:
-        makes = f.type in ("extrude", "revolve", "loft", "sweep")
+        makes = f.type in ("extrude", "revolve", "loft", "sweep", "relief")
         if makes and (f.operation == "new" or not bodies):
             name = f.body or f"Body {len(bodies) + 1}"
             if name in bodies:
                 raise ModelError(f"There is already a body called {name!r}")
-            bodies[name] = self._tool_body(f)
+            bodies[name] = _checked(self._tool_body(f), f.name or f.type)
             return
         if not bodies:
             raise ModelError(f"{f.type} needs a body before it")
@@ -432,12 +469,12 @@ class Part:
             raise ModelError(f"No body called {f.body!r}; bodies: {list(bodies)}")
         cut_all = (f.type == "hole" or (makes and f.operation == "cut")) and not f.body
         targets = list(bodies) if cut_all else [f.body or list(bodies)[-1]]
-        tool = self._tool_body(f) if makes else None
+        tool = _checked(self._tool_body(f), f.name or f.type) if makes else None
         for name in targets:
-            bodies[name] = self._apply(bodies[name], f, tool)
+            bodies[name] = _checked(self._apply(bodies[name], f, tool), f.name or f.type)
 
     def _apply(self, shape, f: Feature, tool=None):
-        if f.type in ("extrude", "revolve", "loft", "sweep"):
+        if f.type in ("extrude", "revolve", "loft", "sweep", "relief"):
             op = {"join": BRepAlgoAPI_Fuse, "cut": BRepAlgoAPI_Cut, "intersect": BRepAlgoAPI_Common}[f.operation]
             return op(shape, tool).Shape()
         if f.type == "hole":
@@ -555,7 +592,43 @@ class Part:
             out = BRepAlgoAPI_Fuse(out, t).Shape()
         return out
 
+    def _relief(self, f: Feature):
+        """A solid whose top follows the picture's brightness: an indexed, watertight
+        triangle mesh (top grid, side walls, a fan for the bottom) turned into B-rep faces
+        and closed into a solid. Exact at the grid points; no fitting or booleans."""
+        from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeShapeOnMesh, BRepBuilderAPI_MakeSolid
+        from OCP.Poly import Poly_Triangle, Poly_Triangulation
+        from .imaging import relief_grid
+        if not f.image:
+            raise ModelError("Relief: set image to a picture in the project folder")
+        path = Path(f.image)
+        if not path.is_absolute():
+            path = Path(self.folder) / path if getattr(self, "folder", None) else path
+        if not path.exists():
+            raise ModelError(f"Relief: no image at {path}")
+        heights, cell = relief_grid(path, f.width, f.depth, f.invert)
+        nodes, tris = relief_mesh(f.base + heights, cell)
+        mesh = Poly_Triangulation(len(nodes), len(tris), False)
+        for k, (x, y, z) in enumerate(nodes, 1):
+            mesh.SetNode(k, gp_Pnt(float(x), float(y), float(z)))
+        for k, (a, b, c) in enumerate(tris, 1):
+            mesh.SetTriangle(k, Poly_Triangle(int(a) + 1, int(b) + 1, int(c) + 1))
+        # faces built on the indexed mesh already share their edges: a shell of them is
+        # closed without sewing (which takes minutes on a fine grid)
+        from OCP.BRep import BRep_Builder
+        from OCP.TopoDS import TopoDS_Shell
+        faces = BRepBuilderAPI_MakeShapeOnMesh(mesh).Shape()
+        shell, builder = TopoDS_Shell(), BRep_Builder()
+        builder.MakeShell(shell)
+        exp = TopExp_Explorer(faces, TopAbs_FACE)
+        while exp.More():
+            builder.Add(shell, exp.Current())
+            exp.Next()
+        return _checked(BRepBuilderAPI_MakeSolid(shell).Solid(), "relief")
+
     def _tool_body(self, f: Feature):
+        if f.type == "relief":
+            return self._relief(f)
         if f.type == "loft":
             return self._loft(f)
         if f.type == "sweep":
@@ -627,6 +700,12 @@ class Part:
     @classmethod
     def load(cls, path: str | Path) -> "Part":
         path = Path(path)
+        part = cls._load(path)
+        part.folder = path.parent
+        return part
+
+    @classmethod
+    def _load(cls, path: Path) -> "Part":
         d = tomllib.loads(path.read_text())
         part = cls(name=d.get("part", {}).get("name", "Part"),
                    features=[Feature(**f) for f in d.get("features", [])],

@@ -79,7 +79,7 @@ def test_assistant_command_and_stream_parsing():
     args = U.command("make a plate", None, "/tmp")
     assert args[:2] == ["-p", "make a plate"] and "--strict-mcp-config" in args
     i = args.index("--tools")
-    assert args[i + 1] == ""                                     # no shell, no file tools
+    assert args[i + 1] == "Read"                                 # only reading (pictures): no shell, no editing
     assert args[args.index("--allowedTools") + 1] == "mcp__syntexophobic"
     assert "--resume" in U.command("more", "abc-123", "/tmp")
     lines = [

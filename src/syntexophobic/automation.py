@@ -252,6 +252,48 @@ class Session:
             raise CommandError(f"Unknown sketch action {action!r}")
         return self._sketch_result(part, sk, made)
 
+    def _project_copy(self, path: str) -> str:
+        """Copy a file into the project's images/ folder (so history keeps it); returns the
+        path relative to the project."""
+        import shutil
+        src = Path(path).expanduser()
+        if not src.exists():
+            raise CommandError(f"No file at {src}")
+        folder = self._need().folder
+        if folder in src.resolve().parents:
+            return str(src.resolve().relative_to(folder))
+        dest = folder / "images" / src.name
+        dest.parent.mkdir(exist_ok=True)
+        shutil.copy2(src, dest)
+        return str(dest.relative_to(folder))
+
+    def trace_image(self, sketch: str, path: str, width: float, x: float = 0.0, y: float = 0.0,
+                    threshold: float = 0.5, invert: bool = False) -> dict:
+        """Trace the dark areas of a picture (light with invert) into closed outlines in a
+        sketch, `width` mm wide, lower-left corner at (x, y)."""
+        part = self._part()
+        sk = self._sketch(part, sketch)
+        rel = self._project_copy(path)
+        made = sk.trace_image(self._need().folder / rel, x, y, width, threshold, invert)
+        result = self._sketch_result(part, sk)
+        result["lines"] = len(made)
+        return result
+
+    def add_relief(self, image: str, width: float = 100.0, depth: float = 5.0, base: float = 3.0,
+                   invert: bool = False, name: str = "Relief", operation: str = "new", body: str = "") -> dict:
+        """A relief whose height follows the picture's brightness (light = high)."""
+        rel = self._project_copy(image)
+        return self.add_feature("relief", name=name, image=rel, width=width, depth=depth, base=base,
+                                invert=invert, operation=operation, body=body)
+
+    def export_sketch_dxf(self, sketch: str, path: str = "") -> dict:
+        from . import dxf
+        part = self._part()
+        sk = self._sketch(part, sketch)
+        out = Path(path).expanduser() if path else self._need().folder / f"{sketch}.dxf"
+        dxf.export_dxf(sk, out)
+        return {"saved": str(out)}
+
     def import_dxf(self, path: str, name: str = "", plane: str = "XY", offset: float = 0.0) -> dict:
         from . import dxf
         part = self._part()
