@@ -536,3 +536,40 @@ def test_trace_image_and_relief(tmp_path):
     area = (b.xmax - b.xmin) * (b.ymax - b.ymin)
     assert abs(volume(shape) - area * (2 + 4 / 2)) < 0.03 * area * 4
     assert abs(b.zmax - 6) < 0.15 and abs(b.zmin) < 1e-6
+
+
+def test_import_step_and_stl_as_bodies(tmp_path):
+    """An imported STL is a body of its own; an imported STEP cuts it; both come back from
+    the saved project (files copied into imports/), and the MCP session does the same."""
+    from OCP.BRepMesh import BRepMesh_IncrementalMesh
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox, BRepPrimAPI_MakeCylinder
+    from OCP.STEPControl import STEPControl_AsIs, STEPControl_Writer
+    from OCP.StlAPI import StlAPI_Writer
+    from OCP.gp import gp_Ax2, gp_Dir, gp_Pnt
+    from syntexophobic.automation import Session
+    from syntexophobic.project import Project
+
+    box = BRepPrimAPI_MakeBox(40, 30, 10).Shape()
+    BRepMesh_IncrementalMesh(box, 0.01, False, 0.1, True)
+    w = StlAPI_Writer()
+    assert w.Write(box, str(tmp_path / "block.stl"))
+    pin = BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(20, 15, -1), gp_Dir(0, 0, 1)), 5, 12).Shape()
+    sw = STEPControl_Writer()
+    sw.Transfer(pin, STEPControl_AsIs)
+    sw.Write(str(tmp_path / "pin.step"))
+
+    s = Session()
+    s.new_design(str(tmp_path / "proj"), "imported")
+    r = s.import_model(str(tmp_path / "block.stl"), name="block")
+    assert r["volume_mm3"] == pytest.approx(12000, rel=1e-6)
+    r = s.import_model(str(tmp_path / "pin.step"), operation="cut")
+    assert r["volume_mm3"] == pytest.approx(12000 - math.pi * 25 * 10, rel=1e-3)
+    assert (tmp_path / "proj/imports/block.stl").exists() and (tmp_path / "proj/imports/pin.step").exists()
+    part = Part.load(tmp_path / "proj" / "model.toml")
+    assert [f.file for f in part.features] == ["imports/block.stl", "imports/pin.step"]
+    assert volume(part.build()) == pytest.approx(12000 - math.pi * 25 * 10, rel=1e-3)
+    assert Project(tmp_path / "proj").toolpaths()               # machinable like any design
+
+    bad = Part("x", features=[Feature("import", file="missing.step")])
+    with pytest.raises(ModelError, match="no file"):
+        bad.build()

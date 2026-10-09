@@ -95,13 +95,18 @@ def load_model(path: str) -> TopoDS_Shape:
     return load_stl(path) if str(path).lower().endswith(".stl") else load_step(path)
 
 
-def stl_to_step(src: str, dst: str, merge_flat: bool = True) -> TopoDS_Shape:
-    from OCP.STEPControl import STEPControl_AsIs, STEPControl_Writer
+def quiet() -> None:
+    """Only failures from OpenCascade's messenger: the STEP writer prints its statistics."""
     from OCP.Message import Message, Message_Gravity
-    solid = load_stl(src, merge_flat)
-    printers = Message.DefaultMessenger_s().Printers()      # the writer prints statistics
+    printers = Message.DefaultMessenger_s().Printers()
     for i in range(1, printers.Size() + 1):
         printers.Value(i).SetTraceLevel(Message_Gravity.Message_Fail)
+
+
+def stl_to_step(src: str, dst: str, merge_flat: bool = True) -> TopoDS_Shape:
+    from OCP.STEPControl import STEPControl_AsIs, STEPControl_Writer
+    solid = load_stl(src, merge_flat)
+    quiet()
     w = STEPControl_Writer()
     w.Transfer(solid, STEPControl_AsIs)
     if w.Write(str(dst)) != IFSelect_RetDone:

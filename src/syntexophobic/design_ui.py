@@ -28,9 +28,10 @@ FEATURE_FIELDS = {
     "shell": ["name", "body", "faces", "thickness", "suppressed"],
     "mirror": ["name", "body", "plane", "suppressed"],
     "relief": ["name", "body", "operation", "image", "width", "depth", "base", "invert", "suppressed"],
+    "import": ["name", "body", "operation", "file", "suppressed"],
     "hole": ["name", "body", "sketch", "hole", "diameter", "depth", "head_diameter", "head_depth", "suppressed"],
 }
-FEATURE_LABELS = {"image": "Image (in the project)", "base": "Base thickness", "invert": "Dark is high",
+FEATURE_LABELS = {"image": "Image (in the project)", "file": "STEP / STL (in the project)", "base": "Base thickness", "invert": "Dark is high",
                   "Feature.body": "Body (new: name; else target)", "Feature.width": "Width",
                   "Feature.depth": "Depth (hole: 0 = through)", "hole": "Hole type", "depth": "Depth (0 = through)", "head_diameter": "Head Ø",
                   "head_depth": "Counterbore depth", "path": "Path sketch", "radius": "Radius / distance", "edges": "Edges (|Z, >Z, %CIRCLE…)",
@@ -69,7 +70,7 @@ class DesignPanel(QWidget):
                 ("Sweep", lambda: self.add("sweep")), ("Fillet", lambda: self.add("fillet")),
                 ("Chamfer", lambda: self.add("chamfer")), ("Shell", lambda: self.add("shell")),
                 ("Mirror", lambda: self.add("mirror")), ("Hole", lambda: self.add("hole")),
-                ("Relief…", self.add_relief),
+                ("Relief…", self.add_relief), ("Import…", self.add_import),
                 ("Edit sketch", self.open_sketch),
                 ("Remove", self.remove), ("Up", lambda: self.move(-1)), ("Down", lambda: self.move(1)))):
             b = QPushButton(text)
@@ -365,6 +366,25 @@ class DesignPanel(QWidget):
             return
         f = Feature("relief", name=f"Relief {sum(1 for x in self.part.features if x.type == 'relief') + 1}",
                     image=str(dest.relative_to(folder)), width=width, depth=depth,
+                    operation="new" if not self.part.features else "join")
+        self.part.features.append(f)
+        self._fill(len(self.part.features) - 1)
+        self.changed.emit()
+
+    def add_import(self) -> None:
+        """A STEP or STL part as a body, copied into the project's imports/ folder."""
+        import shutil
+        from PySide6.QtWidgets import QFileDialog
+        path, _ = QFileDialog.getOpenFileName(self, "Part to import", str(Path.home()),
+                                              "Models (*.step *.stp *.stl *.STEP *.STP *.STL)")
+        if not path:
+            return
+        folder = Path(getattr(self.part, "folder", "."))
+        dest = folder / "imports" / Path(path).name
+        dest.parent.mkdir(exist_ok=True)
+        if Path(path).resolve() != dest.resolve():
+            shutil.copy2(path, dest)
+        f = Feature("import", name=Path(path).stem, file=str(dest.relative_to(folder)),
                     operation="new" if not self.part.features else "join")
         self.part.features.append(f)
         self._fill(len(self.part.features) - 1)

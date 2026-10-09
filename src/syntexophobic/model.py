@@ -376,6 +376,7 @@ class Feature:
     width: float = 100.0         # relief: size in X (Y follows the picture's proportions)
     base: float = 3.0            # relief: solid thickness under the lowest point
     invert: bool = False         # relief: dark = high instead of light = high
+    file: str = ""               # import: a STEP or STL file in the project folder
     hole: str = "simple"         # hole: simple | counterbore | countersink
     diameter: float = 5.0        # hole
     depth: float = 10.0          # hole (0 = through everything)
@@ -385,6 +386,10 @@ class Feature:
     spacing: float = 10.0        # linear pattern step, along `direction`
     direction: str = "X"         # X | Y | Z, or "circular" (about Z through the origin)
     suppressed: bool = False
+
+
+MAKES_BODY = ("extrude", "revolve", "loft", "sweep", "relief", "import")   # feature types with a tool body
+_IMPORTED: dict = {}             # (path, mtime) -> shape: a big STEP or STL is read once
 
 
 NUMERIC = ("distance", "angle", "radius", "thickness", "spacing", "count", "diameter", "depth",
@@ -456,7 +461,7 @@ class Part:
         return bodies
 
     def _apply_to(self, bodies: dict, f: Feature) -> None:
-        makes = f.type in ("extrude", "revolve", "loft", "sweep", "relief")
+        makes = f.type in MAKES_BODY
         if makes and (f.operation == "new" or not bodies):
             name = f.body or f"Body {len(bodies) + 1}"
             if name in bodies:
@@ -474,7 +479,7 @@ class Part:
             bodies[name] = _checked(self._apply(bodies[name], f, tool), f.name or f.type)
 
     def _apply(self, shape, f: Feature, tool=None):
-        if f.type in ("extrude", "revolve", "loft", "sweep", "relief"):
+        if f.type in MAKES_BODY:
             op = {"join": BRepAlgoAPI_Fuse, "cut": BRepAlgoAPI_Cut, "intersect": BRepAlgoAPI_Common}[f.operation]
             return op(shape, tool).Shape()
         if f.type == "hole":
@@ -615,9 +620,29 @@ class Part:
         from .geometry import solid_from_mesh
         return _checked(solid_from_mesh(mesh, "relief"), "relief")
 
+    def _import(self, f: Feature):
+        """A STEP or STL file as a body, where its own coordinates put it."""
+        from .geometry import load_model
+        if not f.file:
+            raise ModelError("Import: set file to a STEP or STL file in the project folder")
+        path = Path(f.file)
+        if not path.is_absolute() and getattr(self, "folder", None):
+            path = Path(self.folder) / path
+        if not path.exists():
+            raise ModelError(f"Import: no file at {path}")
+        key = (str(path.resolve()), path.stat().st_mtime)
+        if key not in _IMPORTED:
+            try:
+                _IMPORTED[key] = load_model(str(path))
+            except ValueError as e:
+                raise ModelError(f"Import: {e}") from e
+        return _IMPORTED[key]
+
     def _tool_body(self, f: Feature):
         if f.type == "relief":
             return self._relief(f)
+        if f.type == "import":
+            return self._import(f)
         if f.type == "loft":
             return self._loft(f)
         if f.type == "sweep":
@@ -714,6 +739,8 @@ class Part:
             raise ModelError(f"Could not write {path}")
 
     def export_step(self, path: str | Path) -> None:
+        from .geometry import quiet
+        quiet()
         w = STEPControl_Writer()
         w.Transfer(self.build(), STEPControl_AsIs)
         w.Write(str(path))

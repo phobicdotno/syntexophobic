@@ -3,6 +3,20 @@
 Each release has a version and a build number; Help → About shows a one-line summary of
 every release, read from this file.
 
+## v0.6.0 (build 7) — 2026-10-09
+
+**Design**
+- Import feature (Design panel *Import…*, MCP `import_model`): a STEP or STL part becomes a
+  body where its own coordinates put it: a new body, or joined to, cut from or intersected
+  with one. The file is copied into the project's `imports/` folder so history keeps it,
+  and read once per change.
+
+**Fixes**
+- Exporting a design as STEP no longer prints OpenCascade's transfer statistics.
+
+**Testing**
+- Import: an STL as a body, a STEP cutting it, the saved project rebuilt and machined.
+
 ## v0.5.1 (build 6) — 2026-10-09
 
 **Install**

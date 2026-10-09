@@ -86,6 +86,8 @@ without one goes through all of them.
 | **Shell** | wall thickness, faces to open |
 | **Mirror** | YZ, XZ or XY plane |
 | **Hole** | simple, counterbore or countersink on every free point of a sketch, blind or through |
+| **Relief** | a picture's brightness as height, on a base slab |
+| **Import** | a STEP or STL part (copied into `imports/`) as a body: new, join, cut or intersect |
 
 **Parameters** (`width = 80`, `wall = 2.5`, `depth = width / 4 - wall`) can be used in
 sketch dimensions and in feature values; change one and the whole part follows.

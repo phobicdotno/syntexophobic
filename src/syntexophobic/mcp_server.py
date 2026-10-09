@@ -172,6 +172,13 @@ def add_relief(image: str, width: float = 100.0, depth: float = 5.0, base: float
 
 
 @server.tool()
+def import_model(path: str, name: str = "", operation: str = "new", body: str = "") -> str:
+    """Bring a STEP or STL part into the design as a body, at its own coordinates. operation:
+    new (a separate body), join, cut or intersect with `body` (default: the last one)."""
+    return _out(_call("import_model", path=path, name=name, operation=operation, body=body))
+
+
+@server.tool()
 def export_sketch_dxf(sketch: str, path: str = "") -> str:
     """Save a sketch as a DXF drawing (mm). Default: <project>/<sketch>.dxf."""
     return _out(_call("export_sketch_dxf", sketch=sketch, path=path))

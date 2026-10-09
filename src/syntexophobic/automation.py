@@ -261,9 +261,9 @@ class Session:
             raise CommandError(f"Unknown sketch action {action!r}")
         return self._sketch_result(part, sk, made)
 
-    def _project_copy(self, path: str) -> str:
-        """Copy a file into the project's images/ folder (so history keeps it); returns the
-        path relative to the project."""
+    def _project_copy(self, path: str, sub: str = "images") -> str:
+        """Copy a file into the project's images/ (or other) folder, so history keeps it;
+        returns the path relative to the project."""
         import shutil
         src = Path(path).expanduser()
         if not src.exists():
@@ -271,7 +271,7 @@ class Session:
         folder = self._need().folder
         if folder in src.resolve().parents:
             return str(src.resolve().relative_to(folder))
-        dest = folder / "images" / src.name
+        dest = folder / sub / src.name
         dest.parent.mkdir(exist_ok=True)
         shutil.copy2(src, dest)
         return str(dest.relative_to(folder))
@@ -294,6 +294,11 @@ class Session:
         rel = self._project_copy(image)
         return self.add_feature("relief", name=name, image=rel, width=width, depth=depth, base=base,
                                 invert=invert, operation=operation, body=body)
+
+    def import_model(self, path: str, name: str = "", operation: str = "new", body: str = "") -> dict:
+        """A STEP or STL part as a body in the design (copied into imports/)."""
+        rel = self._project_copy(path, "imports")
+        return self.add_feature("import", name=name or Path(path).stem, file=rel, operation=operation, body=body)
 
     def export_sketch_dxf(self, sketch: str, path: str = "") -> dict:
         from . import dxf
