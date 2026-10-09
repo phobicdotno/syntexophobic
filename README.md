@@ -85,6 +85,7 @@ That area, grown by the tool radius (plus *leave*), is cut out of the stock outl
 | **adaptive** | clears with a steered tool that keeps the cut near the stepover (no slotting), for deep passes |
 | **finish** | follows every wall once per level |
 | **profile** | follows only the outermost silhouette, for cut-outs; supports **tabs** |
+| **parallel** | 3D finishing: raster passes riding on the surface (exact drop-cutter, flat or ball end) |
 
 - Levels always land exactly on flat floors found in the model.
 - Every pass **ramps** down along its own path (default 5°) instead of plunging.
@@ -123,7 +124,7 @@ Slicing and simulation run through a pluggable backend with a numpy-compatible A
 
 ## Not there yet
 
-Splines, sketches on slanted faces and 3D finishing. See
+Splines, sketches on slanted faces, more 3D finishing strategies (waterline, scallop). See
 [CHANGELOG.md](CHANGELOG.md) for what changed.
 
 Screenshots are made from `examples/demo-plate.step` and a small designed bracket by

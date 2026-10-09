@@ -55,13 +55,14 @@ def grbl(job: Job, toolpaths: list[Toolpath], stock) -> str:
                 if current_tool is not None:
                     out.append("M5")
                     safe_retract()
-                out += [f"(TOOL/MILL,{_num(tool.diameter)}, 0, 0, 0)", f"M6 T{tool.id}"]
+                corner = tool.diameter / 2 if tool.shape == "ball" else 0
+                out += [f"(TOOL/MILL,{_num(tool.diameter)}, {_num(corner)}, 0, 0)", f"M6 T{tool.id}"]
             elif current_tool is not None:
                 # GRBL has no tool changer: stop, let the operator swap and re-zero Z.
                 out += ["M5", f"(Change to T{tool.id} {tool.name}, re-zero Z, then resume)", "M0"]
             out += [f"M3 S{job.machine.rpm}", "G4 P3"]
             current_tool = tool.id
-        out.append(f"({tp.op.name}: T{tool.id} {tool.name}, D{_num(tool.diameter)})")
+        out.append(f"({tp.op.name}: T{tool.id} {tool.name}, D{_num(tool.diameter)}, {tool.shape})")
         last = {"X": None, "Y": None, "Z": None, "F": None}
         for m in tp.moves:
             words = []
@@ -102,14 +103,15 @@ def read(text: str, job: Job, stock) -> list[Toolpath]:
         ox, oy, oz = stock.xmin, stock.ymin, stock.zmax
     else:
         ox = oy = oz = 0.0
-    header = re.compile(r"^\((.+): T(\d+) .*, D([\d.]+)\)$")
+    header = re.compile(r"^\((.+): T(\d+) .*, D([\d.]+)(?:, (flat|ball))?\)$")
     paths: list[Toolpath] = []
     motion, feed = "G0", None
     for raw in text.splitlines():
         line = raw.strip()
         m = header.match(line)
         if m:
-            paths.append(Toolpath(Operation(name=m.group(1), tool=int(m.group(2))), float(m.group(3))))
+            paths.append(Toolpath(Operation(name=m.group(1), tool=int(m.group(2))), float(m.group(3)),
+                                  tool_shape=m.group(4) or "flat"))
             continue
         line = re.sub(r"\(.*?\)", "", line).strip()
         if not line or not paths:

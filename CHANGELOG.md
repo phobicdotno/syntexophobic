@@ -17,6 +17,11 @@ All notable changes to Syntexophobic. The format follows
   join, cut or intersect; linear and circular patterns; fillet, chamfer, shell and mirror.
   Edges and faces are chosen with short selectors (`|Z`, `#Z`, `>Z`, `<Z`, `%CIRCLE`,
   `A&B`) that stay valid when the design changes. STEP export.
+- **3D finishing** (`parallel` operation): raster passes along X or Y whose height comes
+  from an exact drop-cutter on the part's mesh (tool against every nearby triangle's
+  corners, edges and face; flat and ball ends), within 8 µm of the true surface. Parallel
+  on all cores with height-sorted pruning. Ball-end tools (`shape = "ball"`), also in the
+  simulation, the G-code comments (`TOOL/MILL` corner radius) and the reader.
 - **Adaptive clearing** (`adaptive` operation): the tool is steered step by step so the
   cut stays near the stepover instead of slotting; it drops in outside the stock or next
   to cleared material, helixes into closed pockets, and ends each level with an exact
@@ -88,6 +93,9 @@ All notable changes to Syntexophobic. The format follows
   that regenerates them (`tools/screenshots.py`).
 
 ### Changed
+- The gouge check measures depth perpendicular to the part's surface, so a hair-thin
+  difference on a near-vertical wall is not reported as a deep cut.
+- Ball-end simulation runs in a compiled kernel on the CPU.
 - New default post `carbide`, matching Carbide Create's own `shapeoko.post` for Carbide
   Motion: `M6 T<n>` for every tool including the first (Carbide Motion prompts and a
   BitSetter re-measures), `G53 G0 Z-5` safe retracts before tool changes and at both

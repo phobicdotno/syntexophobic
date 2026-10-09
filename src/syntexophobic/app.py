@@ -22,10 +22,12 @@ from .job import Operation, Tool
 from .project import Project
 
 CHOICES = {
-    "type": ["rough", "adaptive", "finish", "profile", "drill", "bore"],
+    "type": ["rough", "adaptive", "finish", "profile", "parallel", "drill", "bore"],
     "up": list(geometry.UP_AXES),
     "zero": ["stock", "model"],
     "post": ["carbide", "grbl"],
+    "shape": ["flat", "ball"],
+    "raster": ["X", "Y"],
     "material": None,   # filled from feeds.MATERIALS below
 }
 from .feeds import MATERIALS  # noqa: E402
@@ -42,12 +44,13 @@ AUTO = -99999.0   # spin box value shown as "auto" for an empty optional number
 OPTIONAL = {"bottom": "model bottom", "hole_min": "auto", "hole_max": "auto", "rest_from": "off"}
 # Operation fields that mean nothing for a given type are hidden from the form.
 HIDDEN = {
-    "rough": {"tabs", "tab_width", "tab_height", "hole_min", "hole_max"},
-    "adaptive": {"tabs", "tab_width", "tab_height", "hole_min", "hole_max", "rest_from"},
-    "finish": {"stepover", "hole_min", "hole_max", "rest_from"},
-    "profile": {"stepover", "hole_min", "hole_max", "rest_from"},
-    "drill": {"stepover", "leave", "feed", "ramp_angle", "tabs", "tab_width", "tab_height", "rest_from"},
-    "bore": {"tabs", "tab_width", "tab_height", "rest_from"},
+    "rough": {"tabs", "tab_width", "tab_height", "hole_min", "hole_max", "raster"},
+    "adaptive": {"tabs", "tab_width", "tab_height", "hole_min", "hole_max", "rest_from", "raster"},
+    "parallel": {"stepdown", "ramp_angle", "tabs", "tab_width", "tab_height", "hole_min", "hole_max", "rest_from"},
+    "finish": {"stepover", "hole_min", "hole_max", "rest_from", "raster"},
+    "profile": {"stepover", "hole_min", "hole_max", "rest_from", "raster"},
+    "drill": {"stepover", "leave", "feed", "ramp_angle", "tabs", "tab_width", "tab_height", "rest_from", "raster"},
+    "bore": {"tabs", "tab_width", "tab_height", "rest_from", "raster"},
 }
 
 

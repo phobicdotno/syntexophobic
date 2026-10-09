@@ -12,6 +12,7 @@ import math
 from dataclasses import dataclass
 
 import numpy as np
+from numba import njit
 
 from . import compute, geometry
 
@@ -46,7 +47,7 @@ class Result:
     removed_cm3: float
 
     def gouges(self, tol: float = 0.02) -> np.ndarray:
-        return (self.part - self.stock) > tol
+        return _normal_depth(self.part, self.stock, self.grid.res) > tol
 
 
 def part_heightmap(shape, grid: Grid, deflection: float = 0.01) -> np.ndarray:
@@ -126,7 +127,17 @@ def simulate(setup, toolpaths, res: float = 0.25, backend=None) -> Result:
         P = _feed_points(tp, res)
         if not len(P):
             continue
+        ball = getattr(tp, "tool_shape", "flat") == "ball"
         flat = stock.reshape(-1)
+        if ball and xp is np:                     # compiled kernel on the CPU
+            _stamp_ball(stock, grid.x0, grid.y0, res, P, r_cut, r)
+            continue
+        if ball:                                  # every cell under a ball sits at its own height
+            for start in range(0, P.shape[0], 20000):
+                idx, zv = _stamp(xp, grid, be.asarray(P[start:start + 20000]), dx, dy, r_cut, r)
+                _scatter_min(xp, flat, idx, zv)
+            stock = flat.reshape(grid.ny, grid.nx)
+            continue
         # Most points cut at one depth per level: for those a boolean mask of every cell
         # the disc touches is enough. Ramp points (each at its own depth) need a min-reduce.
         zs, counts = np.unique(np.round(P[:, 2], 6), return_counts=True)
@@ -146,10 +157,45 @@ def simulate(setup, toolpaths, res: float = 0.25, backend=None) -> Result:
         stock = flat.reshape(grid.ny, grid.nx)
     stock = be.to_numpy(stock)
     part = part_heightmap(setup.shape, grid)
-    depth = np.where(np.isfinite(part), part - stock, 0.0)
+    depth = _normal_depth(part, stock, res)
     removed = float(np.sum(setup.stock.zmax - stock)) * res * res / 1000.0
     return Result(grid, stock, part, float(max(depth.max(), 0.0)),
                   int((depth > 0.02).sum()), removed)
+
+
+def _normal_depth(part, stock, res: float) -> np.ndarray:
+    """How far each cut goes into the part, measured perpendicular to its surface.
+
+    A height difference on a steep wall is mostly sideways: 0.02 mm in Z on a wall at 80°
+    is 0.003 mm into it. Dividing by sqrt(1 + slope²) turns the vertical difference into
+    the real depth, so near-vertical surfaces are judged like flat ones.
+    """
+    finite = np.isfinite(part)
+    depth = np.where(finite, part - stock, 0.0)
+    h = np.where(finite, part, np.nan)
+    gy, gx = np.gradient(h, res)
+    slope2 = np.nan_to_num(gx * gx + gy * gy, nan=0.0)
+    # at the part's outline the gradient is undefined: judge those cells vertically
+    return depth / np.sqrt(1.0 + np.minimum(slope2, 1e6))
+
+
+@njit(cache=True)
+def _stamp_ball(stock, x0, y0, res, P, r_cut, r):
+    """Lower the stock to the surface of a ball end at every point of P (CPU kernel)."""
+    ny, nx = stock.shape
+    ri = int(r_cut / res) + 2
+    for k in range(P.shape[0]):
+        px, py, pz = P[k, 0], P[k, 1], P[k, 2]
+        ci, cj = int(round((px - x0) / res)), int(round((py - y0) / res))
+        for j in range(max(cj - ri, 0), min(cj + ri + 1, ny)):
+            dy = y0 + j * res - py
+            for i in range(max(ci - ri, 0), min(ci + ri + 1, nx)):
+                dx = x0 + i * res - px
+                d2 = dx * dx + dy * dy
+                if d2 <= r_cut * r_cut:
+                    z = pz + r - math.sqrt(r * r - d2)
+                    if z < stock[j, i]:
+                        stock[j, i] = z
 
 
 def _feed_points(tp, step: float) -> np.ndarray:
@@ -168,8 +214,9 @@ def _feed_points(tp, step: float) -> np.ndarray:
     return a[seg] + (b[seg] - a[seg]) * t[:, None]
 
 
-def _stamp(xp, grid: Grid, chunk, dx, dy, r_cut: float):
-    """Flat cell indices under the tool disc at each point of chunk, with the point's z."""
+def _stamp(xp, grid: Grid, chunk, dx, dy, r_cut: float, ball_r: float | None = None):
+    """Flat cell indices under the tool disc at each point of chunk, with the height the
+    tool leaves there: the tip z for a flat endmill, the ball's surface for a ball end."""
     res = grid.res
     fx = (chunk[:, 0] - grid.x0) / res
     fy = (chunk[:, 1] - grid.y0) / res
@@ -182,6 +229,9 @@ def _stamp(xp, grid: Grid, chunk, dx, dy, r_cut: float):
     ok = ((X >= 0) & (X < grid.nx) & (Y >= 0) & (Y < grid.ny)
           & (ex * ex + ey * ey <= r_cut * r_cut))
     Z = xp.broadcast_to(chunk[:, 2:3], X.shape)
+    if ball_r is not None:
+        d2 = xp.minimum(ex * ex + ey * ey, ball_r * ball_r)
+        Z = Z + ball_r - xp.sqrt(ball_r * ball_r - d2)
     return (Y.astype(xp.int64) * grid.nx + X)[ok], Z[ok]
 
 

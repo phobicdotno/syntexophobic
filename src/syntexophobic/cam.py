@@ -36,6 +36,7 @@ class Toolpath:
     moves: list[Move] = field(default_factory=list)
     levels: list[float] = field(default_factory=list)
     tabs: list = field(default_factory=list)
+    tool_shape: str = "flat"
 
     def positions(self):
         """(kind, x, y, z, f) with every axis filled in from the previous position."""
@@ -412,10 +413,19 @@ def _adaptive(setup: Setup, op: Operation) -> Toolpath:
 
 
 def generate(setup: Setup, op: Operation) -> Toolpath:
+    tp = _generate(setup, op)
+    tp.tool_shape = setup.job.tool(op.tool).shape
+    return tp
+
+
+def _generate(setup: Setup, op: Operation) -> Toolpath:
     if op.type in ("drill", "bore"):
         return _holes(setup, op)
     if op.type == "adaptive":
         return _adaptive(setup, op)
+    if op.type == "parallel":
+        from .surface import parallel
+        return parallel(setup, op)
     tool = setup.job.tool(op.tool)
     r = tool.diameter / 2
     top = setup.stock.zmax

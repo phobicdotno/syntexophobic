@@ -1,5 +1,7 @@
 import math
 
+import numpy as np
+
 import pytest
 from OCP.BRepGProp import BRepGProp
 from OCP.GProp import GProp_GProps
@@ -190,3 +192,40 @@ def test_undo_redo_over_project_files(tmp_path):
         part.save(p.folder)
         merged.record()
     assert merged.undo() and Part.load(p.folder / "model.toml").features[0].distance == 8
+
+
+def test_parallel_ball_finish_on_a_dome(tmp_path):
+    """3D finishing: no gouges, and the dome comes out within the scallop height."""
+    from syntexophobic import job as jobfile, simulate
+    from syntexophobic.history import History
+    from syntexophobic.job import Job, Operation, Tool
+    from syntexophobic.project import Project
+    prof = Sketch(plane="XZ")                      # quarter disc: revolve -> hemisphere r=20
+    o = prof.point(0, 0)
+    a = prof.point(20, 0)
+    b = prof.point(0, 20)
+    prof.line(o, a)
+    prof.arc(o, a, b)
+    axis = prof.line(b, o)
+    plinth = Sketch(offset=-5)
+    plinth.rectangle(-25, -25, 25, 25)
+    dome = Part("Dome", [Feature("revolve", sketch="prof", axis=axis),
+                         Feature("extrude", sketch="plinth", distance=5, operation="join")],
+                {"prof": prof, "plinth": plinth})
+    folder = tmp_path / "dome"
+    dome.save(folder)
+    jobfile.save(Job(name="dome", model="model.toml", tools=[Tool(1, "6 mm ball", 6.0, 2, "ball")],
+                     operations=[Operation(type="parallel", name="Finish 3D", tool=1, stepover=0.08,
+                                           leave=0.0, bottom=0.0)]), folder / jobfile.JOB_FILE)
+    History(folder).init()
+    p = Project(folder)
+    tps = p.toolpaths()
+    res = simulate.simulate(p.setup(), tps, res=0.1)
+    assert res.gouge_cells == 0, f"gouge {res.gouge_depth:.3f} mm"
+    xs, ys = res.grid.centres()
+    X, Y = np.meshgrid(xs, ys)
+    on_dome = np.hypot(X, Y) < 17                     # away from the steep rim
+    left = (res.stock - res.part)[on_dome]
+    scallop = 3 - math.sqrt(9 - (0.08 * 6 / 2) ** 2)
+    assert left.max() < scallop + 0.12, f"left {left.max():.3f} mm on the dome"
+    assert "ball)" in p.gcode(tps) and "TOOL/MILL,6, 3," in p.gcode(tps)
