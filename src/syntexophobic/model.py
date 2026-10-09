@@ -46,11 +46,7 @@ from OCP.gp import gp_Ax1, gp_Ax2, gp_Circ, gp_Dir, gp_Pln, gp_Pnt, gp_Trsf, gp_
 from . import geometry
 from .sketch import Sketch
 
-PLANES = {           # origin is the global origin; (x axis, y axis, normal) in model space
-    "XY": ((1, 0, 0), (0, 1, 0), (0, 0, 1)),
-    "XZ": ((1, 0, 0), (0, 0, 1), (0, -1, 0)),
-    "YZ": ((0, 1, 0), (0, 0, 1), (1, 0, 0)),
-}
+from .sketch import PLANE_AXES as PLANES  # noqa: E402  (named planes, for older imports)
 
 
 class ModelError(RuntimeError):
@@ -60,13 +56,12 @@ class ModelError(RuntimeError):
 # ---- sketch -> faces --------------------------------------------------------------------
 
 def _to3d(sk: Sketch, x: float, y: float) -> gp_Pnt:
-    u, v, n = PLANES[sk.plane]
-    o = sk.offset
-    return gp_Pnt(*(x * u[i] + y * v[i] + o * n[i] for i in range(3)))
+    o, u, v, _ = sk.frame()
+    return gp_Pnt(*(o[i] + x * u[i] + y * v[i] for i in range(3)))
 
 
 def _normal(sk: Sketch) -> gp_Dir:
-    return gp_Dir(*PLANES[sk.plane][2])
+    return gp_Dir(*sk.frame()[3])
 
 
 def spline_curve(sk: Sketch, sp, to3d: bool = False):
@@ -427,7 +422,7 @@ class Part:
         bodies = []
         for face in sketch_faces(sk):
             if f.type == "extrude":
-                n = PLANES[sk.plane][2]
+                n = tuple(sk.frame()[3])
                 d = f.distance
                 body = BRepPrimAPI_MakePrism(face, gp_Vec(*(c * d for c in n))).Shape()
                 if f.symmetric:

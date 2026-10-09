@@ -101,6 +101,14 @@ CONSTRAINT_TYPES = {
 }
 
 
+# Named planes: (sketch x axis, sketch y axis, normal) in model space
+PLANE_AXES = {
+    "XY": ((1, 0, 0), (0, 1, 0), (0, 0, 1)),
+    "XZ": ((1, 0, 0), (0, 0, 1), (0, -1, 0)),
+    "YZ": ((0, 1, 0), (0, 0, 1), (1, 0, 0)),
+}
+
+
 class SolveError(RuntimeError):
     pass
 
@@ -117,8 +125,12 @@ class SolveResult:
 @dataclass
 class Sketch:
     name: str = "Sketch"
-    plane: str = "XY"              # XY | XZ | YZ
-    offset: float = 0.0            # along the plane normal
+    plane: str = "XY"              # XY | XZ | YZ | custom
+    offset: float = 0.0            # along the plane normal (named planes)
+    # custom plane: origin, sketch X direction and normal in model space
+    origin: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
+    xdir: list[float] = field(default_factory=lambda: [1.0, 0.0, 0.0])
+    normal: list[float] = field(default_factory=lambda: [0.0, 0.0, 1.0])
     points: dict[str, Point] = field(default_factory=dict)
     lines: dict[str, Line] = field(default_factory=dict)
     circles: dict[str, Circle] = field(default_factory=dict)
@@ -126,6 +138,38 @@ class Sketch:
     splines: dict[str, Spline] = field(default_factory=dict)
     constraints: list[Constraint] = field(default_factory=list)
     _next: int = 1
+
+    def frame(self):
+        """(origin, x axis, y axis, normal) of the sketch plane in model space."""
+        import numpy as np
+        if self.plane == "custom":
+            n = np.asarray(self.normal, float)
+            n /= np.linalg.norm(n)
+            u = np.asarray(self.xdir, float)
+            u = u - n * (u @ n)
+            u /= np.linalg.norm(u)
+            return np.asarray(self.origin, float), u, np.cross(n, u), n
+        u, v, n = (np.asarray(a, float) for a in PLANE_AXES[self.plane])
+        return n * self.offset, u, v, n
+
+    @classmethod
+    def on_plane(cls, name: str, origin, normal, xdir=None) -> "Sketch":
+        """A sketch on any plane. Named planes are used when the plane is square to one."""
+        import numpy as np
+        n = np.asarray(normal, float)
+        n /= np.linalg.norm(n)
+        o = np.asarray(origin, float)
+        for plane, (pu, pv, pn) in PLANE_AXES.items():
+            pn = np.asarray(pn, float)
+            if abs(n @ pn) > 0.999999:
+                if n @ pn > 0:                         # same orientation: just an offset
+                    return cls(name=name, plane=plane, offset=float(o @ pn))
+        if xdir is None:                             # sketch X: the model's X laid onto the plane
+            ref = np.array([1.0, 0, 0]) if abs(n[0]) < 0.9 else np.array([0, 1.0, 0])
+            xdir = ref - n * (ref @ n)
+        return cls(name=name, plane="custom", origin=[float(v) for v in o],
+                   xdir=[float(v) for v in np.asarray(xdir, float) / np.linalg.norm(xdir)],
+                   normal=[float(v) for v in n])
 
     # ---- building ---------------------------------------------------------------------
 
@@ -719,7 +763,10 @@ class Sketch:
                 return "[" + ", ".join(val(x) for x in v) + "]"
             return repr(v)
 
-        out = ["[sketch]", f'name = "{self.name}"', f'plane = "{self.plane}"', f"offset = {self.offset!r}", ""]
+        out = ["[sketch]", f'name = "{self.name}"', f'plane = "{self.plane}"', f"offset = {self.offset!r}"]
+        if self.plane == "custom":
+            out += [f"origin = {val(self.origin)}", f"xdir = {val(self.xdir)}", f"normal = {val(self.normal)}"]
+        out.append("")
         for table, items in (("points", self.points), ("lines", self.lines),
                              ("circles", self.circles), ("arcs", self.arcs), ("splines", self.splines)):
             for e in items.values():
@@ -736,7 +783,9 @@ class Sketch:
     def loads(cls, text: str) -> "Sketch":
         d = tomllib.loads(text)
         s = d.get("sketch", {})
-        sk = cls(name=s.get("name", "Sketch"), plane=s.get("plane", "XY"), offset=s.get("offset", 0.0))
+        sk = cls(name=s.get("name", "Sketch"), plane=s.get("plane", "XY"), offset=s.get("offset", 0.0),
+                 origin=s.get("origin", [0.0, 0.0, 0.0]), xdir=s.get("xdir", [1.0, 0.0, 0.0]),
+                 normal=s.get("normal", [0.0, 0.0, 1.0]))
         for p in d.get("points", []):
             sk.points[p["id"]] = Point(**p)
         for ln in d.get("lines", []):

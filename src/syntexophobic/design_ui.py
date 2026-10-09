@@ -142,7 +142,8 @@ class DesignPanel(QWidget):
         self.status.emit(f"{len(tokens)} {attr} picked. Click again to remove one.")
 
     def sketch_on_face(self) -> None:
-        """New sketch on the picked planar face (faces facing along X, Y or Z)."""
+        """New sketch on the picked flat face, any orientation; its normal points out of the
+        material, so a positive extrude adds and a negative one cuts."""
         if self.picked_face is None:
             self.status.emit("Click a flat face in the 3D view first.")
             return
@@ -161,21 +162,16 @@ class DesignPanel(QWidget):
         if surf is None or surf.GetType() != GeomAbs_Plane:
             self.status.emit("Sketch on face needs a flat face.")
             return
+        from OCP.TopAbs import TopAbs_REVERSED
         d = surf.Plane().Axis().Direction()
-        normal = (d.X(), d.Y(), d.Z())
-        axis = max(range(3), key=lambda i: abs(normal[i]))
-        if abs(normal[axis]) < 0.999:
-            self.status.emit("Only faces square to X, Y or Z can be sketched on for now.")
-            return
-        plane = {2: "XY", 1: "XZ", 0: "YZ"}[axis]
-        # offset along the plane's own normal (XZ's normal points to -Y)
-        sign = {"XY": 1, "XZ": -1, "YZ": 1}[plane]
-        offset = sign * self.picked_face[axis]
+        normal = [d.X(), d.Y(), d.Z()]
+        if face.Orientation() == TopAbs_REVERSED:          # make it point out of the material
+            normal = [-c for c in normal]
         n = 1
         while f"sketch{n}" in self.part.sketches:
             n += 1
         name = f"sketch{n}"
-        self.part.sketches[name] = Sketch(name=name, plane=plane, offset=round(offset, 6))
+        self.part.sketches[name] = Sketch.on_plane(name, self.picked_face, normal)
         self.picked_face = None
         self.changed.emit()
         self.edit_sketch.emit(name)

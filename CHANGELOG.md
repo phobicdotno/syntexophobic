@@ -48,7 +48,10 @@ All notable changes to Syntexophobic. The format follows
   its edges; with a shell, its open faces. Picks are stored as `@x,y,z` points in
   `model.toml` and re-found after a rebuild (within 0.75 mm), with a clear error when the
   geometry moved too far. The current feature's picks are highlighted.
-- **Sketch on face**: click a flat face square to X, Y or Z, then start a sketch on it.
+- **Sketch on face**: click any flat face, including slanted ones, and start a sketch on
+  it. Sketch planes can be custom (origin, X direction, normal, stored in the sketch
+  file); faces square to an axis still become XY / XZ / YZ with an offset. The normal
+  points out of the material, so a positive extrude adds and a negative one cuts.
 - Sketch **splines**: smooth curves through ordinary (constrainable) sketch points, open
   or closed, built as OpenCascade interpolating B-splines and drawn from the same curve.
   Spline tool in the editor (Enter / right-click ends, clicking the first point closes).

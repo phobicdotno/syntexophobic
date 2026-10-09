@@ -312,3 +312,27 @@ def test_waterline_ball_finish_on_a_dome(tmp_path):
     left = -simulate._normal_depth(res.part, res.stock, 0.1)[rim]
     assert np.percentile(left, 95) < 0.1, f"{np.percentile(left, 95):.3f} mm left on the rim"
     assert np.percentile(left, 5) > -0.02
+
+
+def test_sketch_on_a_slanted_face():
+    base = Sketch(plane="YZ")                        # 30 x 20 profile, extruded 40 along X
+    base.rectangle(0, 0, 30, 20)
+    from syntexophobic.model import pick_token
+    part = Part("Wedge", [Feature("extrude", sketch="base", distance=40),
+                          Feature("chamfer", radius=10, edges=pick_token((20, 0, 20)))],   # front top edge
+                {"base": base})
+    plain = volume(part.build())
+    assert abs(plain - (30 * 20 - 50) * 40) < 1e-3          # 10 mm chamfer along the top front edge
+    # the chamfer face: centre (20, 5, 15), normal (0, -1, 1) out of the material
+    on_face = Sketch.on_plane("slant", (20, 5, 15), (0, -1, 1))
+    assert on_face.plane == "custom"
+    on_face.circle((0, 0), 3)
+    part.sketches["slant"] = on_face
+    part.features.append(Feature("extrude", sketch="slant", distance=-2, operation="cut"))
+    assert abs(volume(part.build()) - (plain - math.pi * 9 * 2)) < 1e-3
+    text = on_face.dumps()
+    back = Sketch.loads(text)
+    assert back.plane == "custom" and back.normal == on_face.normal and back.dumps() == text
+    # square planes stay named: a face looking up becomes XY with an offset
+    assert Sketch.on_plane("top", (3, 4, 12.5), (0, 0, 1)).plane == "XY"
+    assert Sketch.on_plane("top", (3, 4, 12.5), (0, 0, 1)).offset == 12.5

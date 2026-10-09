@@ -47,14 +47,14 @@ A part is a list of features in `model.toml`, built top to bottom:
 Edges and faces are picked by clicking them in the 3D view (stored as `@x,y,z` and found
 again after a rebuild), or with short selectors: `|Z` (vertical edges), `#Z` (horizontal),
 `>Z` / `<Z` (top / bottom face), `%LINE`, `%CIRCLE`, and `A&B` for both. Click a flat face
-and press *Sketch on face* to draw on it.
+(slanted ones too) and press *Sketch on face* to draw on it.
 
 ### Sketch
 
 ![Sketch editor: fully constrained base sketch, the hole selected](docs/screenshots/sketch.png)
 
-Lines, rectangles, circles, arcs, splines, polygons, slots and points on the XY, XZ or YZ plane
-(with an offset). Corner fillet, offset, mirror and trim work on existing geometry.
+Lines, rectangles, circles, arcs, splines, polygons, slots and points on the XY, XZ or YZ
+plane (with an offset), or on any flat face of the part. Corner fillet, offset, mirror and trim work on existing geometry.
 Clicking near a point reuses it. Constraints: coincident, horizontal, vertical, parallel,
 perpendicular, equal, tangent, concentric, midpoint, point on line/circle, fixed,
 symmetric, plus dimensions for length, distance, diameter and angle. Geometry is blue while
@@ -125,7 +125,7 @@ Slicing and simulation run through a pluggable backend with a numpy-compatible A
 
 ## Not there yet
 
-Sketches on slanted faces, scallop finishing. See
+Scallop finishing. See
 [CHANGELOG.md](CHANGELOG.md) for what changed.
 
 Screenshots are made from `examples/demo-plate.step` and a small designed bracket by
