@@ -17,6 +17,9 @@ All notable changes to Syntexophobic. The format follows
   join, cut or intersect; linear and circular patterns; fillet, chamfer, shell and mirror.
   Edges and faces are chosen with short selectors (`|Z`, `#Z`, `>Z`, `<Z`, `%CIRCLE`,
   `A&B`) that stay valid when the design changes. STEP export.
+- **Undo / redo** (Edit menu, Ctrl+Z / Ctrl+Shift+Z) for design and job edits, over
+  snapshots of the project's text files. Rapid edits merge into one step; undoing a step
+  that created a sketch removes it again.
 - **Loft** through two or more sketch profiles (`sketch = "bottom;top"`) and **sweep** of a
   profile along a path sketch (one chain of lines and arcs; the sweep starts at the end
   the profile sits on). Both take new / join / cut / intersect.

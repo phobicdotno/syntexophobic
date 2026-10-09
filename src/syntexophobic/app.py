@@ -214,7 +214,14 @@ class MainWindow(QMainWindow):
         self.addToolBar(tb)
         self.toolbar = tb
         bar = self.menuBar()
-        m_file, m_paths, m_view = bar.addMenu("&File"), bar.addMenu("&Toolpaths"), bar.addMenu("&View")
+        m_file, m_edit = bar.addMenu("&File"), bar.addMenu("&Edit")
+        m_paths, m_view = bar.addMenu("&Toolpaths"), bar.addMenu("&View")
+        self.a_undo = m_edit.addAction("Undo")
+        self.a_undo.setShortcut(QKeySequence.Undo)
+        self.a_undo.triggered.connect(lambda: self.undo_redo(False))
+        self.a_redo = m_edit.addAction("Redo")
+        self.a_redo.setShortcut(QKeySequence("Ctrl+Shift+Z"))
+        self.a_redo.triggered.connect(lambda: self.undo_redo(True))
 
         def act(text, slot, icon, key=None, menu=None, checkable=False, toolbar=True):
             a = QAction(text, self)
@@ -483,10 +490,33 @@ class MainWindow(QMainWindow):
         self.load(Project.create_design(target, name.strip()))
         self.c_workspace.setCurrentText("Design")
 
+    def undo_redo(self, redo: bool):
+        if self.project is None:
+            return
+        if self.sketch_page is not None:
+            self.finish_sketch()                 # keep what was drawn as its own step first
+        done = self.undo.redo() if redo else self.undo.undo()
+        if not done:
+            self.status.setText("Nothing to redo." if redo else "Nothing to undo.")
+            return
+        self.project.reload()
+        if self.part is not None:
+            from .model import Part
+            row = self.design_panel.l_features.currentRow()
+            self.part = Part.load(self.project.folder / self.project.job.model)
+            self.design_panel.set_part(self.part)
+            self.design_panel.l_features.setCurrentRow(row)
+        self._fill_job()
+        self._refresh_model()
+        self._refresh_history_status()
+        self.toolpaths = []
+        self.status.setText("Redone." if redo else "Undone.")
+
     def _design_changed(self):
         if self.part is None:
             return
         self.part.save(self.project.folder)
+        self.undo.record()
         self._refresh_history_status()
         self._rebuild_timer.start()
 
@@ -564,8 +594,10 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Could not open", str(e))
 
     def load(self, project: Project):
+        from .project import Undo
         self.finish_sketch(save=False)
         self.project = project
+        self.undo = Undo(project.folder)
         self.toolpaths = []
         if project.job.model.endswith(".toml"):
             from .model import Part
@@ -635,6 +667,7 @@ class MainWindow(QMainWindow):
         p = self.project
         old_up = p._shape_up
         p.save_job()
+        self.undo.record()
         for i, t in enumerate(p.job.tools):
             if self.l_tools.item(i):
                 self.l_tools.item(i).setText(f"T{t.id}  {t.name}  Ø{t.diameter:g}")

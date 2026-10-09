@@ -163,3 +163,30 @@ def test_loft_and_sweep_volumes():
     forked.line((0, 10), (-5, 15))
     with pytest.raises(ModelError, match="one chain"):
         Part("x", [Feature("sweep", sketch="p", path="f")], {"p": prof, "f": forked}).build()
+
+
+def test_undo_redo_over_project_files(tmp_path):
+    from syntexophobic.project import Project, Undo
+    p = Project.create_design(tmp_path / "u", "u")
+    undo = Undo(p.folder, merge_seconds=0)
+    part = Part.load(p.folder / "model.toml")
+    sk = Sketch(name="s1")
+    sk.rectangle(0, 0, 10, 10)
+    part.sketches["s1"] = sk
+    part.features.append(Feature("extrude", sketch="s1", distance=5))
+    part.save(p.folder)
+    undo.record()
+    part.features[0].distance = 8
+    part.save(p.folder)
+    undo.record()
+    assert undo.undo() and Part.load(p.folder / "model.toml").features[0].distance == 5
+    assert undo.undo() and not Part.load(p.folder / "model.toml").features
+    assert not (p.folder / "sketches" / "s1.toml").exists()          # the new sketch is gone too
+    assert undo.redo() and undo.redo() and Part.load(p.folder / "model.toml").features[0].distance == 8
+    assert not undo.redo()
+    merged = Undo(p.folder, merge_seconds=60)                          # rapid edits: one step
+    for d in (9, 10, 11):
+        part.features[0].distance = d
+        part.save(p.folder)
+        merged.record()
+    assert merged.undo() and Part.load(p.folder / "model.toml").features[0].distance == 8

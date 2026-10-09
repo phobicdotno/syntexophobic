@@ -88,3 +88,68 @@ class Project:
     def gcode(self, toolpaths=None) -> str:
         tps = toolpaths if toolpaths is not None else self.toolpaths()
         return gcode.grbl(self.job, tps, self.setup().stock)
+
+
+class Undo:
+    """Undo/redo over the project's text files (job, model, sketches).
+
+    Every recorded edit stores the files as they were before it. Edits within
+    `merge_seconds` of each other (a spin box held down, typing a value) become one step.
+    """
+
+    def __init__(self, folder: str | Path, limit: int = 200, merge_seconds: float = 0.8):
+        self.folder = Path(folder)
+        self.limit = limit
+        self.merge_seconds = merge_seconds
+        self.undo_stack: list[dict] = []
+        self.redo_stack: list[dict] = []
+        self.current = self.snapshot()
+        self._last = 0.0
+
+    def _files(self):
+        f = self.folder
+        return [p for p in [f / jobfile.JOB_FILE, f / "model.toml", *sorted((f / "sketches").glob("*.toml"))]
+                if p.exists()]
+
+    def snapshot(self) -> dict:
+        return {str(p.relative_to(self.folder)): p.read_text() for p in self._files()}
+
+    def record(self) -> None:
+        """Call after the files were changed on disk."""
+        import time
+        now = self.snapshot()
+        if now == self.current:
+            return
+        t = time.monotonic()
+        if not (self.undo_stack and t - self._last < self.merge_seconds):
+            self.undo_stack.append(self.current)
+            del self.undo_stack[:-self.limit]
+        self._last = t
+        self.current = now
+        self.redo_stack.clear()
+
+    def _apply(self, state: dict) -> None:
+        for rel, text in state.items():
+            path = self.folder / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text)
+        for p in self._files():                     # sketches that did not exist then
+            if str(p.relative_to(self.folder)) not in state:
+                p.unlink()
+        self.current = state
+
+    def undo(self) -> bool:
+        if not self.undo_stack:
+            return False
+        self.redo_stack.append(self.current)
+        self._apply(self.undo_stack.pop())
+        self._last = 0.0
+        return True
+
+    def redo(self) -> bool:
+        if not self.redo_stack:
+            return False
+        self.undo_stack.append(self.current)
+        self._apply(self.redo_stack.pop())
+        self._last = 0.0
+        return True
