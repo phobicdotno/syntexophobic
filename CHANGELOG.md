@@ -11,10 +11,15 @@ every release, read from this file.
   manager would not maximize it or make it full screen. Only the current workspace's
   panel shows now, and tall panels scroll instead of stretching the window.
 - A failing MCP tool tells Claude why it failed instead of a bare "Error executing tool".
-- With no project open, the Design panel says so instead of talking about a STEP file.
 
 **Interface**
 - View → *Full screen* (F11).
+- The design side is easy to find: *New design…* (Ctrl+Shift+N) is on the toolbar, and the
+  Design workspace shows what to do when no designed part is open (it was all greyed out
+  at start, and showed only a note for a STEP project).
+- *Design on this part* (Design workspace, STEP or STL project): the model becomes the
+  first feature of a design, an Import copied into `imports/`, so sketches, cuts, holes
+  and fillets can be added to it. The job and history stay.
 
 **Install**
 - The program icon shows in the dock, the window switcher and the app grid. GNOME takes a
@@ -23,6 +28,9 @@ every release, read from this file.
   (updated when the AppImage moves; an entry you wrote yourself is left alone; set
   SYNTEXOPHOBIC_NO_DESKTOP_ENTRY=1 to skip it). The window's class is now
   syntexophobic / Syntexophobic, and the .AppImage file carries an icon for file managers.
+
+**Testing**
+- A STEP project turned into a design: same part and job, then a sketch cut through it.
 
 ## v0.6.1 (build 8) — 2026-10-09
 

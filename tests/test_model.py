@@ -573,3 +573,26 @@ def test_import_step_and_stl_as_bodies(tmp_path):
     bad = Part("x", features=[Feature("import", file="missing.step")])
     with pytest.raises(ModelError, match="no file"):
         bad.build()
+
+
+def test_step_project_to_design(tmp_path, pocket_part):
+    """A STEP project becomes a design: same part and job, and a sketch cut changes it."""
+    from syntexophobic.project import Project
+
+    p = Project.create(tmp_path / "proj", pocket_part)
+    p.job.stock.margin = 7.0
+    p.save_job()
+    before = volume(p.shape)
+    p.to_design()
+    assert p.job.model == "model.toml" and p.job.stock.margin == 7.0
+    assert (tmp_path / "proj/imports/pocket.step").exists()
+    q = Project(tmp_path / "proj")
+    assert volume(q.shape) == pytest.approx(before, rel=1e-6)
+    assert q.history.log()[0].message == "Design on pocket.step"
+    part = Part.load(tmp_path / "proj/model.toml")
+    hole = Sketch(name="hole")
+    hole.circle((5, 5), 2)
+    part.sketches["hole"] = hole
+    part.features.append(Feature("extrude", sketch="hole", distance=20, operation="cut"))
+    part.save(tmp_path / "proj")
+    assert volume(Project(tmp_path / "proj").shape) == pytest.approx(before - math.pi * 4 * 15, rel=1e-3)

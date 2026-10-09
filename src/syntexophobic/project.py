@@ -47,6 +47,24 @@ class Project:
         h.save(f"New design {name}")
         return cls(folder)
 
+    def to_design(self) -> None:
+        """Turn a STEP / STL project into a design: the model becomes the first feature
+        (an Import, copied into imports/), so it can be extended with sketches and features.
+        The job (stock, tools, operations) and history stay."""
+        from .model import Feature, Part
+        if self.job.model.endswith(".toml"):
+            return
+        src = self.folder / self.job.model
+        dest = self.folder / "imports" / src.name
+        dest.parent.mkdir(exist_ok=True)
+        shutil.copy2(src, dest)
+        Part(self.job.name, features=[Feature("import", name=src.stem, file=f"imports/{src.name}")]).save(self.folder)
+        (self.folder / "sketches" / ".keep").touch()
+        self.job.model = "model.toml"
+        self.save_job()
+        self.history.save(f"Design on {src.name}")
+        self._shape = None
+
     @property
     def shape(self):
         if self._shape is None or self._shape_up != self.job.stock.up:
