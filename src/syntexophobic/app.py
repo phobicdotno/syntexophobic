@@ -299,6 +299,12 @@ class MainWindow(QMainWindow):
         self.c_model = act("Model", lambda on: self.viewer.set_model_visible(on), "model", "M", m_view, True)
 
         m_view.addSeparator()
+        self.a_measure = m_view.addAction("Measure")
+        self.a_measure.setCheckable(True)
+        self.a_measure.setShortcut(QKeySequence("D"))
+        self.a_measure.toggled.connect(self._measure_mode)
+        self._measure_picks = []
+        m_view.addSeparator()
         m_style = m_view.addMenu("Toolbar")
         group = QActionGroup(self)
         self.toolbar_styles = {}
@@ -450,7 +456,7 @@ class MainWindow(QMainWindow):
         self.design_panel.changed.connect(self._design_changed)
         self.design_panel.edit_sketch.connect(self.open_sketch)
         self.design_panel.selection.connect(self._show_selection)
-        self.viewer.picked.connect(lambda k, p, sh: self.design_panel.picked(k, p, sh))
+        self.viewer.picked.connect(self._picked)
         self.design_note = QLabel("This project machines an imported STEP file.\n"
                                   "Use File > New design… to model a part here.")
         self.design_note.setWordWrap(True)
@@ -462,6 +468,43 @@ class MainWindow(QMainWindow):
         dock.setMinimumWidth(330)
         self.addDockWidget(Qt.LeftDockWidgetArea, dock)
         self.design_dock = dock
+
+    def _picked(self, kind, point, shift):
+        if self.a_measure.isChecked():
+            self._measure_pick(kind, point)
+        else:
+            self.design_panel.picked(kind, point, shift)
+
+    def _measure_mode(self, on: bool):
+        self._measure_picks = []
+        self.viewer.picking = on or self.c_workspace.currentText() == "Design"
+        self.viewer.clear_highlight()
+        self.viewer.refresh()
+        self.status.setText("Measure: click an edge or face, then another to get the distance. D ends."
+                            if on else "")
+
+    def _measure_pick(self, kind, point):
+        from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE
+        from .model import _nearest
+        if not kind or self.viewer.shape is None:
+            return
+        items = geometry.unique(self.viewer.shape, TopAbs_EDGE if kind == "edge" else TopAbs_FACE)
+        item = _nearest(items, point)
+        if item is None:
+            return
+        self._measure_picks = (self._measure_picks + [item])[-2:]
+        edges = [i for i in self._measure_picks if i.ShapeType() == TopAbs_EDGE]
+        faces = [i for i in self._measure_picks if i.ShapeType() == TopAbs_FACE]
+        self.viewer.highlight(edges=edges, faces=faces)
+        if len(self._measure_picks) == 1:
+            self.status.setText("Measure: " + geometry.describe(item) + ". Click another to get the distance.")
+            return
+        a, b = self._measure_picks
+        d, p, q = geometry.distance(a, b)
+        self.viewer.show_measure_line(p, q)
+        self.status.setText(f"Distance {d:.3f} mm   (ΔX {q[0] - p[0]:+.3f}, ΔY {q[1] - p[1]:+.3f}, "
+                            f"ΔZ {q[2] - p[2]:+.3f})   ·   {geometry.describe(a)}  /  {geometry.describe(b)}")
+        self._measure_picks = []
 
     def _show_selection(self, item):
         """Highlight what the current feature uses (picked edges / faces) or a picked face."""
@@ -489,7 +532,7 @@ class MainWindow(QMainWindow):
 
     def set_workspace(self, name: str):
         design = name == "Design"
-        self.viewer.picking = design
+        self.viewer.picking = design or self.a_measure.isChecked()
         self.design_dock.setVisible(design)
         self.job_dock.setVisible(not design)
         for a in (self.a_generate, self.a_simulate, self.a_export, self.c_paths, self.c_rapids):

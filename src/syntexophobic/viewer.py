@@ -246,9 +246,17 @@ class Viewer(QVTKRenderWindowInteractor):
         self.GetRenderWindow().Render()
 
     def clear_highlight(self) -> None:
-        if self._highlight:
-            self.ren.RemoveActor(self._highlight)
-            self._highlight = None
+        for name in ("_highlight", "_measure"):
+            actor = getattr(self, name, None)
+            if actor:
+                self.ren.RemoveActor(actor)
+                setattr(self, name, None)
+
+    def show_measure_line(self, p, q) -> None:
+        """A line between two measured points (drawn on top of the selection)."""
+        self._measure = self._lines_actor([[p, q]], (0.35, 0.85, 1.0), 3.0)
+        self.ren.AddActor(self._measure)
+        self.GetRenderWindow().Render()
 
     def clear_model(self) -> None:
         for name in ("_model", "_stock", "_edges", "_highlight"):

@@ -351,3 +351,32 @@ class MeshSlicer:
             if loops:
                 result.append(loops)
         return result
+
+
+def describe(item) -> str:
+    """Length / diameter of an edge, or area of a face, as text."""
+    from OCP.BRepGProp import BRepGProp
+    from OCP.GProp import GProp_GProps
+    from OCP.GeomAbs import GeomAbs_Circle as _Circle, GeomAbs_Cylinder as _Cyl
+    props = GProp_GProps()
+    if item.ShapeType() == TopAbs_EDGE:
+        BRepGProp.LinearProperties_s(item, props)
+        c = BRepAdaptor_Curve(item)
+        if c.GetType() == _Circle:
+            return f"edge {props.Mass():.3f} mm long, circle Ø{2 * c.Circle().Radius():.3f}"
+        return f"edge {props.Mass():.3f} mm long"
+    BRepGProp.SurfaceProperties_s(item, props)
+    s = BRepAdaptor_Surface(item)
+    if s.GetType() == _Cyl:
+        return f"face {props.Mass():.2f} mm², cylinder Ø{2 * s.Cylinder().Radius():.3f}"
+    return f"face {props.Mass():.2f} mm²"
+
+
+def distance(a, b):
+    """Minimum distance between two shapes and the two closest points."""
+    from OCP.BRepExtrema import BRepExtrema_DistShapeShape
+    d = BRepExtrema_DistShapeShape(a, b)
+    if not d.IsDone() or d.NbSolution() == 0:
+        raise ValueError("Could not measure between these")
+    p, q = d.PointOnShape1(1), d.PointOnShape2(1)
+    return d.Value(), (p.X(), p.Y(), p.Z()), (q.X(), q.Y(), q.Z())

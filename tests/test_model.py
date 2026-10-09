@@ -403,3 +403,20 @@ def test_hole_feature_simple_counterbore_countersink():
     with pytest.raises(ModelError, match="no free points"):
         Part("x", [Feature("extrude", sketch="base", distance=10), Feature("hole", sketch="base")],
              {"base": base}).build()
+
+
+def test_measure_distance_and_descriptions():
+    from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE
+    from syntexophobic.model import _nearest
+    base = Sketch()
+    base.rectangle(0, 0, 40, 30)
+    base.circle((20, 15), 4)
+    box = Part("Box", [Feature("extrude", sketch="base", distance=10)], {"base": base}).build()
+    faces = geometry.unique(box, TopAbs_FACE)
+    left, right = _nearest(faces, (0, 15, 5)), _nearest(faces, (40, 15, 5))
+    d, p, q = geometry.distance(left, right)
+    assert abs(d - 40) < 1e-9 and abs(q[0] - p[0]) == pytest.approx(40)
+    hole_edge = _nearest(geometry.unique(box, TopAbs_EDGE), (20, 19, 10))    # top rim, away from the seam
+    assert "Ø8.000" in geometry.describe(hole_edge)
+    assert geometry.describe(_nearest(faces, (5, 5, 10))).startswith(f"face {40 * 30 - math.pi * 16:.2f}")
+    assert "Ø8.000" in geometry.describe(_nearest(faces, (24, 15, 5)))      # the hole's wall
