@@ -68,9 +68,16 @@ Claude Code (no API key):
   then any Claude Code session can design, machine, simulate and export. With the window
   open, changes appear in it live; without it, Claude works on the project files.
 
-The MCP server has 36 tools (projects, parameters, sketches, features, stock, tools,
-operations, toolpaths, simulation, G-code, history, views, screenshots). Claude is told to
-call nothing safe to run until `simulate` says so.
+The MCP server has 37 tools (projects, parameters, sketches, features, stock, tools,
+operations, toolpaths, simulation, G-code, history, views, screenshots, problem reports).
+Claude is told to call nothing safe to run until `simulate` says so.
+
+**Fault reports:** when a tool fails in the Assistant panel, or Claude can't do what you
+asked, the program files a GitHub issue (label `fault-report`) with the version, OS, your
+request, every tool call and its result, Claude's answer, a screenshot and the log tail
+(`~/.cache/syntexophobic/syntexophobic.log`); the chat links it. The same fault again is
+added to the open issue. It uses your GitHub login (`gh auth login`, `GH_TOKEN`, or the token
+git keeps); without one nothing is sent. `SYNTEXOPHOBIC_NO_FAULT_REPORTS=1` turns it off.
 
 ## How it works
 
