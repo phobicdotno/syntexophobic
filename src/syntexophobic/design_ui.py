@@ -17,17 +17,17 @@ FEATURE_CHOICES = {
 }
 # fields shown per feature type
 FEATURE_FIELDS = {
-    "extrude": ["name", "sketch", "distance", "symmetric", "operation", "count", "spacing", "direction", "suppressed"],
-    "revolve": ["name", "sketch", "axis", "angle", "operation", "count", "direction", "suppressed"],
-    "loft": ["name", "sketch", "operation", "suppressed"],
-    "sweep": ["name", "sketch", "path", "operation", "suppressed"],
-    "fillet": ["name", "radius", "edges", "suppressed"],
-    "chamfer": ["name", "radius", "edges", "suppressed"],
-    "shell": ["name", "faces", "thickness", "suppressed"],
-    "mirror": ["name", "plane", "suppressed"],
-    "hole": ["name", "sketch", "hole", "diameter", "depth", "head_diameter", "head_depth", "suppressed"],
+    "extrude": ["name", "body", "sketch", "distance", "symmetric", "operation", "count", "spacing", "direction", "suppressed"],
+    "revolve": ["name", "body", "sketch", "axis", "angle", "operation", "count", "direction", "suppressed"],
+    "loft": ["name", "body", "sketch", "operation", "suppressed"],
+    "sweep": ["name", "body", "sketch", "path", "operation", "suppressed"],
+    "fillet": ["name", "body", "radius", "edges", "suppressed"],
+    "chamfer": ["name", "body", "radius", "edges", "suppressed"],
+    "shell": ["name", "body", "faces", "thickness", "suppressed"],
+    "mirror": ["name", "body", "plane", "suppressed"],
+    "hole": ["name", "body", "sketch", "hole", "diameter", "depth", "head_diameter", "head_depth", "suppressed"],
 }
-FEATURE_LABELS = {"hole": "Hole type", "depth": "Depth (0 = through)", "head_diameter": "Head Ø",
+FEATURE_LABELS = {"body": "Body (new: name; else target)", "hole": "Hole type", "depth": "Depth (0 = through)", "head_diameter": "Head Ø",
                   "head_depth": "Counterbore depth", "path": "Path sketch", "radius": "Radius / distance", "edges": "Edges (|Z, >Z, %CIRCLE…)",
                   "faces": "Open faces (>Z, <Z…)", "count": "Pattern count", "spacing": "Pattern spacing",
                   "direction": "Pattern direction", "axis": "Axis (line id)"}

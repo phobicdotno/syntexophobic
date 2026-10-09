@@ -467,3 +467,36 @@ def test_two_sided_machining(tmp_path):
     back = gcode.read(bottom_code, p.job, p.setup().stock, side="bottom")
     again = simulate.simulate(p.setup(), [tps[0]] + back, res=0.2)
     assert again.gouge_cells == 0 and abs(at(again.bottom, 16, 10) - 4.0) < 1e-6
+
+
+def test_bodies_stay_separate_and_one_can_be_machined(tmp_path):
+    from syntexophobic import job as jobfile
+    from syntexophobic.history import History
+    from syntexophobic.job import Job
+    from syntexophobic.project import Project
+    box, lid, hole = Sketch(), Sketch(offset=30), Sketch(offset=40)
+    box.rectangle(0, 0, 50, 30)
+    lid.rectangle(0, 0, 50, 30)
+    hole.circle((25, 15), 4)
+    part = Part("Case", [Feature("extrude", "Box", sketch="box", distance=20, body="Box"),
+                         Feature("extrude", "Lid", sketch="lid", distance=5, body="Lid"),      # separate, 10 mm above
+                         Feature("fillet", radius=3, edges="|Z", body="Box"),
+                         Feature("extrude", "Through", sketch="hole", distance=-50, operation="cut")],   # cuts all
+                {"box": box, "lid": lid, "hole": hole})
+    bodies = part.bodies()
+    assert list(bodies) == ["Box", "Lid"]
+    box_v = 50 * 30 * 20 - 4 * (9 - math.pi * 9 / 4) * 20 - math.pi * 16 * 20
+    lid_v = 50 * 30 * 5 - math.pi * 16 * 5
+    assert abs(volume(bodies["Box"]) - box_v) < 1e-2 and abs(volume(bodies["Lid"]) - lid_v) < 1e-2
+    assert abs(volume(part.build()) - (box_v + lid_v)) < 1e-2          # a compound, not fused
+    with pytest.raises(ModelError, match="No body"):
+        Part("x", part.features + [Feature("fillet", body="Nope")], part.sketches).build()
+    folder = tmp_path / "case"
+    part.save(folder)
+    jobfile.save(Job(name="lid", model="model.toml"), folder / jobfile.JOB_FILE)
+    History(folder).init()
+    p = Project(folder)
+    p.job.stock.body = "Lid"
+    p.save_job()
+    b = p.setup().part
+    assert (round(b.zmin, 6), round(b.zmax, 6)) == (30, 35)                # only the lid is machined

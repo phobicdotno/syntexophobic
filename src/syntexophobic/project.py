@@ -61,8 +61,14 @@ class Project:
         """The part to machine: a STEP file, or a designed part (model.toml) built now."""
         path = self.folder / self.job.model
         if path.suffix.lower() == ".toml":
-            from .model import Part
-            return Part.load(path).build()
+            from .model import ModelError, Part
+            part = Part.load(path)
+            if self.job.stock.body:
+                bodies = part.bodies()
+                if self.job.stock.body not in bodies:
+                    raise ModelError(f"No body called {self.job.stock.body!r} to machine; bodies: {list(bodies)}")
+                return bodies[self.job.stock.body]
+            return part.build()
         return geometry.load_step(path)
 
     def reload(self) -> None:

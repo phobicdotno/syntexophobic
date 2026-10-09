@@ -47,7 +47,9 @@ git repository. The toolbar switches between the **Design** and **Manufacture** 
 
 ![Design workspace: feature list, feature settings and the part](docs/screenshots/design.png)
 
-A part is a list of features in `model.toml`, built top to bottom:
+A part is a list of features in `model.toml`, built top to bottom. A "new" feature starts a
+separate body (a box and its lid in one design); others change the body you name, and a cut
+without one goes through all of them.
 
 | Feature | Options |
 |---|---|
@@ -87,6 +89,8 @@ Stock, machine, tools and operations live in `job.toml`: plain text, stable key 
 value per line, so diffs read well. Edits in the window are written straight to it.
 
 ### History
+
+![Assistant panel: Claude built a parametric coaster live in the window](docs/screenshots/assistant.png)
 
 ![History panel with a variant and the diff against the current job](docs/screenshots/history.png)
 

@@ -330,7 +330,8 @@ class Feature:
     path: str = ""               # sweep: sketch holding one chain of lines and arcs
     distance: float = 10.0       # extrude: along the sketch normal (negative = other way)
     symmetric: bool = False      # extrude: half each side of the sketch plane
-    operation: str = "new"       # new | join | cut | intersect
+    operation: str = "new"       # new (a separate body) | join | cut | intersect
+    body: str = ""               # new: its name; others: the body to change ("" = the last one; cut: all)
     axis: str = ""               # revolve: line id in the sketch
     angle: float = 360.0         # revolve
     radius: float = 1.0          # fillet
@@ -385,23 +386,83 @@ class Part:
     # ---- evaluation -------------------------------------------------------------------
 
     def build(self, upto: int | None = None) -> TopoDS_Shape:
-        """Evaluate features in order (all, or the first `upto`) into one solid."""
+        """Evaluate features in order (all, or the first `upto`): one solid, or a compound
+        when the part has several bodies."""
+        bodies = self.bodies(upto)
+        if len(bodies) == 1:
+            return next(iter(bodies.values()))
+        from OCP.BRep import BRep_Builder
+        from OCP.TopoDS import TopoDS_Compound
+        comp, builder = TopoDS_Compound(), BRep_Builder()
+        builder.MakeCompound(comp)
+        for shape in bodies.values():
+            builder.Add(comp, shape)
+        return comp
+
+    def bodies(self, upto: int | None = None) -> dict:
+        """{body name: solid}, in the order the bodies were made."""
         values = self.parameter_values()
         for sk in self.sketches.values():
             sk.param_values = values
-        shape = None
+        bodies: dict = {}
         for i, f in enumerate(self.features[:upto]):
             if f.suppressed:
                 continue
             try:
-                shape = self._apply(shape, self._resolved(f, values))
+                self._apply_to(bodies, self._resolved(f, values))
             except ModelError:
                 raise
             except Exception as e:  # OpenCascade raises plain RuntimeErrors / Standard_Failure
                 raise ModelError(f"Feature {i + 1} ({f.name or f.type}) failed: {e}") from e
-        if shape is None:
+        if not bodies:
             raise ModelError("The part has no features yet")
-        return shape
+        return bodies
+
+    def _apply_to(self, bodies: dict, f: Feature) -> None:
+        makes = f.type in ("extrude", "revolve", "loft", "sweep")
+        if makes and (f.operation == "new" or not bodies):
+            name = f.body or f"Body {len(bodies) + 1}"
+            if name in bodies:
+                raise ModelError(f"There is already a body called {name!r}")
+            bodies[name] = self._tool_body(f)
+            return
+        if not bodies:
+            raise ModelError(f"{f.type} needs a body before it")
+        if f.body and f.body not in bodies:
+            raise ModelError(f"No body called {f.body!r}; bodies: {list(bodies)}")
+        cut_all = (f.type == "hole" or (makes and f.operation == "cut")) and not f.body
+        targets = list(bodies) if cut_all else [f.body or list(bodies)[-1]]
+        tool = self._tool_body(f) if makes else None
+        for name in targets:
+            bodies[name] = self._apply(bodies[name], f, tool)
+
+    def _apply(self, shape, f: Feature, tool=None):
+        if f.type in ("extrude", "revolve", "loft", "sweep"):
+            op = {"join": BRepAlgoAPI_Fuse, "cut": BRepAlgoAPI_Cut, "intersect": BRepAlgoAPI_Common}[f.operation]
+            return op(shape, tool).Shape()
+        if f.type == "hole":
+            return BRepAlgoAPI_Cut(shape, self._hole_tools(f, shape)).Shape()
+        if f.type in ("fillet", "chamfer"):
+            edges = select_edges(shape, f.edges)
+            if not edges:
+                raise ModelError(f"{f.type}: selector {f.edges!r} matches no edges")
+            mk = BRepFilletAPI_MakeFillet(shape) if f.type == "fillet" else BRepFilletAPI_MakeChamfer(shape)
+            for e in edges:
+                mk.Add(f.radius, e)
+            return mk.Shape()
+        if f.type == "shell":
+            faces = List_TopoDS_Shape()
+            for face in select_faces(shape, f.faces):
+                faces.Append(face)
+            mk = BRepOffsetAPI_MakeThickSolid()
+            mk.MakeThickSolidByJoin(shape, faces, -f.thickness, 1e-3)
+            return mk.Shape()
+        if f.type == "mirror":
+            t = gp_Trsf()
+            normal = {"YZ": (1, 0, 0), "XZ": (0, 1, 0), "XY": (0, 0, 1)}[f.plane]
+            t.SetMirror(gp_Ax2(gp_Pnt(0, 0, 0), gp_Dir(*normal)))
+            return BRepAlgoAPI_Fuse(shape, BRepBuilderAPI_Transform(shape, t, True).Shape()).Shape()
+        raise ModelError(f"Unknown feature type {f.type!r}")
 
     def _solved(self, name: str) -> Sketch:
         if name not in self.sketches:
@@ -538,39 +599,6 @@ class Part:
             for c in copies[1:]:
                 body = BRepAlgoAPI_Fuse(body, c).Shape()
         return body
-
-    def _apply(self, shape, f: Feature):
-        if f.type in ("extrude", "revolve", "loft", "sweep"):
-            body = self._tool_body(f)
-            if shape is None or f.operation == "new":
-                return body if shape is None else BRepAlgoAPI_Fuse(shape, body).Shape()
-            op = {"join": BRepAlgoAPI_Fuse, "cut": BRepAlgoAPI_Cut, "intersect": BRepAlgoAPI_Common}[f.operation]
-            return op(shape, body).Shape()
-        if shape is None:
-            raise ModelError(f"{f.type} needs a body before it")
-        if f.type == "hole":
-            return BRepAlgoAPI_Cut(shape, self._hole_tools(f, shape)).Shape()
-        if f.type in ("fillet", "chamfer"):
-            edges = select_edges(shape, f.edges)
-            if not edges:
-                raise ModelError(f"{f.type}: selector {f.edges!r} matches no edges")
-            mk = BRepFilletAPI_MakeFillet(shape) if f.type == "fillet" else BRepFilletAPI_MakeChamfer(shape)
-            for e in edges:
-                mk.Add(f.radius, e)
-            return mk.Shape()
-        if f.type == "shell":
-            faces = List_TopoDS_Shape()
-            for face in select_faces(shape, f.faces):
-                faces.Append(face)
-            mk = BRepOffsetAPI_MakeThickSolid()
-            mk.MakeThickSolidByJoin(shape, faces, -f.thickness, 1e-3)
-            return mk.Shape()
-        if f.type == "mirror":
-            t = gp_Trsf()
-            normal = {"YZ": (1, 0, 0), "XZ": (0, 1, 0), "XY": (0, 0, 1)}[f.plane]
-            t.SetMirror(gp_Ax2(gp_Pnt(0, 0, 0), gp_Dir(*normal)))
-            return BRepAlgoAPI_Fuse(shape, BRepBuilderAPI_Transform(shape, t, True).Shape()).Shape()
-        raise ModelError(f"Unknown feature type {f.type!r}")
 
     # ---- files ----------------------------------------------------------------------------
 

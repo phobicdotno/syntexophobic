@@ -128,6 +128,10 @@ class Session:
             part = Part.load(p.folder / p.job.model)
             out["design"] = {"parameters": part.parameters, "sketches": sorted(part.sketches),
                              "features": [_clean(f) for f in part.features]}
+            try:
+                out["design"]["bodies"] = list(part.bodies())
+            except Exception as e:  # does not build yet
+                out["design"]["build_error"] = str(e)
         try:
             b = p.setup().part
             out["part_size_mm"] = [round(b.xmax - b.xmin, 3), round(b.ymax - b.ymin, 3), round(b.zmax - b.zmin, 3)]

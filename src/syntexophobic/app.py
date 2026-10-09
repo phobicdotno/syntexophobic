@@ -41,7 +41,7 @@ LABELS = {
     "width": "Stock X size (0 = margin)", "depth": "Stock Y size (0 = margin)", "height": "Stock Z size (0 = to part bottom)",
     "side": "Side (bottom = after flipping)", "rest_from": "Rest after tool", "source": "Source (sketch or .dxf)", "max_depth": "Max depth",
     "angle": "V angle (°)", "hole_min": "Smallest hole Ø", "hole_max": "Largest hole Ø",
-    "material": "Stock material", "up": "Model axis facing up", "ramp_angle": "Ramp angle (°)", "tabs": "Tabs per outline", "zero": "Work zero", "post": "Post-processor",
+    "material": "Stock material", "up": "Model axis facing up", "body": "Body to machine (blank = all)", "ramp_angle": "Ramp angle (°)", "tabs": "Tabs per outline", "zero": "Work zero", "post": "Post-processor",
 }
 AUTO = -99999.0   # spin box value shown as "auto" for an empty optional number
 OPTIONAL = {"bottom": "model bottom", "hole_min": "auto", "hole_max": "auto", "rest_from": "off"}

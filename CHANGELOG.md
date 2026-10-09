@@ -6,6 +6,11 @@ All notable changes to Syntexophobic. The format follows
 ## [Unreleased]
 
 ### Added
+- **Multiple bodies**: a "new" extrude, revolve, loft or sweep makes a separate body
+  (named with `body`); join, intersect, fillet, chamfer, shell and mirror change a chosen
+  body (the last by default), and a cut or hole without a body goes through all of them.
+  The part is a compound, and `stock.body` picks the body a job machines (a box and its lid
+  from one design).
 - **Assistant panel** (View > Assistant, Ctrl+K): chat with Claude inside the program.
   It runs Claude Code with your subscription login (no API key) and only this program's
   MCP tools (no shell, file or web tools); its tool calls drive the window live, shown as
