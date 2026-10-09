@@ -26,3 +26,4 @@ def pocket_part(tmp_path_factory):
     w.Transfer(part, STEPControl_AsIs)
     w.Write(str(path))
     return path
+
