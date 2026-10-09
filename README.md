@@ -68,6 +68,10 @@ call nothing safe to run until `simulate` says so.
 A **project** is a folder with the model (a designed part or a STEP file), `job.toml` and a
 git repository. The toolbar switches between the **Design** and **Manufacture** workspaces.
 
+To model a part, press **New design** (the pencil, Ctrl+Shift+N). To work on a STEP or STL
+part, open it as a project and press **Design on this part** in the Design workspace: the
+model becomes an Import feature you can add sketches, cuts, holes and fillets to.
+
 ### Design
 
 ![Design workspace: feature list, feature settings and the part](docs/screenshots/design.png)

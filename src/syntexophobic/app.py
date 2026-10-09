@@ -211,9 +211,6 @@ def _scrolling(body: QWidget) -> QScrollArea:
 
 
 class MainWindow(QMainWindow):
-    NO_PROJECT_NOTE = "No project is open.\nUse File > New design… to model a part, or open a STEP file."
-    STEP_NOTE = "This project machines an imported STEP file.\nUse File > New design… to model a part here."
-
     def __init__(self):
         super().__init__()
         from .viewer import Viewer   # VTK import after QApplication exists
@@ -239,7 +236,7 @@ class MainWindow(QMainWindow):
         self._build_history_dock()
         self._build_design_dock()
         self._build_assistant_dock()
-        self.status = QLabel("Open a STEP file to start a project.")
+        self.status = QLabel("Start a new design to model a part, or open a STEP / STL file to machine one.")
         self.statusBar().addWidget(self.status, 1)
         from .spacemouse import SpaceMouse
         self.space_label = QLabel()
@@ -301,9 +298,7 @@ class MainWindow(QMainWindow):
         self.c_workspace.currentTextChanged.connect(self.set_workspace)
         tb.addWidget(self.c_workspace)
         tb.addSeparator()
-        new_design = m_file.addAction("New design…")
-        new_design.setShortcut(QKeySequence("Ctrl+Shift+N"))
-        new_design.triggered.connect(self.new_design)
+        self.a_new_design = act("New design…", self.new_design, "design", "Ctrl+Shift+N", m_file)
         act("New from STEP / STL…", self.new_project, "new", "Ctrl+N", m_file)
         act("Open project…", self.open_project, "open", "Ctrl+O", m_file)
         tb.addSeparator()
@@ -519,7 +514,7 @@ class MainWindow(QMainWindow):
 
     def _enable(self, on: bool):
         for w in (self.a_generate, self.a_simulate, self.a_export, self.job_dock, self.history_dock,
-                  self.design_dock):
+                  self.design_panel):
             w.setEnabled(on)
 
     # ---- design workspace ------------------------------------------------------------
@@ -533,16 +528,43 @@ class MainWindow(QMainWindow):
         self.design_panel.edit_sketch.connect(self.open_sketch)
         self.design_panel.selection.connect(self._show_selection)
         self.viewer.picked.connect(self._picked)
-        self.design_note = QLabel(self.NO_PROJECT_NOTE)       # until a project is open
+        self.design_note = QLabel()
         self.design_note.setWordWrap(True)
+        self.b_new_design = QPushButton("New design…")
+        self.b_new_design.clicked.connect(self.new_design)
+        self.b_to_design = QPushButton("Design on this part")
+        self.b_to_design.setToolTip("Make the imported model the first feature of a design, "
+                                    "so you can add sketches, cuts, holes and fillets to it")
+        self.b_to_design.clicked.connect(self.to_design)
+        self.design_start = QWidget()
+        start = QVBoxLayout(self.design_start)
+        start.setContentsMargins(0, 0, 0, 0)
+        for w in (self.design_note, self.b_new_design, self.b_to_design):
+            start.addWidget(w)
+        start.addStretch(1)
         body = QWidget()
         col = QVBoxLayout(body)
-        col.addWidget(self.design_note)
+        col.addWidget(self.design_start)
         col.addWidget(self.design_panel)
         dock.setWidget(_scrolling(body))
         dock.setMinimumWidth(330)
         self.addDockWidget(Qt.LeftDockWidgetArea, dock)
         self.design_dock = dock
+        self._show_design_start()
+
+    def _show_design_start(self):
+        """The Design dock without a designed part: how to start one."""
+        has_part = self.part is not None
+        self.design_panel.setVisible(has_part)
+        self.design_start.setVisible(not has_part)
+        if self.project is None:
+            self.design_note.setText("Model a part: start a new design, then draw a sketch and extrude it.\n\n"
+                                     "To machine a finished part, use New from STEP / STL instead.")
+        else:
+            self.design_note.setText(f"This project machines {self.project.job.model} as it is.\n\n"
+                                     "Design on this part to add sketches, cuts, holes or fillets to it, "
+                                     "or start a separate new design.")
+        self.b_to_design.setVisible(self.project is not None and not has_part)
 
     def _play(self, i: int):
         """Show the stock and the tool at playback frame i."""
@@ -673,6 +695,14 @@ class MainWindow(QMainWindow):
             return
         self.load(project)
         self.c_workspace.setCurrentText("Design")
+
+    def to_design(self):
+        """The open STEP / STL project becomes a design whose first feature imports it."""
+        if self.project is None or self.part is not None:
+            return
+        self.project.to_design()
+        self.load(self.project)
+        self.status.setText("The model is now the Import feature of a design: add sketches and features after it.")
 
     def undo_redo(self, redo: bool):
         if self.project is None:
@@ -990,9 +1020,7 @@ class MainWindow(QMainWindow):
             self.design_panel.set_part(self.part)
         else:
             self.part = None
-        self.design_panel.setVisible(self.part is not None)
-        self.design_note.setText(self.STEP_NOTE)
-        self.design_note.setVisible(self.part is None)
+        self._show_design_start()
         self.setWindowTitle(f"Syntexophobic — {project.job.name}")
         self._fill_job()
         self._refresh_model()
