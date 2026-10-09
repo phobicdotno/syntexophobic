@@ -1,3 +1,12 @@
+import os
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+from PySide6.QtWidgets import QApplication  # noqa: E402
+
+# One widgets application for every test: text and SpaceMouse tests would otherwise make a bare
+# QGuiApplication first, and any later window or dialog in the same worker aborts.
+_app = QApplication.instance() or QApplication([])
+
 import pytest
 from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut, BRepAlgoAPI_Fuse
 from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox, BRepPrimAPI_MakeCylinder
