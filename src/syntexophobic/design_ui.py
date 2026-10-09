@@ -373,7 +373,7 @@ def sketch_toolbar(view, on_finish) -> QWidget:
         tb.setMovable(False)
     for key, text in (("select", "Select"), ("line", "Line"), ("rectangle", "Rectangle"),
                       ("circle", "Circle"), ("arc", "Arc"), ("spline", "Spline"), ("polygon", "Polygon"), ("slot", "Slot"),
-                      ("point", "Point"), ("trim", "Trim")):
+                      ("text", "Text"), ("point", "Point"), ("trim", "Trim")):
         a = tools.addAction(text)
         a.setCheckable(True)
         a.setChecked(key == "select")

@@ -52,6 +52,13 @@ All notable changes to Syntexophobic. The format follows
   it. Sketch planes can be custom (origin, X direction, normal, stored in the sketch
   file); faces square to an axis still become XY / XZ / YZ with an offset. The normal
   points out of the material, so a positive extrude adds and a negative one cuts.
+- **V-carving** (`vcarve` operation, `vbit` tools with an angle): carves the closed
+  shapes of a sketch or a DXF into the stock top; each ring sits at depth = distance from
+  the outline ÷ tan(half angle), so walls are true V-grooves with sharp corners, and a
+  max depth gives V-pockets with flat floors. Cone-shaped tools in the simulation, the
+  G-code comment and the reader.
+- **Text** in sketches (Text tool): any installed font, as closed outlines with the
+  letters' holes, ready to extrude, cut or V-carve.
 - **Simulation playback**: the simulation keeps about 40 snapshots in cutting order; a
   slider in the toolbar shows the stock at any moment with the tool drawn where it is.
 - **Section view** (View > Section > X / Y / Z): cuts the model, its edges and the
@@ -150,6 +157,9 @@ All notable changes to Syntexophobic. The format follows
 - Assemblies are sliced per solid, so touching or overlapping parts stay correct.
 
 ### Fixed
+- Holes in sketch profiles were attached with a fixed reversal, which only worked when the
+  hole was drawn the same way round as its outline; font outlines (drawn the other way)
+  came out filled. Loops are now oriented by their signed area.
 - Profile outlines used for hole detection follow each segment in its walking direction
   (a line or spline used backwards no longer scrambles the outline).
 - 3D finishing could cut up to 0.7 mm into gently curved surfaces: the point simplifier

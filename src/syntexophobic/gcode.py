@@ -62,7 +62,8 @@ def grbl(job: Job, toolpaths: list[Toolpath], stock) -> str:
                 out += ["M5", f"(Change to T{tool.id} {tool.name}, re-zero Z, then resume)", "M0"]
             out += [f"M3 S{job.machine.rpm}", "G4 P3"]
             current_tool = tool.id
-        out.append(f"({tp.op.name}: T{tool.id} {tool.name}, D{_num(tool.diameter)}, {tool.shape})")
+        shape = f"vbit {_num(tool.angle)}" if tool.shape == "vbit" else tool.shape
+        out.append(f"({tp.op.name}: T{tool.id} {tool.name}, D{_num(tool.diameter)}, {shape})")
         last = {"X": None, "Y": None, "Z": None, "F": None}
         for m in tp.moves:
             words = []
@@ -103,15 +104,19 @@ def read(text: str, job: Job, stock) -> list[Toolpath]:
         ox, oy, oz = stock.xmin, stock.ymin, stock.zmax
     else:
         ox = oy = oz = 0.0
-    header = re.compile(r"^\((.+): T(\d+) .*, D([\d.]+)(?:, (flat|ball))?\)$")
+    header = re.compile(r"^\((.+): T(\d+) .*, D([\d.]+)(?:, (flat|ball|vbit)(?: ([\d.]+))?)?\)$")
     paths: list[Toolpath] = []
     motion, feed = "G0", None
     for raw in text.splitlines():
         line = raw.strip()
         m = header.match(line)
         if m:
-            paths.append(Toolpath(Operation(name=m.group(1), tool=int(m.group(2))), float(m.group(3)),
-                                  tool_shape=m.group(4) or "flat"))
+            tp = Toolpath(Operation(name=m.group(1), tool=int(m.group(2))), float(m.group(3)),
+                          tool_shape=m.group(4) or "flat")
+            if m.group(5):
+                import math
+                tp.vbit_k = math.tan(math.radians(float(m.group(5)) / 2))
+            paths.append(tp)
             continue
         line = re.sub(r"\(.*?\)", "", line).strip()
         if not line or not paths:

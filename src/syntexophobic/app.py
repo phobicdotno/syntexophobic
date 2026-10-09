@@ -22,11 +22,11 @@ from .job import Operation, Tool
 from .project import Project
 
 CHOICES = {
-    "type": ["rough", "adaptive", "finish", "profile", "parallel", "drill", "bore"],
+    "type": ["rough", "adaptive", "finish", "profile", "parallel", "vcarve", "drill", "bore"],
     "up": list(geometry.UP_AXES),
     "zero": ["stock", "model"],
     "post": ["carbide", "grbl"],
-    "shape": ["flat", "ball"],
+    "shape": ["flat", "ball", "vbit"],
     "raster": ["X", "Y"],
     "material": None,   # filled from feeds.MATERIALS below
 }
@@ -38,20 +38,24 @@ LABELS = {
     "plunge": "Plunge (mm/min)", "bottom": "Bottom Z", "rpm": "Spindle (rpm)",
     "safe_z": "Safe height", "top_offset": "Material above part", "margin": "Margin around part",
     "width": "Stock X size (0 = margin)", "depth": "Stock Y size (0 = margin)", "height": "Stock Z size (0 = to part bottom)",
-    "rest_from": "Rest after tool", "hole_min": "Smallest hole Ø", "hole_max": "Largest hole Ø",
+    "rest_from": "Rest after tool", "source": "Source (sketch or .dxf)", "max_depth": "Max depth",
+    "angle": "V angle (°)", "hole_min": "Smallest hole Ø", "hole_max": "Largest hole Ø",
     "material": "Stock material", "up": "Model axis facing up", "ramp_angle": "Ramp angle (°)", "tabs": "Tabs per outline", "zero": "Work zero", "post": "Post-processor",
 }
 AUTO = -99999.0   # spin box value shown as "auto" for an empty optional number
 OPTIONAL = {"bottom": "model bottom", "hole_min": "auto", "hole_max": "auto", "rest_from": "off"}
 # Operation fields that mean nothing for a given type are hidden from the form.
 HIDDEN = {
-    "rough": {"tabs", "tab_width", "tab_height", "hole_min", "hole_max", "raster"},
-    "adaptive": {"tabs", "tab_width", "tab_height", "hole_min", "hole_max", "rest_from", "raster"},
-    "parallel": {"stepdown", "ramp_angle", "tabs", "tab_width", "tab_height", "hole_min", "hole_max", "rest_from"},
-    "finish": {"stepover", "hole_min", "hole_max", "rest_from", "raster"},
-    "profile": {"stepover", "hole_min", "hole_max", "rest_from", "raster"},
-    "drill": {"stepover", "leave", "feed", "ramp_angle", "tabs", "tab_width", "tab_height", "rest_from", "raster"},
-    "bore": {"tabs", "tab_width", "tab_height", "rest_from", "raster"},
+    "rough": {"tabs", "tab_width", "tab_height", "hole_min", "hole_max", "raster", "source", "max_depth"},
+    "adaptive": {"tabs", "tab_width", "tab_height", "hole_min", "hole_max", "rest_from", "raster", "source", "max_depth"},
+    "parallel": {"stepdown", "ramp_angle", "tabs", "tab_width", "tab_height", "hole_min", "hole_max", "rest_from",
+                 "source", "max_depth"},
+    "vcarve": {"stepdown", "stepover", "leave", "ramp_angle", "tabs", "tab_width", "tab_height", "hole_min",
+               "hole_max", "rest_from", "raster", "bottom"},
+    "finish": {"stepover", "hole_min", "hole_max", "rest_from", "raster", "source", "max_depth"},
+    "profile": {"stepover", "hole_min", "hole_max", "rest_from", "raster", "source", "max_depth"},
+    "drill": {"stepover", "leave", "feed", "ramp_angle", "tabs", "tab_width", "tab_height", "rest_from", "raster", "source", "max_depth"},
+    "bore": {"tabs", "tab_width", "tab_height", "rest_from", "raster", "source", "max_depth"},
 }
 
 

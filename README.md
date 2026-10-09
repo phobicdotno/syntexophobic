@@ -57,7 +57,7 @@ again after a rebuild), or with short selectors: `|Z` (vertical edges), `#Z` (ho
 
 ![Sketch editor: fully constrained base sketch, the hole selected](docs/screenshots/sketch.png)
 
-Lines, rectangles, circles, arcs, splines, polygons, slots and points on the XY, XZ or YZ
+Lines, rectangles, circles, arcs, splines, polygons, slots, text and points on the XY, XZ or YZ
 plane (with an offset), or on any flat face of the part. Corner fillet, offset, mirror and trim work on existing geometry.
 Clicking near a point reuses it. Constraints: coincident, horizontal, vertical, parallel,
 perpendicular, equal, tangent, concentric, midpoint, point on line/circle, fixed,
@@ -92,6 +92,7 @@ That area, grown by the tool radius (plus *leave*), is cut out of the stock outl
 | **finish** | follows every wall once per level; with a ball end it is waterline finishing for steep 3D walls |
 | **profile** | follows only the outermost silhouette, for cut-outs; supports **tabs** |
 | **parallel** | 3D finishing: raster passes riding on the surface (exact drop-cutter, flat or ball end) |
+| **vcarve** | V-bit carving of a sketch or DXF (text, logos): sharp V walls, flat floors past a max depth |
 
 ![Adaptive clearing on the demo plate: steered passes instead of slotting rings](docs/screenshots/adaptive.png)
 

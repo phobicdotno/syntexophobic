@@ -218,6 +218,15 @@ class Sketch:
         self.splines[sp.id] = sp
         return sp.id
 
+    def text(self, text: str, x: float, y: float, height: float = 10.0, font: str = "DejaVu Sans") -> list[str]:
+        """Text as closed outlines of lines, baseline starting at (x, y)."""
+        from .fonttext import outlines
+        made = []
+        for poly in outlines(text, height, font):
+            ids = [self.point(x + px, y + py) for px, py in poly]
+            made += [self.line(ids[i], ids[(i + 1) % len(ids)]) for i in range(len(ids))]
+        return made
+
     def spline_samples(self, sid: str, n: int = 64) -> list[tuple[float, float]]:
         """Points along a spline, from the same curve the 3D model uses."""
         from .model import spline_curve

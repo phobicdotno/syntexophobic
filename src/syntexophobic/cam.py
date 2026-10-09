@@ -37,6 +37,7 @@ class Toolpath:
     levels: list[float] = field(default_factory=list)
     tabs: list = field(default_factory=list)
     tool_shape: str = "flat"
+    vbit_k: float = 1.0           # V-bit: cut width per unit depth on each side, tan(angle/2)
 
     def positions(self):
         """(kind, x, y, z, f) with every axis filled in from the previous position."""
@@ -460,9 +461,81 @@ def _adaptive(setup: Setup, op: Operation) -> Toolpath:
     return tp
 
 
+def vcarve_regions(setup: Setup, op: Operation):
+    """Closed shapes to carve, as clipper paths: from a sketch of the designed part, or a
+    DXF file in the project folder."""
+    from pathlib import Path
+    from .model import _loop_polygon
+    src = op.source.strip()
+    if not src:
+        raise ValueError("V-carve: set Source to a sketch name or a .dxf file in the project folder")
+    if src.lower().endswith(".dxf"):
+        from . import dxf
+        folder = Path(setup.job_folder) if getattr(setup, "job_folder", None) else Path(".")
+        sk = dxf.import_dxf(folder / src)
+    else:
+        sk = setup.sketches.get(src) if getattr(setup, "sketches", None) else None
+        if sk is None:
+            raise ValueError(f"V-carve: no sketch called {src!r} in this design")
+    loops = [_loop_polygon(sk, loop, 48) for loop in sk.profiles()]
+    if not loops:
+        raise ValueError(f"V-carve: {src!r} has no closed shapes")
+    return _boolean(_to_int(loops), [], pyclipper.CT_UNION, pyclipper.PFT_EVENODD)
+
+
+def _vcarve(setup: Setup, op: Operation) -> Toolpath:
+    """Rings inwards from every outline; a ring at distance d from the outline is cut at
+    depth d / tan(half angle), so the V-bit's cone just reaches the outline. Where that
+    would go deeper than max_depth the floor is flat, cleared with close rings (a V-bit's
+    point cuts only a line)."""
+    tool = setup.job.tool(op.tool)
+    if tool.shape != "vbit":
+        raise ValueError("V-carve needs a V-bit tool (shape = vbit)")
+    k = math.tan(math.radians(tool.angle / 2))            # width per depth on each side
+    top = setup.stock.zmax
+    region = vcarve_regions(setup, op)
+    step = 0.1                                             # mm between rings along the walls
+    safe = top + setup.job.machine.safe_z
+    tp = Toolpath(op, 2 * k * op.max_depth, tool_shape="vbit")
+    tp.vbit_k = k
+    moves = tp.moves
+    moves.append(Move("rapid", None, None, safe))
+    d, last_step, refining = 0.0, 0.0, False
+    for _ in range(100000):
+        rings = _offset(region, -d) if d > 0 else region
+        if not rings:
+            # stepped past the middle: go back halfway (and keep halving), so the last ring
+            # runs along the centre line instead of a whole step short of it
+            if last_step > 0.01:
+                refining = True
+                d -= last_step / 2
+                last_step /= 2
+                continue
+            break
+        depth = min(d / k, op.max_depth)
+        z = top - depth
+        for loop in _to_mm(rings):
+            if len(loop) < 2:
+                continue
+            moves += [Move("rapid", None, None, top + 1.0), Move("rapid", loop[0][0], loop[0][1], None),
+                      Move("rapid", None, None, top + 0.5), Move("feed", None, None, z, op.plunge)]
+            moves += [Move("feed", x, y, None, op.feed) for x, y in loop[1:] + loop[:1]]
+        tp.levels.append(z)
+        # at full depth the V-bit's point only cuts a line: rings 2·k·0.05 apart leave
+        # ridges no higher than 0.05 mm on the flat floor
+        if not refining:
+            last_step = step if depth < op.max_depth else max(0.02, 2 * k * 0.05)
+        d += last_step
+    moves.append(Move("rapid", None, None, safe))
+    return tp
+
+
 def generate(setup: Setup, op: Operation) -> Toolpath:
     tp = _generate(setup, op)
-    tp.tool_shape = setup.job.tool(op.tool).shape
+    tool = setup.job.tool(op.tool)
+    tp.tool_shape = tool.shape
+    if tool.shape == "vbit":
+        tp.vbit_k = math.tan(math.radians(tool.angle / 2))
     return tp
 
 
@@ -474,6 +547,8 @@ def _generate(setup: Setup, op: Operation) -> Toolpath:
     if op.type == "parallel":
         from .surface import parallel
         return parallel(setup, op)
+    if op.type == "vcarve":
+        return _vcarve(setup, op)
     tool = setup.job.tool(op.tool)
     r = tool.diameter / 2
     top = setup.stock.zmax

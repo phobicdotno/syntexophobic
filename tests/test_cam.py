@@ -435,3 +435,31 @@ def test_simulation_snapshots_play_back_in_order(pocket_part, tmp_path):
     assert all(b >= a - 1e-9 for a, b in zip(removed, removed[1:]))        # material only goes
     assert np.allclose(played.frames[-1][3], full.stock)                     # same end result
     assert {f[0] for f in played.frames} == {tp.op.name for tp in tps}
+
+
+def test_vcarve_cuts_v_walls_inside_the_outline(pocket_part, tmp_path):
+    import ezdxf
+    import numpy as np
+    from syntexophobic import gcode, simulate
+    from syntexophobic.job import Operation, Tool
+    p = Project.create(tmp_path / "vc", pocket_part)
+    doc = ezdxf.new()
+    doc.header["$INSUNITS"] = 4
+    doc.modelspace().add_lwpolyline([(5, 5), (25, 5), (25, 35), (5, 35)], close=True)   # on the block's top
+    doc.saveas(p.folder / "logo.dxf")
+    p.job.tools = [Tool(1, "90° V-bit", 12.0, 2, "vbit", 90.0)]
+    p.job.operations = [Operation(type="vcarve", name="Carve", tool=1, source="logo.dxf", max_depth=2.0,
+                                  feed=800, plunge=200)]
+    p.job.stock.top_offset = 0.0
+    p.save_job()
+    tps = p.toolpaths()
+    res = simulate.simulate(p.setup(), tps, res=0.05)
+    xs, ys = res.grid.centres()
+    top = p.setup().stock.zmax
+    depth = lambda x, y: top - res.stock[int(round((y - ys[0]) / 0.05)), int(round((x - xs[0]) / 0.05))]  # noqa: E731
+    for d in (0.4, 1.0, 1.6):                       # 90° bit: depth equals distance from the edge
+        assert abs(depth(5 + d, 20) - d) < 0.08, (d, depth(5 + d, 20))
+    assert abs(depth(15, 20) - 2.0) < 0.05          # flat floor at max depth in the middle
+    assert depth(4.8, 20) < 0.05 and depth(30, 20) < 1e-9   # nothing outside the outline
+    back = gcode.read(p.gcode(tps), p.job, p.setup().stock)
+    assert back[0].tool_shape == "vbit" and abs(back[0].vbit_k - 1.0) < 1e-9

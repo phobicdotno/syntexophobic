@@ -138,7 +138,8 @@ class SketchView(QGraphicsView):
                           "polygon": "Polygon: click the centre, then a corner.",
                           "spline": "Spline: click points; Enter or right-click ends it, clicking the first point closes it.",
                           "slot": "Slot: click both centre points, then the width.",
-                          "trim": "Trim: click the piece of a line to remove."}.get(tool, tool))
+                          "trim": "Trim: click the piece of a line to remove.",
+                          "text": "Text: click where the baseline starts."}.get(tool, tool))
         self.draw()
 
     def mousePressEvent(self, ev):
@@ -220,6 +221,13 @@ class SketchView(QGraphicsView):
             elif not self.pending or p != self.pending[-1]:
                 self.pending.append(p)
                 self.draw()
+        elif self.tool == "text":
+            text, ok = QInputDialog.getText(self, "Text", "Text")
+            if ok and text.strip():
+                h, ok = QInputDialog.getDouble(self, "Text", "Height of capital letters (mm)", 10.0, 0.5, 1000, 2)
+                if ok:
+                    s.text(text, round(pos.x(), 3), round(pos.y(), 3), h)
+                    self.commit()
         elif self.tool == "trim":
             hit = self.at(pos)
             if hit in s.lines:

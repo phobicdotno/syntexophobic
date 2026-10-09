@@ -79,6 +79,10 @@ class Project:
         shape = self.shape          # reloads (and drops the setup) if the up axis changed
         if self._setup is None:
             self._setup = cam.Setup(shape, self.job, self._geometry_cache)
+            self._setup.job_folder = self.folder
+            if self.job.model.endswith(".toml"):
+                from .model import Part
+                self._setup.sketches = Part.load(self.folder / self.job.model).sketches
         return self._setup
 
     def toolpaths(self) -> list[cam.Toolpath]:

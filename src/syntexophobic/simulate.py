@@ -124,6 +124,9 @@ def _cut(be, grid, stock, P, tp, res):
     dx, dy = (be.asarray(a.astype(np.int32)) for a in _disc(r_cut + res * 0.71, res))
     ball = getattr(tp, "tool_shape", "flat") == "ball"
     flat = stock.reshape(-1)
+    if getattr(tp, "tool_shape", "flat") == "vbit":
+        _stamp_cone(stock, grid.x0, grid.y0, res, P, r_cut, getattr(tp, "vbit_k", 1.0))
+        return stock
     if ball and xp is np:                     # compiled kernel on the CPU
         _stamp_ball(stock, grid.x0, grid.y0, res, P, r_cut, r)
         return stock
@@ -212,6 +215,25 @@ def _stamp_ball(stock, x0, y0, res, P, r_cut, r):
                 d2 = dx * dx + dy * dy
                 if d2 <= r_cut * r_cut:
                     z = pz + r - math.sqrt(r * r - d2)
+                    if z < stock[j, i]:
+                        stock[j, i] = z
+
+
+@njit(cache=True)
+def _stamp_cone(stock, x0, y0, res, P, r_max, k):
+    """Lower the stock to a V-bit's cone (tip at each point, k = width per depth)."""
+    ny, nx = stock.shape
+    ri = int(r_max / res) + 2
+    for n in range(P.shape[0]):
+        px, py, pz = P[n, 0], P[n, 1], P[n, 2]
+        ci, cj = int(round((px - x0) / res)), int(round((py - y0) / res))
+        for j in range(max(cj - ri, 0), min(cj + ri + 1, ny)):
+            dy = y0 + j * res - py
+            for i in range(max(ci - ri, 0), min(ci + ri + 1, nx)):
+                dx = x0 + i * res - px
+                d = math.sqrt(dx * dx + dy * dy)
+                if d <= r_max:
+                    z = pz + d / k
                     if z < stock[j, i]:
                         stock[j, i] = z
 

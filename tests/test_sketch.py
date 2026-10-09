@@ -224,3 +224,16 @@ def test_dxf_round_trip_bulges_and_inches(tmp_path):
     assert abs(_volume(poly, 1) - area) < 0.01 * area
     xs = [pt.x for pt in poly.points.values() if not pt.construction]
     assert max(xs) == pytest.approx(50.8)                       # inches became millimetres
+
+
+def test_text_outlines_extrude_with_holes():
+    sk = Sketch()
+    sk.text("OA", 0, 0, height=10)
+    loops = sk.profiles()
+    assert len(loops) >= 4                           # O: outside + hole, A: outside + hole
+    xs = [p.x for p in sk.points.values()]
+    ys = [p.y for p in sk.points.values()]
+    assert 9 < max(ys) < 11.5 and min(ys) > -1        # capitals about 10 mm tall on the baseline
+    v = _volume(sk, 1)
+    outer_box = (max(xs) - min(xs)) * (max(ys) - min(ys))
+    assert 0.2 * outer_box < v < 0.75 * outer_box     # strokes, with the counters left open

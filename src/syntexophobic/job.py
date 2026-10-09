@@ -15,7 +15,8 @@ class Tool:
     name: str = "6 mm flat endmill"
     diameter: float = 6.0
     flutes: int = 2
-    shape: str = "flat"        # flat | ball
+    shape: str = "flat"        # flat | ball | vbit
+    angle: float = 90.0        # vbit: included angle in degrees
 
 
 @dataclass
@@ -39,7 +40,7 @@ class Machine:
 
 @dataclass
 class Operation:
-    type: str = "rough"       # rough | adaptive | finish | profile | parallel (3D) | drill | bore
+    type: str = "rough"       # rough | adaptive | finish | profile | parallel (3D) | vcarve | drill | bore
     name: str = "Rough"
     tool: int = 1
     stepdown: float = 1.5
@@ -54,6 +55,8 @@ class Operation:
     tab_height: float = 2.0  # above the operation's bottom
     rest_from: int | None = None    # rough: only cut what this earlier tool (id) could not reach
     raster: str = "X"               # parallel: direction of the passes, X or Y
+    source: str = ""                # vcarve: a sketch of the designed part, or a .dxf in the project
+    max_depth: float = 3.0          # vcarve: deepest cut; wider areas get a flat floor
     hole_min: float | None = None   # drill/bore: smallest hole diameter to machine
     hole_max: float | None = None   # drill/bore: largest
     enabled: bool = True

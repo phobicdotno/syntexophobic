@@ -169,6 +169,16 @@ def _last_edge(wire):
     return last
 
 
+def _wire(sk: Sketch, loop, ccw: bool, area: float):
+    w = BRepBuilderAPI_MakeWire()
+    for e in _edges(sk, loop):
+        w.Add(e)
+    wire = w.Wire()
+    if (area > 0) != ccw:
+        wire = TopoDS.Wire(wire.Reversed())
+    return wire
+
+
 def sketch_faces(sk: Sketch) -> list:
     """Planar faces from the sketch's closed profiles; loops inside others become holes."""
     loops = sk.profiles()
@@ -182,16 +192,13 @@ def sketch_faces(sk: Sketch) -> list:
     for i in order:
         if depth[i] % 2:
             continue                                    # a hole: added to its outer face
-        wire = BRepBuilderAPI_MakeWire()
-        for e in _edges(sk, loops[i]):
-            wire.Add(e)
-        mk = BRepBuilderAPI_MakeFace(wire.Wire(), True)
+        # Orient by signed area, whatever order the loop was drawn in: the outline runs
+        # counter-clockwise and its holes clockwise (seen along the sketch normal).
+        wire = _wire(sk, loops[i], ccw=True, area=_area(polys[i]))
+        mk = BRepBuilderAPI_MakeFace(wire, True)
         for j in order:
             if depth[j] == depth[i] + 1 and _inside(polys[j][0], polys[i]):
-                hw = BRepBuilderAPI_MakeWire()
-                for e in _edges(sk, loops[j]):
-                    hw.Add(e)
-                mk.Add(TopoDS.Wire(hw.Wire().Reversed()))
+                mk.Add(_wire(sk, loops[j], ccw=False, area=_area(polys[j])))
         if not mk.IsDone():
             raise ModelError(f"Could not make a face from sketch {sk.name!r}")
         from OCP.ShapeFix import ShapeFix_Face
