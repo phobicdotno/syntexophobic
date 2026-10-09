@@ -178,6 +178,17 @@ def simulate(setup, toolpaths, res: float = 0.25, backend=None, snapshots: int =
                 frames.append((tp.op.name, tuple(P[b - 1]), tp.tool_diameter, be.to_numpy(stock).copy()))
     stock = be.to_numpy(stock)
     part = part_heightmap(setup.shape, grid)
+    # V-carving cuts into the part on purpose: inside its shapes the part surface is
+    # expected to go, so those cells are left out of the gouge check
+    for tp in toolpaths:
+        if tp.op.type == "vcarve" and tp.op.source:
+            from . import adaptive, cam
+            try:
+                region = cam._to_mm(cam.vcarve_regions(setup, tp.op))
+            except ValueError:
+                continue
+            carved = adaptive.rasterize(region, grid.x0, grid.y0, res, part.shape)
+            part = np.where(carved, -np.inf, part)
     depth = _normal_depth(part, stock, res)
     removed = float(np.sum(setup.stock.zmax - stock)) * res * res / 1000.0
     return Result(grid, stock, part, float(max(depth.max(), 0.0)),

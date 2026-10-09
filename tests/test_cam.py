@@ -255,14 +255,17 @@ def test_gcode_round_trip_simulates_clean(tmp_path):
 def test_spacemouse_protocol_and_daemon_client(tmp_path):
     """Parse spacenavd events and receive them through a fake daemon socket."""
     import os, socket, struct
+    import os
     from PySide6.QtCore import QCoreApplication
+    from PySide6.QtGui import QGuiApplication
     from syntexophobic import spacemouse as sm
     m = sm.parse(struct.pack("=8i", 0, 10, -20, 30, 1, 2, 3, 16))
     assert (m.x, m.y, m.z, m.rx, m.ry, m.rz, m.period) == (10, -20, 30, 1, 2, 3, 16)
     assert sm.parse(struct.pack("=8i", 1, 0, 0, 0, 0, 0, 0, 0)) == ("button", 0, True)
     assert sm.parse(struct.pack("=8i", 2, 1, 0, 0, 0, 0, 0, 0)) == ("button", 1, False)
 
-    app = QCoreApplication.instance() or QCoreApplication([])
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")      # a GUI app, so font tests can share it
+    app = QCoreApplication.instance() or QGuiApplication([])
     path = str(tmp_path / "spnav.sock")
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     server.bind(path)
@@ -463,3 +466,4 @@ def test_vcarve_cuts_v_walls_inside_the_outline(pocket_part, tmp_path):
     assert depth(4.8, 20) < 0.05 and depth(30, 20) < 1e-9   # nothing outside the outline
     back = gcode.read(p.gcode(tps), p.job, p.setup().stock)
     assert back[0].tool_shape == "vbit" and abs(back[0].vbit_k - 1.0) < 1e-9
+    assert res.gouge_cells == 0                     # carving inside the shape is intended

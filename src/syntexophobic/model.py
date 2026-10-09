@@ -127,16 +127,18 @@ def _loop_polygon(sk: Sketch, loop, n_arc: int = 32):
     """2D polygon of a profile loop, for area and containment tests. Each segment is
     turned around when needed so it continues from where the previous one ended."""
     pts: list = []
+    end = None                                   # where the previous segment finished
     for seg in loop:
         seg_pts = _segment_points(sk, seg, n_arc)
-        if pts and math.dist(pts[-1], seg_pts[-1]) < math.dist(pts[-1], seg_pts[0]):
+        if end is not None and math.dist(end, seg_pts[-1]) < math.dist(end, seg_pts[0]):
             seg_pts = seg_pts[::-1]
-        elif len(pts) == 0 and len(loop) > 1:
+        elif end is None and len(loop) > 1:
             nxt = _segment_points(sk, loop[1], 2)
             far = min(math.dist(seg_pts[0], q) for q in (nxt[0], nxt[-1]))
             near = min(math.dist(seg_pts[-1], q) for q in (nxt[0], nxt[-1]))
             if far < near:                   # the first segment's start touches the second
                 seg_pts = seg_pts[::-1]
+        end = seg_pts[-1]
         pts += seg_pts[:-1] if len(loop) > 1 or seg[0] in ("circle", "spline") else seg_pts
     return pts
 

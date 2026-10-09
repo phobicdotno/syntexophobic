@@ -237,3 +237,16 @@ def test_text_outlines_extrude_with_holes():
     v = _volume(sk, 1)
     outer_box = (max(xs) - min(xs)) * (max(ys) - min(ys))
     assert 0.2 * outer_box < v < 0.75 * outer_box     # strokes, with the counters left open
+
+
+def test_loop_outline_matches_the_shape_for_long_strokes():
+    """The outline used for holes and V-carving must have the shape's real area, also for
+    letters made of long straight strokes (a chaining bug once doubled the N)."""
+    from syntexophobic.model import _area, _loop_polygon
+    from syntexophobic.fonttext import outlines
+    for ch in "NZMW":
+        sk = Sketch()
+        sk.text(ch, 0, 0, 16)
+        true_area = sum(abs(_area(p)) for p in outlines(ch, 16))
+        got = sum(abs(_area(_loop_polygon(sk, l, 48))) for l in sk.profiles())
+        assert abs(got - true_area) < 1e-6 * true_area + 1e-9, (ch, got, true_area)

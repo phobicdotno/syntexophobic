@@ -127,6 +127,32 @@ def dome_project():
     return proj
 
 
+def sign_project():
+    """A board with V-carved lettering."""
+    from syntexophobic.job import Operation, Tool
+    from syntexophobic.model import Feature, Part
+    from syntexophobic.sketch import Sketch
+    board = Sketch(name="board")
+    board.rectangle(0, 0, 140, 50)
+    sign = Sketch(name="sign", offset=12)
+    sign.text("SYNTEXOPHOBIC", 7, 19, height=11)
+    part = Part("sign", [Feature("extrude", "Board", sketch="board", distance=12),
+                         Feature("fillet", "Round corners", radius=6, edges="|Z")],
+                {"board": board, "sign": sign})
+    folder = Path(tempfile.mkdtemp()) / "sign"
+    proj = Project.create_design(folder, "sign")
+    part.save(folder)
+    proj.reload()
+    proj.job.stock.top_offset = 0.0
+    proj.job.tools = [Tool(1, "60° V-bit", 12.7, 2, "vbit", 60.0)]
+    proj.job.operations = [Operation(type="vcarve", name="Carve lettering", tool=1, source="sign",
+                                     max_depth=2.5, feed=1200, plunge=300)]
+    proj.save_job()
+    proj.history.save("V-carved sign")
+    proj.reload()
+    return proj
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     qa = QApplication(sys.argv)
@@ -208,6 +234,21 @@ def main():
         win.viewer.view_iso()
         win.l_ops.setCurrentRow(1)
         capture(win, "finish3d.png")
+        win.load(sign_project())
+        win.c_workspace.setCurrentText("Manufacture")
+        win._generated(win.project.toolpaths())
+        win._simulated(simulate.simulate(win.project.setup(), win.toolpaths, res=0.08))
+        QTimer.singleShot(800, step8)
+
+    def step8():
+        cam_ = win.viewer.ren.GetActiveCamera()
+        cam_.SetFocalPoint(70, 25, 10)
+        cam_.SetPosition(70, -70, 120)
+        cam_.SetViewUp(0, 0, 1)
+        win.viewer.ren.ResetCamera()
+        cam_.Dolly(1.1)
+        win.viewer.ren.ResetCameraClippingRange()
+        capture(win, "vcarve.png")
         qa.quit()
 
     QTimer.singleShot(1500, step1)

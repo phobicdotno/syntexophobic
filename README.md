@@ -102,6 +102,8 @@ That area, grown by the tool radius (plus *leave*), is cut out of the stock outl
 - The model is sliced as a 0.01 mm mesh, checked against exact OpenCascade sections; any
   outline that does not close falls back to the exact section.
 
+![A sign V-carved with a 60° V-bit from sketch text, simulated](docs/screenshots/vcarve.png)
+
 ![A domed cap after adaptive roughing and 3 mm ball-end parallel finishing, simulated](docs/screenshots/finish3d.png)
 
 ### Simulation

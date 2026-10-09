@@ -8,11 +8,14 @@ import numpy as np
 def _app():
     from PySide6.QtGui import QGuiApplication
     from PySide6.QtWidgets import QApplication
-    app = QApplication.instance() or QGuiApplication.instance()
+    app = QApplication.instance()
     if app is None:                      # no window (tests, command line): render off-screen
         import os
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         app = QGuiApplication([])
+    elif not isinstance(app, QGuiApplication):
+        # a console-only Qt application exists; fonts need a GUI one and Qt allows only one
+        raise RuntimeError("Text needs a Qt GUI application (QGuiApplication), not QCoreApplication")
     return app
 
 

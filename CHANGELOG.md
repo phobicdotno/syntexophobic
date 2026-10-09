@@ -157,6 +157,12 @@ All notable changes to Syntexophobic. The format follows
 - Assemblies are sliced per solid, so touching or overlapping parts stay correct.
 
 ### Fixed
+- The outline used for holes and V-carving compared each segment with the previous
+  segment's start instead of its end, which scrambled shapes with long straight strokes
+  (an "N" came out as a filled box). A test checks the area of N, Z, M and W.
+- V-carving is not reported as a gouge inside the carved shapes (it cuts the part on
+  purpose); anywhere else it still is.
+- Qt font use no longer crashes when a console-only Qt application already exists.
 - Holes in sketch profiles were attached with a fixed reversal, which only worked when the
   hole was drawn the same way round as its outline; font outlines (drawn the other way)
   came out filled. Loops are now oriented by their signed area.
