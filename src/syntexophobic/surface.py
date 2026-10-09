@@ -167,24 +167,41 @@ class MeshDropper:
 
 @njit(cache=True)
 def _keep(P, tol):
-    """Mask of points to keep: drop those within tol of the line between the last kept
-    point and the next point."""
+    """Douglas-Peucker: keep the fewest points such that every dropped point lies within
+    tol (in 3D) of the straight segment that replaces it."""
     n = P.shape[0]
     keep = np.zeros(n, dtype=np.bool_)
     keep[0] = True
     keep[n - 1] = True
-    last = 0
-    for i in range(1, n - 1):
-        ax, ay, az = P[last, 0], P[last, 1], P[last, 2]
-        cx, cy, cz = P[i + 1, 0] - ax, P[i + 1, 1] - ay, P[i + 1, 2] - az
-        bx, by, bz = P[i, 0] - ax, P[i, 1] - ay, P[i, 2] - az
-        L = math.sqrt(cx * cx + cy * cy + cz * cz)
-        if L == 0:
+    stack = np.empty((n, 2), dtype=np.int64)
+    top = 0
+    stack[0, 0], stack[0, 1] = 0, n - 1
+    top = 1
+    while top > 0:
+        top -= 1
+        a, b = stack[top, 0], stack[top, 1]
+        if b - a < 2:
             continue
-        x, y, z = by * cz - bz * cy, bz * cx - bx * cz, bx * cy - by * cx
-        if math.sqrt(x * x + y * y + z * z) / L > tol:
-            keep[i] = True
-            last = i
+        ax, ay, az = P[a, 0], P[a, 1], P[a, 2]
+        cx, cy, cz = P[b, 0] - ax, P[b, 1] - ay, P[b, 2] - az
+        L2 = cx * cx + cy * cy + cz * cz
+        worst, at = -1.0, -1
+        for i in range(a + 1, b):
+            bx, by, bz = P[i, 0] - ax, P[i, 1] - ay, P[i, 2] - az
+            if L2 == 0:
+                d2 = bx * bx + by * by + bz * bz
+            else:
+                t = max(0.0, min(1.0, (bx * cx + by * cy + bz * cz) / L2))
+                ex, ey, ez = bx - t * cx, by - t * cy, bz - t * cz
+                d2 = ex * ex + ey * ey + ez * ez
+            if d2 > worst:
+                worst, at = d2, i
+        if worst > tol * tol:
+            keep[at] = True
+            stack[top, 0], stack[top, 1] = a, at
+            top += 1
+            stack[top, 0], stack[top, 1] = at, b
+            top += 1
     return keep
 
 

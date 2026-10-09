@@ -229,3 +229,19 @@ def test_parallel_ball_finish_on_a_dome(tmp_path):
     scallop = 3 - math.sqrt(9 - (0.08 * 6 / 2) ** 2)
     assert left.max() < scallop + 0.12, f"left {left.max():.3f} mm on the dome"
     assert "ball)" in p.gcode(tps) and "TOOL/MILL,6, 3," in p.gcode(tps)
+
+
+def test_simplifier_never_strays_from_the_samples():
+    """Douglas-Peucker: every dropped point stays within tolerance of its replacement, even
+    along a long gentle curve where each point is close to its neighbours' chord."""
+    from syntexophobic.surface import _simplify
+    x = np.linspace(-50, 50, 1001)
+    z = 0.002 * x ** 2 / 10                      # sags 0.5 mm over 100 mm: gentle everywhere
+    pts = np.column_stack([x, np.zeros_like(x), z])
+    kept = np.asarray(_simplify(pts, tol=0.003))
+    assert len(kept) < len(pts) / 3
+    for px, py, pz in pts:                        # every sample is near the kept polyline
+        i = np.searchsorted(kept[:, 0], px)
+        a, b = kept[max(i - 1, 0)], kept[min(i, len(kept) - 1)]
+        t = 0 if b[0] == a[0] else (px - a[0]) / (b[0] - a[0])
+        assert abs(a[2] + t * (b[2] - a[2]) - pz) < 0.0031

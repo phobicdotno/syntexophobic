@@ -110,6 +110,11 @@ All notable changes to Syntexophobic. The format follows
 - Assemblies are sliced per solid, so touching or overlapping parts stay correct.
 
 ### Fixed
+- 3D finishing could cut up to 0.7 mm into gently curved surfaces: the point simplifier
+  compared each point only with its neighbour's chord, so on long gentle curves the
+  errors added up and whole passes became single straight moves. It is now
+  Douglas-Peucker (every dropped point within 3 µm of its replacement). Found by
+  simulating the full job on a real enclosure; a test with a long shallow curve guards it.
 - Hole detection no longer depends on how a face's orientation flag was set; it checks
   that the surface normal points at the hole's axis.
 - Roughing ignored the part when the first union of the forbidden area started empty, so
