@@ -281,7 +281,7 @@ def sketch_toolbar(view, on_finish) -> QWidget:
     for tb in (tools, cons):
         tb.setMovable(False)
     for key, text in (("select", "Select"), ("line", "Line"), ("rectangle", "Rectangle"),
-                      ("circle", "Circle"), ("arc", "Arc"), ("polygon", "Polygon"), ("slot", "Slot"),
+                      ("circle", "Circle"), ("arc", "Arc"), ("spline", "Spline"), ("polygon", "Polygon"), ("slot", "Slot"),
                       ("point", "Point"), ("trim", "Trim")):
         a = tools.addAction(text)
         a.setCheckable(True)
@@ -306,7 +306,7 @@ def sketch_toolbar(view, on_finish) -> QWidget:
     def toggle_construction():
         s = view.sketch
         for e in view.selected:
-            ent = s.lines.get(e) or s.circles.get(e) or s.arcs.get(e)
+            ent = s.lines.get(e) or s.circles.get(e) or s.arcs.get(e) or s.splines.get(e)
             if ent:
                 ent.construction = not ent.construction
         view.commit()

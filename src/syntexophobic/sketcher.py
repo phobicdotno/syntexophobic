@@ -73,6 +73,8 @@ class SketchView(QGraphicsView):
             return "point"
         if eid in s.lines:
             return "line"
+        if eid in s.splines:
+            return "spline"
         return "round"
 
     def px(self, n: float) -> float:
@@ -99,7 +101,19 @@ class SketchView(QGraphicsView):
             d = abs(math.hypot(pos.x() - ctr.x, pos.y() - ctr.y) - c.r)
             if d < bd:
                 best, bd = c.id, d
+        for sp in s.splines.values():
+            pts = self._spline_pts(sp.id)
+            for a, b in zip(pts, pts[1:]):
+                d = _seg_dist((pos.x(), pos.y()), a, b)
+                if d < bd:
+                    best, bd = sp.id, d
         return best
+
+    def _spline_pts(self, sid):
+        try:
+            return self.sketch.spline_samples(sid, 48)
+        except Exception:                 # points on top of each other: draw straight
+            return [(self.sketch.points[p].x, self.sketch.points[p].y) for p in self.sketch.splines[sid].points]
 
     def point_at(self, pos: QPointF) -> str:
         """Existing point under the cursor, or a new one there."""
@@ -122,6 +136,7 @@ class SketchView(QGraphicsView):
                           "arc": "Arc: click the centre, the start, then the end (counter-clockwise).",
                           "point": "Point: click to place.",
                           "polygon": "Polygon: click the centre, then a corner.",
+                          "spline": "Spline: click points; Enter or right-click ends it, clicking the first point closes it.",
                           "slot": "Slot: click both centre points, then the width.",
                           "trim": "Trim: click the piece of a line to remove."}.get(tool, tool))
         self.draw()
@@ -132,6 +147,7 @@ class SketchView(QGraphicsView):
             self._pan_from = ev.position()
             return
         if ev.button() == Qt.RightButton:
+            self.finish_spline()
             self.pending = []
             self.preview = None
             self.draw()
@@ -195,6 +211,15 @@ class SketchView(QGraphicsView):
                     s.slot(x0, y0, x1, y1, max(0.2, round(width, 3)))
                     self.commit()
             self.draw()
+        elif self.tool == "spline":
+            p = self.point_at(pos)
+            if len(self.pending) >= 3 and p == self.pending[0]:
+                s.spline(self.pending, closed=True)
+                self.pending = []
+                self.commit()
+            elif not self.pending or p != self.pending[-1]:
+                self.pending.append(p)
+                self.draw()
         elif self.tool == "trim":
             hit = self.at(pos)
             if hit in s.lines:
@@ -236,7 +261,16 @@ class SketchView(QGraphicsView):
         self.scale(f, f)
         self.draw()
 
+    def finish_spline(self) -> None:
+        if self.tool == "spline" and len(self.pending) >= 2:
+            self.sketch.spline(self.pending)
+            self.pending = []
+            self.commit()
+
     def keyPressEvent(self, ev):
+        if ev.key() in (Qt.Key_Return, Qt.Key_Enter):
+            self.finish_spline()
+            return
         if ev.key() == Qt.Key_Escape:
             if self.pending:
                 self.pending = []
@@ -441,6 +475,12 @@ class SketchView(QGraphicsView):
             path.arcMoveTo(rect, -t0)                    # Qt angles run clockwise with our Y-up flip
             path.arcTo(rect, -t0, -span)
             sc.addPath(path, pen(a.id, a.construction))
+        for sp in s.splines.values():
+            pts = self._spline_pts(sp.id)
+            path = QPainterPath(QPointF(*pts[0]))
+            for q in pts[1:]:
+                path.lineTo(QPointF(*q))
+            sc.addPath(path, pen(sp.id, sp.construction))
         r = self.px(3.2)
         for p in s.points.values():
             colour = SELECTED if p.id in self.selected else base

@@ -53,7 +53,7 @@ and press *Sketch on face* to draw on it.
 
 ![Sketch editor: fully constrained base sketch, the hole selected](docs/screenshots/sketch.png)
 
-Lines, rectangles, circles, arcs, polygons, slots and points on the XY, XZ or YZ plane
+Lines, rectangles, circles, arcs, splines, polygons, slots and points on the XY, XZ or YZ plane
 (with an offset). Corner fillet, offset, mirror and trim work on existing geometry.
 Clicking near a point reuses it. Constraints: coincident, horizontal, vertical, parallel,
 perpendicular, equal, tangent, concentric, midpoint, point on line/circle, fixed,
@@ -125,7 +125,7 @@ Slicing and simulation run through a pluggable backend with a numpy-compatible A
 
 ## Not there yet
 
-Splines, sketches on slanted faces, more 3D finishing strategies (waterline, scallop). See
+Sketches on slanted faces, more 3D finishing strategies (waterline, scallop). See
 [CHANGELOG.md](CHANGELOG.md) for what changed.
 
 Screenshots are made from `examples/demo-plate.step` and a small designed bracket by

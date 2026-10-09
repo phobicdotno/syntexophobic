@@ -69,6 +69,21 @@ def _normal(sk: Sketch) -> gp_Dir:
     return gp_Dir(*PLANES[sk.plane][2])
 
 
+def spline_curve(sk: Sketch, sp, to3d: bool = False):
+    """Interpolating cubic B-spline through the spline's points (2D, or placed in 3D)."""
+    from OCP.GeomAPI import GeomAPI_Interpolate
+    from OCP.collections import HArray1_gp_Pnt as TColgp_HArray1OfPnt
+    pts = [sk.points[p] for p in sp.points]
+    arr = TColgp_HArray1OfPnt(1, len(pts))
+    for i, p in enumerate(pts, 1):
+        arr.SetValue(i, _to3d(sk, p.x, p.y) if to3d else gp_Pnt(p.x, p.y, 0))
+    interp = GeomAPI_Interpolate(arr, bool(sp.closed), 1e-6)
+    interp.Perform()
+    if not interp.IsDone():
+        raise ModelError(f"Spline {sp.id} could not be built (points too close together?)")
+    return interp.Curve()
+
+
 def _edges(sk: Sketch, loop):
     P = sk.points
     out = []
@@ -81,6 +96,10 @@ def _edges(sk: Sketch, loop):
             ctr = P[c.center]
             circ = gp_Circ(gp_Ax2(_to3d(sk, ctr.x, ctr.y), _normal(sk)), c.r)
             out.append(BRepBuilderAPI_MakeEdge(circ).Edge())
+        elif seg[0] == "spline":
+            sp = sk.splines[seg[1]]
+            crv = spline_curve(sk, sp, to3d=True)
+            out.append(BRepBuilderAPI_MakeEdge(crv).Edge())
         else:
             a = sk.arcs[seg[1]]
             ctr, s, e = P[a.center], P[a.start], P[a.end]
@@ -90,26 +109,40 @@ def _edges(sk: Sketch, loop):
     return out
 
 
-def _loop_polygon(sk: Sketch, loop, n_arc: int = 32):
-    """2D polygon of a profile loop, for area and containment tests."""
+def _segment_points(sk: Sketch, seg, n: int):
     P = sk.points
-    pts = []
+    if seg[0] == "line":
+        return [(P[seg[1]].x, P[seg[1]].y), (P[seg[2]].x, P[seg[2]].y)]
+    if seg[0] == "spline":
+        return sk.spline_samples(seg[1], n)
+    if seg[0] == "circle":
+        c = sk.circles[seg[1]]
+        cx, cy = P[c.center].x, P[c.center].y
+        return [(cx + c.r * math.cos(2 * math.pi * k / n), cy + c.r * math.sin(2 * math.pi * k / n))
+                for k in range(n + 1)]
+    a = sk.arcs[seg[1]]
+    cx, cy = P[a.center].x, P[a.center].y
+    t0 = math.atan2(P[a.start].y - cy, P[a.start].x - cx)
+    t1 = math.atan2(P[a.end].y - cy, P[a.end].x - cx)
+    span = (t1 - t0) % (2 * math.pi) or 2 * math.pi
+    return [(cx + a.r * math.cos(t0 + span * k / n), cy + a.r * math.sin(t0 + span * k / n)) for k in range(n + 1)]
+
+
+def _loop_polygon(sk: Sketch, loop, n_arc: int = 32):
+    """2D polygon of a profile loop, for area and containment tests. Each segment is
+    turned around when needed so it continues from where the previous one ended."""
+    pts: list = []
     for seg in loop:
-        if seg[0] == "line":
-            pts.append((P[seg[1]].x, P[seg[1]].y))
-        elif seg[0] == "circle":
-            c = sk.circles[seg[1]]
-            cx, cy = P[c.center].x, P[c.center].y
-            pts += [(cx + c.r * math.cos(2 * math.pi * k / n_arc), cy + c.r * math.sin(2 * math.pi * k / n_arc))
-                    for k in range(n_arc)]
-        else:
-            a = sk.arcs[seg[1]]
-            cx, cy = P[a.center].x, P[a.center].y
-            t0 = math.atan2(P[a.start].y - cy, P[a.start].x - cx)
-            t1 = math.atan2(P[a.end].y - cy, P[a.end].x - cx)
-            span = (t1 - t0) % (2 * math.pi) or 2 * math.pi
-            pts += [(cx + a.r * math.cos(t0 + span * k / n_arc), cy + a.r * math.sin(t0 + span * k / n_arc))
-                    for k in range(n_arc)]
+        seg_pts = _segment_points(sk, seg, n_arc)
+        if pts and math.dist(pts[-1], seg_pts[-1]) < math.dist(pts[-1], seg_pts[0]):
+            seg_pts = seg_pts[::-1]
+        elif len(pts) == 0 and len(loop) > 1:
+            nxt = _segment_points(sk, loop[1], 2)
+            far = min(math.dist(seg_pts[0], q) for q in (nxt[0], nxt[-1]))
+            near = min(math.dist(seg_pts[-1], q) for q in (nxt[0], nxt[-1]))
+            if far < near:                   # the first segment's start touches the second
+                seg_pts = seg_pts[::-1]
+        pts += seg_pts[:-1] if len(loop) > 1 or seg[0] in ("circle", "spline") else seg_pts
     return pts
 
 

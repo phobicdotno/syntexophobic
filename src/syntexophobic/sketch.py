@@ -58,6 +58,16 @@ class Arc:
 
 
 @dataclass
+class Spline:
+    """Smooth curve through its points (interpolating cubic B-spline). closed: the curve
+    loops back to the first point smoothly."""
+    id: str
+    points: list[str]
+    closed: bool = False
+    construction: bool = False
+
+
+@dataclass
 class Constraint:
     type: str
     refs: list[str]
@@ -113,6 +123,7 @@ class Sketch:
     lines: dict[str, Line] = field(default_factory=dict)
     circles: dict[str, Circle] = field(default_factory=dict)
     arcs: dict[str, Arc] = field(default_factory=dict)
+    splines: dict[str, Spline] = field(default_factory=dict)
     constraints: list[Constraint] = field(default_factory=list)
     _next: int = 1
 
@@ -122,7 +133,7 @@ class Sketch:
         while True:
             i = f"{prefix}{self._next}"
             self._next += 1
-            if i not in self.points and i not in self.lines and i not in self.circles and i not in self.arcs:
+            if all(i not in d for d in (self.points, self.lines, self.circles, self.arcs, self.splines)):
                 return i
 
     def point(self, x: float, y: float, construction: bool = False) -> str:
@@ -153,6 +164,20 @@ class Sketch:
         a = Arc(self._id("a"), c, s, e, r, construction)
         self.arcs[a.id] = a
         return a.id
+
+    def spline(self, points, closed: bool = False, construction: bool = False) -> str:
+        """points: point ids or (x, y) tuples; at least 2 (3 when closed)."""
+        ids = [p if isinstance(p, str) else self.point(*p) for p in points]
+        sp = Spline(self._id("s"), ids, closed, construction)
+        self.splines[sp.id] = sp
+        return sp.id
+
+    def spline_samples(self, sid: str, n: int = 64) -> list[tuple[float, float]]:
+        """Points along a spline, from the same curve the 3D model uses."""
+        from .model import spline_curve
+        crv = spline_curve(self, self.splines[sid])
+        u0, u1 = crv.FirstParameter(), crv.LastParameter()
+        return [(lambda q: (q.X(), q.Y()))(crv.Value(u0 + (u1 - u0) * k / n)) for k in range(n + 1)]
 
     def rectangle(self, x0, y0, x1, y1) -> list[str]:
         """Four lines with coincident corners and horizontal/vertical constraints."""
@@ -383,7 +408,7 @@ class Sketch:
 
     def delete(self, eid: str) -> None:
         """Remove an entity (and the constraints and lines that use it)."""
-        for store in (self.lines, self.circles, self.arcs):
+        for store in (self.lines, self.circles, self.arcs, self.splines):
             store.pop(eid, None)
         if eid in self.points:
             del self.points[eid]
@@ -393,7 +418,11 @@ class Sketch:
                 del self.circles[c.id]
             for a in [a for a in self.arcs.values() if eid in (a.center, a.start, a.end)]:
                 del self.arcs[a.id]
-        alive = set(self.points) | set(self.lines) | set(self.circles) | set(self.arcs)
+            for sp in [sp for sp in self.splines.values() if eid in sp.points]:
+                sp.points.remove(eid)
+                if len(sp.points) < (3 if sp.closed else 2):
+                    del self.splines[sp.id]
+        alive = set(self.points) | set(self.lines) | set(self.circles) | set(self.arcs) | set(self.splines)
         self.constraints = [c for c in self.constraints
                             if all(r in alive or _is_number(r) for r in c.refs)]
 
@@ -611,6 +640,7 @@ class Sketch:
         """Closed loops of non-construction edges, as lists of ("line", a, b) / ("arc", id) /
         ("circle", id) segments, walked end to end. Open chains are ignored."""
         loops = [[("circle", c.id)] for c in self.circles.values() if not c.construction]
+        loops += [[("spline", sp.id)] for sp in self.splines.values() if sp.closed and not sp.construction]
         edges = []
         for ln in self.lines.values():
             if not ln.construction:
@@ -618,6 +648,9 @@ class Sketch:
         for a in self.arcs.values():
             if not a.construction:
                 edges.append((a.start, a.end, ("arc", a.id)))
+        for sp in self.splines.values():
+            if not sp.closed and not sp.construction:
+                edges.append((sp.points[0], sp.points[-1], ("spline", sp.id)))
         # merge coincident points so edges meet even when they use separate point ids
         same = {}
         for k in self.constraints:
@@ -652,6 +685,8 @@ class Sketch:
         Raises ValueError unless they form a single chain (open or closed)."""
         segs = [(l.a, l.b, ("line", l.a, l.b)) for l in self.lines.values() if not l.construction]
         segs += [(a.start, a.end, ("arc", a.id)) for a in self.arcs.values() if not a.construction]
+        segs += [(sp.points[0], sp.points[-1], ("spline", sp.id)) for sp in self.splines.values()
+                 if not sp.closed and not sp.construction]
         if not segs:
             raise ValueError(f"Sketch {self.name!r} has no lines or arcs for a path")
         degree: dict[str, int] = {}
@@ -686,7 +721,7 @@ class Sketch:
 
         out = ["[sketch]", f'name = "{self.name}"', f'plane = "{self.plane}"', f"offset = {self.offset!r}", ""]
         for table, items in (("points", self.points), ("lines", self.lines),
-                             ("circles", self.circles), ("arcs", self.arcs)):
+                             ("circles", self.circles), ("arcs", self.arcs), ("splines", self.splines)):
             for e in items.values():
                 out.append(f"[[{table}]]")
                 out += [f"{k} = {val(v)}" for k, v in vars(e).items() if not (k == "construction" and not v)]
@@ -710,9 +745,12 @@ class Sketch:
             sk.circles[c["id"]] = Circle(**c)
         for a in d.get("arcs", []):
             sk.arcs[a["id"]] = Arc(**a)
+        for sp in d.get("splines", []):
+            sk.splines[sp["id"]] = Spline(**sp)
         sk.constraints = [Constraint(**c) for c in d.get("constraints", [])]
         sk._next = 1 + max([int("".join(ch for ch in i if ch.isdigit()) or 0)
-                            for i in list(sk.points) + list(sk.lines) + list(sk.circles) + list(sk.arcs)] or [0])
+                            for i in list(sk.points) + list(sk.lines) + list(sk.circles) + list(sk.arcs)
+                            + list(sk.splines)] or [0])
         return sk
 
     def save(self, path: str | Path) -> None:

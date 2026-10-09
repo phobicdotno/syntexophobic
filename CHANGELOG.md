@@ -44,6 +44,9 @@ All notable changes to Syntexophobic. The format follows
   `model.toml` and re-found after a rebuild (within 0.75 mm), with a clear error when the
   geometry moved too far. The current feature's picks are highlighted.
 - **Sketch on face**: click a flat face square to X, Y or Z, then start a sketch on it.
+- Sketch **splines**: smooth curves through ordinary (constrainable) sketch points, open
+  or closed, built as OpenCascade interpolating B-splines and drawn from the same curve.
+  Spline tool in the editor (Enter / right-click ends, clicking the first point closes).
 - Sketch tools: corner **fillet** (tangent arc, the corner point is removed), regular
   **polygon** on a construction circle, **slot**, parametric **offset** of a closed chain
   (stays parallel and at its distance when the original changes), **mirror** across a line
@@ -114,6 +117,8 @@ All notable changes to Syntexophobic. The format follows
 - Assemblies are sliced per solid, so touching or overlapping parts stay correct.
 
 ### Fixed
+- Profile outlines used for hole detection follow each segment in its walking direction
+  (a line or spline used backwards no longer scrambles the outline).
 - 3D finishing could cut up to 0.7 mm into gently curved surfaces: the point simplifier
   compared each point only with its neighbour's chord, so on long gentle curves the
   errors added up and whole passes became single straight moves. It is now

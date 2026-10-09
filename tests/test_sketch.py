@@ -168,3 +168,27 @@ def test_mirror_and_trim():
     assert len(kept) == 2 and t.solve().ok
     spans = sorted(sorted((t._xy(t.lines[k].a)[0], t._xy(t.lines[k].b)[0])) for k in kept)
     assert spans == [pytest.approx([0, 10]), pytest.approx([20, 30])]
+
+
+def test_splines_closed_and_in_a_profile():
+    import numpy as np
+    sk = Sketch()
+    ring = [(10 * math.cos(2 * math.pi * k / 12), 10 * math.sin(2 * math.pi * k / 12)) for k in range(12)]
+    blob = sk.spline(ring, closed=True)
+    assert sk.solve().ok and len(sk.profiles()) == 1
+    assert abs(_volume(sk, 1) - math.pi * 100) < 0.005 * math.pi * 100      # a 12-point circle
+    # an open spline closing a shape with two lines, its points reversed in the loop
+    d = Sketch()
+    a, b = d.point(0, 0), d.point(40, 0)
+    d.line(a, b)
+    top = d.spline([(40, 20), (20, 28), (0, 20)])
+    d.line(b, d.splines[top].points[0])
+    d.line(d.splines[top].points[-1], a)
+    d.constrain("x", d.splines[top].points[1], value=20)
+    assert d.solve().ok and len(d.profiles()) == 1
+    v = _volume(d, 1)
+    assert 40 * 20 + 2 / 3 * 40 * 8 * 0.9 < v < 40 * 20 + 40 * 8                 # roughly a parabolic cap
+    text = d.dumps()
+    assert Sketch.loads(text).dumps() == text and "[[splines]]" in text
+    d.delete(d.splines[top].points[1])                                         # 2 points left: still a spline
+    assert top in d.splines and len(d.splines[top].points) == 2
