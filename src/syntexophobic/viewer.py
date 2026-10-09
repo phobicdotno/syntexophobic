@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import vtkmodules.vtkInteractionStyle  # noqa: F401  (registers interactor styles)
 import vtkmodules.vtkRenderingOpenGL2  # noqa: F401  (registers the OpenGL backend)
+from PySide6.QtCore import Signal
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 from vtkmodules.vtkCommonCore import vtkPoints
 from vtkmodules.vtkCommonDataModel import vtkCellArray, vtkPolyData
@@ -33,6 +34,8 @@ class FusionStyle(vtkInteractorStyleTrackballCamera):
     def __init__(self, renderer):
         super().__init__()
         self.ren = renderer
+        self.on_click = None          # callback(x, y, shift) for left clicks without dragging
+        self._press = None
         self._orbit = False
         self._pan = False
         self._last_middle = 0.0
@@ -60,10 +63,18 @@ class FusionStyle(vtkInteractorStyleTrackballCamera):
 
     def _left_down(self, obj, event):
         self._orbit = True
+        self._press = self.GetInteractor().GetEventPosition()
 
     def _release(self, obj, event):
         if self._pan:
             self.EndPan()
+        iren = self.GetInteractor()
+        press = getattr(self, "_press", None)
+        if self._orbit and press is not None and self.on_click:
+            x, y = iren.GetEventPosition()
+            if abs(x - press[0]) + abs(y - press[1]) <= 4:       # a click, not an orbit drag
+                self.on_click(x, y, bool(iren.GetShiftKey()))
+        self._press = None
         self._orbit = self._pan = False
 
     def _move(self, obj, event):
@@ -109,6 +120,8 @@ class FusionStyle(vtkInteractorStyleTrackballCamera):
 
 
 class Viewer(QVTKRenderWindowInteractor):
+    picked = Signal(str, object, bool)       # "edge" | "face" | "", (x, y, z) on it, shift held
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.ren = vtkRenderer()
@@ -117,6 +130,10 @@ class Viewer(QVTKRenderWindowInteractor):
         self.ren.GradientBackgroundOn()
         self.GetRenderWindow().AddRenderer(self.ren)
         self.style = FusionStyle(self.ren)
+        self.style.on_click = self._click
+        self._edges = self._highlight = None
+        self.shape = None
+        self.picking = False                # only pick while the Design workspace wants it
         self.GetRenderWindow().GetInteractor().SetInteractorStyle(self.style)
         self._model = self._stock = self._sim = None
         self._paths: list[vtkActor] = []
@@ -156,9 +173,85 @@ class Viewer(QVTKRenderWindowInteractor):
         prop.SetSpecular(0.25)
         prop.SetSpecularPower(30)
         self.ren.AddActor(self._model)
+        self.shape = shape
+        self._show_edges(shape)
+
+    def _show_edges(self, shape) -> None:
+        """Model edges as dark lines (CAD look); also what edge picking hits."""
+        if self._edges:
+            self.ren.RemoveActor(self._edges)
+        self.clear_highlight()
+        self._edge_polylines = geometry.edge_polylines(shape)
+        self._edges = self._lines_actor(self._edge_polylines, (0.10, 0.11, 0.13), 1.4)
+        self.ren.AddActor(self._edges)
+
+    def _lines_actor(self, polylines, colour, width):
+        pts, lines = vtkPoints(), vtkCellArray()
+        self._cell_edge = []
+        for ei, pl in enumerate(polylines):
+            ids = [pts.InsertNextPoint(p) for p in pl]
+            for a, b in zip(ids, ids[1:]):
+                lines.InsertNextCell(2, (a, b))
+                self._cell_edge.append(ei)
+        poly = vtkPolyData()
+        poly.SetPoints(pts)
+        poly.SetLines(lines)
+        mapper = vtkPolyDataMapper()
+        mapper.SetInputData(poly)
+        mapper.SetResolveCoincidentTopologyToPolygonOffset()
+        actor = vtkActor()
+        actor.SetMapper(mapper)
+        actor.GetProperty().SetColor(*colour)
+        actor.GetProperty().SetLineWidth(width)
+        actor.GetProperty().LightingOff()
+        return actor
+
+    # ---- picking ------------------------------------------------------------------------
+
+    def _click(self, x: int, y: int, shift: bool) -> None:
+        if not self.picking or self.shape is None:
+            return
+        kind, point = self.pick_at(x, y)
+        self.picked.emit(kind, point, shift)
+
+    def pick_at(self, x: int, y: int):
+        """("edge" | "face" | "", world point) under display position (x, y). Edges win
+        when the click is within a few pixels of one."""
+        from vtkmodules.vtkRenderingCore import vtkCellPicker
+        picker = vtkCellPicker()
+        picker.PickFromListOn()
+        if self._edges:
+            picker.AddPickList(self._edges)
+            picker.SetTolerance(0.006)
+            if picker.Pick(x, y, 0, self.ren) and picker.GetActor() is self._edges:
+                return "edge", tuple(picker.GetPickPosition())
+        picker = vtkCellPicker()
+        picker.PickFromListOn()
+        if self._model:
+            picker.AddPickList(self._model)
+            picker.SetTolerance(0.0005)
+            if picker.Pick(x, y, 0, self.ren) and picker.GetActor() is self._model:
+                return "face", tuple(picker.GetPickPosition())
+        return "", None
+
+    def highlight(self, edges=(), faces=()) -> None:
+        """Draw the given OCC edges and faces in the selection colour."""
+        self.clear_highlight()
+        polylines = [geometry.edge_polylines(e)[0] for e in edges]
+        for f in faces:
+            polylines += geometry.edge_polylines(f)          # outline the face
+        if polylines:
+            self._highlight = self._lines_actor(polylines, (1.0, 0.69, 0.23), 4.0)
+            self.ren.AddActor(self._highlight)
+        self.GetRenderWindow().Render()
+
+    def clear_highlight(self) -> None:
+        if self._highlight:
+            self.ren.RemoveActor(self._highlight)
+            self._highlight = None
 
     def clear_model(self) -> None:
-        for name in ("_model", "_stock"):
+        for name in ("_model", "_stock", "_edges", "_highlight"):
             actor = getattr(self, name)
             if actor:
                 self.ren.RemoveActor(actor)
@@ -268,8 +361,9 @@ class Viewer(QVTKRenderWindowInteractor):
             self._sim = None
 
     def set_model_visible(self, on: bool) -> None:
-        if self._model:
-            self._model.SetVisibility(on)
+        for actor in (self._model, self._edges):
+            if actor:
+                actor.SetVisibility(on)
             self.GetRenderWindow().Render()
 
     # ---- camera ---------------------------------------------------------------------

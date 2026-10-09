@@ -162,15 +162,33 @@ def sketch_faces(sk: Sketch) -> list:
 # ---- selectors -----------------------------------------------------------------------------
 
 def _items(shape, kind):
-    """Unique edges or faces (the explorer visits a shared edge once per face)."""
-    out = []
-    exp = TopExp_Explorer(shape, kind)
-    while exp.More():
-        item = TopoDS.Edge(exp.Current()) if kind == TopAbs_EDGE else TopoDS.Face(exp.Current())
-        if not any(item.IsSame(o) for o in out):
-            out.append(item)
-        exp.Next()
-    return out
+    """Unique edges or faces."""
+    return geometry.unique(shape, kind)
+
+
+PICK_TOL = 0.75     # mm: how far a stored @x,y,z pick may be from the edge or face it means
+
+
+def _nearest(items, point):
+    """The item closest to point, if it is within PICK_TOL."""
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeVertex
+    from OCP.BRepExtrema import BRepExtrema_DistShapeShape
+    v = BRepBuilderAPI_MakeVertex(gp_Pnt(*point)).Vertex()
+    best, bd = None, PICK_TOL
+    for it in items:
+        d = BRepExtrema_DistShapeShape(v, it)
+        if d.IsDone() and d.Value() < bd:
+            best, bd = it, d.Value()
+    return best
+
+
+def _picks(selector: str):
+    """'@1,2,3;@4,5,6' -> [(1, 2, 3), (4, 5, 6)]"""
+    return [tuple(float(v) for v in tok.strip()[1:].split(",")) for tok in selector.split(";") if tok.strip()]
+
+
+def pick_token(point) -> str:
+    return "@" + ",".join(f"{v:.3f}".rstrip("0").rstrip(".") for v in point)
 
 
 AXES = {"X": 0, "Y": 1, "Z": 2}
@@ -178,6 +196,15 @@ AXES = {"X": 0, "Y": 1, "Z": 2}
 
 def select_edges(shape, selector: str) -> list:
     edges = _items(shape, TopAbs_EDGE)
+    if selector.strip().startswith("@"):                    # picked in the 3D view
+        found = []
+        for pt in _picks(selector):
+            e = _nearest(edges, pt)
+            if e is None:
+                raise ModelError(f"No edge near {pt} any more; pick the edges again")
+            if not any(e.IsSame(x) for x in found):
+                found.append(e)
+        return found
     result = None
     for part in selector.split("&"):
         part = part.strip()
@@ -214,7 +241,16 @@ def select_edges(shape, selector: str) -> list:
 
 
 def select_faces(shape, selector: str) -> list:
-    """>Z: the planar face(s) furthest along +Z; <Z the furthest along -Z."""
+    """>Z: the planar face(s) furthest along +Z; <Z the furthest along -Z; @x,y,z picks."""
+    if selector.strip().startswith("@"):
+        faces = _items(shape, TopAbs_FACE)
+        found = []
+        for pt in _picks(selector):
+            f = _nearest(faces, pt)
+            if f is None:
+                raise ModelError(f"No face near {pt} any more; pick the faces again")
+            found.append(f)
+        return found
     sign, k = (1 if selector[0] == ">" else -1), AXES[selector[1:]]
     best, faces = None, []
     for f in _items(shape, TopAbs_FACE):

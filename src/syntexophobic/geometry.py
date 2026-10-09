@@ -246,14 +246,51 @@ def find_holes(shape: TopoDS_Shape) -> list[Hole]:
     return sorted(holes, key=lambda h: (h.y, h.x))
 
 
-def mesh(shape: TopoDS_Shape, deflection: float = 0.1):
-    """Triangle mesh for display: (vertices [(x,y,z)], triangles [(i,j,k)])."""
+def unique(shape: TopoDS_Shape, kind) -> list:
+    """Edges or faces of a shape, each once (explorers visit shared edges once per face)."""
+    from OCP.collections import IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher as ShapeMap
+    from OCP.TopExp import TopExp
+    m = ShapeMap()
+    TopExp.MapShapes_s(shape, kind, m)
+    cast = TopoDS.Edge if kind == TopAbs_EDGE else TopoDS.Face
+    return [cast(m.FindKey(i)) for i in range(1, m.Extent() + 1)]
+
+
+def edge_polylines(shape: TopoDS_Shape) -> list[list[tuple[float, float, float]]]:
+    """Every edge as a 3D polyline, in unique() order (for drawing and picking)."""
+    out = []
+    for e in unique(shape, TopAbs_EDGE):
+        c = BRepAdaptor_Curve(e)
+        u0, u1 = c.FirstParameter(), c.LastParameter()
+        n = 1 if c.GetType() == GeomAbs_Line else 48
+        out.append([(lambda p: (p.X(), p.Y(), p.Z()))(c.Value(u0 + (u1 - u0) * k / n)) for k in range(n + 1)])
+    return out
+
+
+def edge_midpoint(edge) -> tuple[float, float, float]:
+    c = BRepAdaptor_Curve(edge)
+    p = c.Value((c.FirstParameter() + c.LastParameter()) / 2)
+    return p.X(), p.Y(), p.Z()
+
+
+def face_point(face) -> tuple[float, float, float]:
+    """A point on the face (its surface at the middle of its parameter range)."""
+    s = BRepAdaptor_Surface(face)
+    p = s.Value((s.FirstUParameter() + s.LastUParameter()) / 2, (s.FirstVParameter() + s.LastVParameter()) / 2)
+    return p.X(), p.Y(), p.Z()
+
+
+def mesh(shape: TopoDS_Shape, deflection: float = 0.1, face_ids: list | None = None):
+    """Triangle mesh for display: (vertices [(x,y,z)], triangles [(i,j,k)]).
+
+    Pass a list as face_ids to receive, per triangle, the index of its face in
+    unique(shape, TopAbs_FACE), for picking.
+    """
     BRepMesh_IncrementalMesh(shape, deflection, False, 0.5, True)
     verts: list[tuple[float, float, float]] = []
     tris: list[tuple[int, int, int]] = []
-    exp = TopExp_Explorer(shape, TopAbs_FACE)
-    while exp.More():
-        face = TopoDS.Face(exp.Current())
+    faces = unique(shape, TopAbs_FACE)
+    for fi, face in enumerate(faces):
         loc = TopLoc_Location()
         tri = BRep_Tool.Triangulation_s(face, loc)
         if tri is not None:
@@ -267,7 +304,8 @@ def mesh(shape: TopoDS_Shape, deflection: float = 0.1):
                 t = tri.Triangle(i)
                 a, b, c = (t.Value(k) - 1 + base for k in (1, 2, 3))
                 tris.append((a, c, b) if flip else (a, b, c))
-        exp.Next()
+                if face_ids is not None:
+                    face_ids.append(fi)
     return verts, tris
 
 

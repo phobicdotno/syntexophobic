@@ -17,6 +17,12 @@ All notable changes to Syntexophobic. The format follows
   join, cut or intersect; linear and circular patterns; fillet, chamfer, shell and mirror.
   Edges and faces are chosen with short selectors (`|Z`, `#Z`, `>Z`, `<Z`, `%CIRCLE`,
   `A&B`) that stay valid when the design changes. STEP export.
+- Picking in the 3D view: model edges are drawn; clicking (without dragging) picks the
+  edge or face under the cursor. With a fillet or chamfer selected, clicks add or remove
+  its edges; with a shell, its open faces. Picks are stored as `@x,y,z` points in
+  `model.toml` and re-found after a rebuild (within 0.75 mm), with a clear error when the
+  geometry moved too far. The current feature's picks are highlighted.
+- **Sketch on face**: click a flat face square to X, Y or Z, then start a sketch on it.
 - Sketch tools: corner **fillet** (tangent arc, the corner point is removed), regular
   **polygon** on a construction circle, **slot**, parametric **offset** of a closed chain
   (stays parallel and at its distance when the original changes), **mirror** across a line

@@ -114,3 +114,25 @@ def test_designed_part_goes_through_cam(tmp_path):
     part.save(folder)
     p.reload()
     assert abs(p.setup().flats[0] - 10.0) < 1e-6 or 10.0 in p.setup().flats
+
+
+def test_picked_edges_and_faces_survive_a_rebuild():
+    from syntexophobic.model import pick_token, select_faces
+    base = Sketch()
+    ls = base.rectangle(0, 0, 40, 30)
+    width = base.constrain("distance", ls[0], value=40)
+    base.constrain("fixed", base.lines[ls[0]].a)
+    picks = ";".join(pick_token(p) for p in [(0, 0, 5), (40, 30, 5)])      # two vertical corner edges
+    part = Part("Box", [Feature("extrude", sketch="base", distance=10),
+                        Feature("fillet", radius=4, edges=picks),
+                        Feature("shell", faces=pick_token((20, 15, 10)), thickness=1.5)], {"base": base})
+    v1 = volume(part.build())
+    plain = 40 * 30 * 10
+    rounded = plain - 2 * (16 - math.pi * 4) * 10
+    assert abs(volume(part.build(2)) - rounded) < 1e-3                      # only the two picked corners
+    assert v1 < rounded and len(select_faces(part.build(1), pick_token((20, 15, 10)))) == 1
+    next(k for k in base.constraints if k.id == width).value = 40.4         # small design change
+    assert abs(volume(part.build(2)) - (rounded + 0.4 * 30 * 10)) < 1e-2    # same corners still found
+    next(k for k in base.constraints if k.id == width).value = 60          # the edge moved far away
+    with pytest.raises(ModelError, match="pick the edges again"):
+        part.build(2)

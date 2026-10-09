@@ -34,12 +34,14 @@ class DesignPanel(QWidget):
     changed = Signal()
     edit_sketch = Signal(str)
     status = Signal(str)
+    selection = Signal(object)      # current feature (or None): the window highlights its picks
 
     def __init__(self, parent=None):
         super().__init__(parent)
         from .app import DataForm, CHOICES, HIDDEN, LABELS      # shared typed form
         self._DataForm = DataForm
         self.part: Part | None = None
+        self.picked_face = None          # (x, y, z) of the last face clicked with no feature using it
         col = QVBoxLayout(self)
 
         box = QGroupBox("Features (built top to bottom)")
@@ -50,7 +52,8 @@ class DesignPanel(QWidget):
         bl.addWidget(self.l_features)
         grid = QGridLayout()
         for i, (text, slot) in enumerate((
-                ("New sketch…", self.new_sketch), ("Extrude", lambda: self.add("extrude")),
+                ("New sketch…", self.new_sketch), ("Sketch on face", self.sketch_on_face),
+                ("Extrude", lambda: self.add("extrude")),
                 ("Revolve", lambda: self.add("revolve")), ("Fillet", lambda: self.add("fillet")),
                 ("Chamfer", lambda: self.add("chamfer")), ("Shell", lambda: self.add("shell")),
                 ("Mirror", lambda: self.add("mirror")), ("Edit sketch", self.open_sketch),
@@ -95,6 +98,80 @@ class DesignPanel(QWidget):
         self.form.set(f, FEATURE_FIELDS.get(f.type) if f else None)
         if f is not None and f.type in ("extrude", "revolve"):
             self._sketch_combo(f)
+        self.selection.emit(f)
+
+    def current(self) -> Feature | None:
+        row = self.l_features.currentRow()
+        feats = self.part.features if self.part else []
+        return feats[row] if 0 <= row < len(feats) else None
+
+    def picked(self, kind: str, point, shift: bool) -> None:
+        """A click in the 3D view: edges for fillet/chamfer, faces for shell, else a face
+        to sketch on."""
+        from .model import pick_token
+        f = self.current()
+        if not kind:
+            return
+        if f is not None and kind == "edge" and f.type in ("fillet", "chamfer"):
+            self._toggle(f, "edges", pick_token(point))
+        elif f is not None and kind == "face" and f.type == "shell":
+            self._toggle(f, "faces", pick_token(point))
+        elif kind == "face":
+            self.picked_face = point
+            self.status.emit("Face selected. Press Sketch on face to draw on it.")
+            self.selection.emit(("face", point))
+
+    def _toggle(self, f: Feature, attr: str, token: str) -> None:
+        from .model import _picks
+        current = getattr(f, attr)
+        tokens = [t.strip() for t in current.split(";") if t.strip().startswith("@")]
+        new_pt = _picks(token)[0]
+        near = [t for t in tokens if max(abs(a - b) for a, b in zip(_picks(t)[0], new_pt)) < 0.75]
+        tokens = [t for t in tokens if t not in near] if near else tokens + [token]
+        setattr(f, attr, ";".join(tokens) or ("|Z" if attr == "edges" else ">Z"))
+        self.form.set(f, FEATURE_FIELDS.get(f.type))
+        self._edited()
+        self.selection.emit(f)
+        self.status.emit(f"{len(tokens)} {attr} picked. Click again to remove one.")
+
+    def sketch_on_face(self) -> None:
+        """New sketch on the picked planar face (faces facing along X, Y or Z)."""
+        if self.picked_face is None:
+            self.status.emit("Click a flat face in the 3D view first.")
+            return
+        from OCP.BRepAdaptor import BRepAdaptor_Surface
+        from OCP.GeomAbs import GeomAbs_Plane
+        from OCP.TopAbs import TopAbs_FACE
+        from .model import _nearest
+        from . import geometry
+        try:
+            shape = self.part.build()
+        except ModelError as e:
+            self.status.emit(str(e))
+            return
+        face = _nearest(geometry.unique(shape, TopAbs_FACE), self.picked_face)
+        surf = BRepAdaptor_Surface(face) if face is not None else None
+        if surf is None or surf.GetType() != GeomAbs_Plane:
+            self.status.emit("Sketch on face needs a flat face.")
+            return
+        d = surf.Plane().Axis().Direction()
+        normal = (d.X(), d.Y(), d.Z())
+        axis = max(range(3), key=lambda i: abs(normal[i]))
+        if abs(normal[axis]) < 0.999:
+            self.status.emit("Only faces square to X, Y or Z can be sketched on for now.")
+            return
+        plane = {2: "XY", 1: "XZ", 0: "YZ"}[axis]
+        # offset along the plane's own normal (XZ's normal points to -Y)
+        sign = {"XY": 1, "XZ": -1, "YZ": 1}[plane]
+        offset = sign * self.picked_face[axis]
+        n = 1
+        while f"sketch{n}" in self.part.sketches:
+            n += 1
+        name = f"sketch{n}"
+        self.part.sketches[name] = Sketch(name=name, plane=plane, offset=round(offset, 6))
+        self.picked_face = None
+        self.changed.emit()
+        self.edit_sketch.emit(name)
 
     def _sketch_combo(self, f: Feature) -> None:
         """Replace the free-text sketch field with a list of the part's sketches."""

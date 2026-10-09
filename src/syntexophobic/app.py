@@ -414,6 +414,8 @@ class MainWindow(QMainWindow):
         self.design_panel = DesignPanel()
         self.design_panel.changed.connect(self._design_changed)
         self.design_panel.edit_sketch.connect(self.open_sketch)
+        self.design_panel.selection.connect(self._show_selection)
+        self.viewer.picked.connect(lambda k, p, sh: self.design_panel.picked(k, p, sh))
         self.design_note = QLabel("This project machines an imported STEP file.\n"
                                   "Use File > New design… to model a part here.")
         self.design_note.setWordWrap(True)
@@ -426,8 +428,33 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.LeftDockWidgetArea, dock)
         self.design_dock = dock
 
+    def _show_selection(self, item):
+        """Highlight what the current feature uses (picked edges / faces) or a picked face."""
+        from .model import ModelError, select_edges, select_faces
+        from OCP.TopAbs import TopAbs_FACE
+        self.viewer.clear_highlight()
+        if self.part is None or item is None:
+            self.viewer.refresh()
+            return
+        try:
+            if isinstance(item, tuple):
+                from .model import _nearest
+                face = _nearest(geometry.unique(self.part.build(), TopAbs_FACE), item[1])
+                self.viewer.highlight(faces=[face] if face is not None else [])
+                return
+            row = self.part.features.index(item)
+            if item.type in ("fillet", "chamfer") and item.edges.startswith("@"):
+                self.viewer.highlight(edges=select_edges(self.part.build(row), item.edges))
+            elif item.type == "shell" and item.faces.startswith("@"):
+                self.viewer.highlight(faces=select_faces(self.part.build(row), item.faces))
+            else:
+                self.viewer.refresh()
+        except (ModelError, ValueError) as e:
+            self.status.setText(str(e))
+
     def set_workspace(self, name: str):
         design = name == "Design"
+        self.viewer.picking = design
         self.design_dock.setVisible(design)
         self.job_dock.setVisible(not design)
         for a in (self.a_generate, self.a_simulate, self.a_export, self.c_paths, self.c_rapids):
