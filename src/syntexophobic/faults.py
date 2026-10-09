@@ -30,6 +30,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from .automation import STATE
+from .update import token  # the same GitHub login the update check uses
 
 REPO = "phobicdotno/syntexophobic"
 API = f"https://api.github.com/repos/{REPO}"
@@ -258,31 +259,6 @@ def _indent(text: str) -> str:
 
 
 # ---- GitHub ---------------------------------------------------------------------------------
-
-def _run(cmd: list[str], stdin: str | None = None) -> str:
-    try:
-        return subprocess.run(cmd, input=stdin, capture_output=True, text=True, timeout=10,
-                              env={**os.environ, "GIT_TERMINAL_PROMPT": "0"}).stdout
-    except (OSError, subprocess.SubprocessError):
-        return ""
-
-
-def token() -> str:
-    """A GitHub token from the environment, the gh login, or git's stored credentials."""
-    for var in ("SYNTEXOPHOBIC_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"):
-        if os.environ.get(var):
-            return os.environ[var]
-    if shutil.which("gh"):
-        t = _run(["gh", "auth", "token", "--hostname", "github.com"]).strip()
-        if t:
-            return t
-    if shutil.which("git"):
-        out = _run(["git", "credential", "fill"], "protocol=https\nhost=github.com\n\n")
-        for line in out.splitlines():
-            if line.startswith("password="):
-                return line.split("=", 1)[1]
-    return ""
-
 
 class GitHub:
     """The few REST calls a report needs, with a token, or through the `gh` command."""
