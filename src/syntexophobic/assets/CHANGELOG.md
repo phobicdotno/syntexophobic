@@ -3,7 +3,7 @@
 Each release has a version and a build number; Help → About shows a one-line summary of
 every release, read from this file.
 
-## Unreleased
+## v0.6.2 (build 9) — 2026-10-09
 
 **Fixes**
 - Full screen and maximize work: with the Design and Job panels both open at start, the
