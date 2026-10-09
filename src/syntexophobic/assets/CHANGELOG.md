@@ -72,6 +72,17 @@ every release, read from this file.
   end out of its slot is no longer reported as a rapid into stock (a full-diameter flat
   cylinder "hit" the groove walls); moving sideways at depth still is.
 
+**Updates**
+- An *Update available* bar above the view when GitHub has a newer release: what changed
+  (*What's new* shows the release notes), *Update*, *Skip this version*, or ✕ until the next
+  start. In the AppImage, *Update* downloads the new AppImage next to the running one and
+  points `~/Applications/Syntexophobic.AppImage` at it, then *Restart now*; the old file is
+  kept. Otherwise it shows the command that updates (`uv tool upgrade`, or `git pull` in a
+  clone). Checked at start and every 6 hours (Help → *Check for updates at start*), or with
+  Help → *Check for updates…*. The repository is private, so it asks with your GitHub login
+  (`GH_TOKEN`/`GITHUB_TOKEN`, `gh auth login`, or the token git stores for github.com);
+  without one it stays quiet.
+
 **Interface**
 - Playback draws the cutter in its own shape: flat, ball end, or a V-bit's cone.
 
@@ -79,6 +90,8 @@ every release, read from this file.
 - Exporting a design as STEP no longer prints OpenCascade's transfer statistics.
 
 **Testing**
+- Updates: version order, drafts and pre-releases left out, no access, a cut download, the
+  link moved to the new AppImage, the bar's skip / hide / installed states.
 - Import: an STL as a body, a STEP cutting it, the saved project rebuilt and machined.
 - Single-line text: cap height, every stroke engraved exactly once.
 - Engrave: on the lines, depth, no lifts on open lines, only the band cut; rapids with

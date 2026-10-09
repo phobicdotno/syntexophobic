@@ -224,7 +224,15 @@ class MainWindow(QMainWindow):
         self.viewer = Viewer(self)
         self.stack = QStackedWidget()
         self.stack.addWidget(self.viewer)
-        self.setCentralWidget(self.stack)
+        from .update_ui import UpdateBar
+        self.update_bar = UpdateBar(pool=self.pool)
+        central = QWidget()
+        lay = QVBoxLayout(central)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        lay.addWidget(self.update_bar)
+        lay.addWidget(self.stack, 1)
+        self.setCentralWidget(central)
         self.part = None                     # the designed Part when the project has model.toml
         self.sketch_page = None
         self._rebuild_timer = QTimer(self)
@@ -247,6 +255,7 @@ class MainWindow(QMainWindow):
         self.spacemouse.connected.connect(self._space_status)
         self._space_status(self.spacemouse.is_connected)
         self.design_panel.status.connect(self.status.setText)
+        self.update_bar.changed.connect(self.status.setText)
         self._start_control_server()
         self.set_workspace(self.c_workspace.currentText())   # one of the Design / Job docks, not both
         self._enable(False)
@@ -265,6 +274,12 @@ class MainWindow(QMainWindow):
         m_file, m_edit = bar.addMenu("&File"), bar.addMenu("&Edit")
         m_paths, m_view = bar.addMenu("&Toolpaths"), bar.addMenu("&View")
         m_help = bar.addMenu("&Help")
+        m_help.addAction("Check for &updates…", lambda: self.update_bar.check(quiet=False))
+        self.a_auto_update = m_help.addAction("Check for updates at start")
+        self.a_auto_update.setCheckable(True)
+        self.a_auto_update.setChecked(QSettings().value("update/auto", True, type=bool))
+        self.a_auto_update.toggled.connect(lambda on: QSettings().setValue("update/auto", on))
+        m_help.addSeparator()
         m_help.addAction("&About Syntexophobic", lambda: __import__("syntexophobic.about", fromlist=["x"]).dialog(self).exec())
         self.a_undo = m_edit.addAction("Undo")
         self.a_undo.setShortcut(QKeySequence.Undo)
@@ -1372,4 +1387,9 @@ def run(path: str | None = None) -> int:
     win.show()
     if path:
         win.load_path(path)
+    if win.a_auto_update.isChecked():       # quietly: nothing shows unless there is a new version
+        QTimer.singleShot(3000, win.update_bar.check)
+        recheck = QTimer(win)
+        recheck.timeout.connect(win.update_bar.check)
+        recheck.start(6 * 3600 * 1000)
     return app.exec()

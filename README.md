@@ -22,6 +22,13 @@ chmod +x Syntexophobic-*-x86_64.AppImage
 It carries its own Python and libraries (x86-64 Linux; the window needs X11 or XWayland).
 Build it from a clone with `./tools/build-appimage.sh` (writes `dist/`).
 
+**Updates:** when a newer release is on GitHub, a bar above the view says so, with what's new.
+In the AppImage, *Update* downloads the new one next to it and points
+`~/Applications/Syntexophobic.AppImage` (the link a menu entry should start) at it. The
+repository is private, so the check uses your GitHub login: `gh auth login`, `GH_TOKEN`, or
+the token git keeps for github.com. Without one it stays quiet; Help → *Check for updates…*
+says why.
+
 **As a Python tool** (not an npm package), with [uv](https://docs.astral.sh/uv/):
 
 ```sh
