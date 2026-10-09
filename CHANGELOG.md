@@ -52,6 +52,9 @@ All notable changes to Syntexophobic. The format follows
   it. Sketch planes can be custom (origin, X direction, normal, stored in the sketch
   file); faces square to an axis still become XY / XZ / YZ with an offset. The normal
   points out of the material, so a positive extrude adds and a negative one cuts.
+- **Hole** feature: simple, counterbore or 90° countersink holes on every free point of
+  a sketch, drilled along the sketch normal into the material; blind (depth) or through.
+  The CAM side finds them as holes for drilling.
 - **Parameters**: named values and expressions (`width = 80`, `depth = width / 4 - wall`)
   in `model.toml`, usable in sketch dimensions and feature values (distance, angle,
   radius, thickness, pattern count and spacing). Change one and the part follows.

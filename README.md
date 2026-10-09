@@ -43,6 +43,7 @@ A part is a list of features in `model.toml`, built top to bottom:
 | **Fillet**, **Chamfer** | radius or distance, edge selector |
 | **Shell** | wall thickness, faces to open |
 | **Mirror** | YZ, XZ or XY plane |
+| **Hole** | simple, counterbore or countersink on every free point of a sketch, blind or through |
 
 **Parameters** (`width = 80`, `wall = 2.5`, `depth = width / 4 - wall`) can be used in
 sketch dimensions and in feature values; change one and the whole part follows.

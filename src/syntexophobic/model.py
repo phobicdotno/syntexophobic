@@ -329,13 +329,19 @@ class Feature:
     faces: str = ">Z"            # shell: faces to open
     thickness: float = 2.0       # shell (negative = outward)
     plane: str = "YZ"            # mirror: through the origin
+    hole: str = "simple"         # hole: simple | counterbore | countersink
+    diameter: float = 5.0        # hole
+    depth: float = 10.0          # hole (0 = through everything)
+    head_diameter: float = 9.0   # hole: counterbore / countersink diameter
+    head_depth: float = 5.0      # hole: counterbore depth (countersink: from the 90° angle)
     count: int = 1               # pattern of this feature's tool body (extrude / revolve)
     spacing: float = 10.0        # linear pattern step, along `direction`
     direction: str = "X"         # X | Y | Z, or "circular" (about Z through the origin)
     suppressed: bool = False
 
 
-NUMERIC = ("distance", "angle", "radius", "thickness", "spacing", "count")
+NUMERIC = ("distance", "angle", "radius", "thickness", "spacing", "count", "diameter", "depth",
+           "head_diameter", "head_depth")
 
 
 @dataclass
@@ -439,6 +445,46 @@ class Part:
             raise ModelError("Sweep failed: check the profile sits at one end of the path")
         return pipe.Shape()
 
+    def _hole_tools(self, f: Feature, shape):
+        """One cutting body per sketch point (points not used by any line, arc or circle)."""
+        from OCP.BRepPrimAPI import BRepPrimAPI_MakeCone, BRepPrimAPI_MakeCylinder
+        sk = self._solved(f.sketch)
+        used = {p for l in sk.lines.values() for p in (l.a, l.b)}
+        used |= {p for a in sk.arcs.values() for p in (a.center, a.start, a.end)}
+        used |= {c.center for c in sk.circles.values()}
+        used |= {p for sp in sk.splines.values() for p in sp.points}
+        centres = [p for pid, p in sk.points.items() if pid not in used and not p.construction]
+        if not centres:
+            raise ModelError(f"Hole: sketch {f.sketch!r} has no free points to put holes on")
+        _, _, _, n = sk.frame()
+        down = gp_Dir(*(-c for c in n))                 # into the material
+        if f.depth > 0:
+            depth = f.depth
+        else:                                           # through: as deep as the part is big
+            b = geometry.bounding_box(shape)
+            depth = 2 * math.dist((b.xmin, b.ymin, b.zmin), (b.xmax, b.ymax, b.zmax)) + 1
+        r = f.diameter / 2
+        tools = []
+        for p in centres:
+            top = _to3d(sk, p.x, p.y)
+            # start a little above the face so the cut never leaves a skin
+            lift = gp_Vec(*(0.01 * c for c in n))
+            start = top.Translated(lift)
+            body = BRepPrimAPI_MakeCylinder(gp_Ax2(start, down), r, depth + 0.01).Shape()
+            if f.hole == "counterbore":
+                head = BRepPrimAPI_MakeCylinder(gp_Ax2(start, down), f.head_diameter / 2, f.head_depth + 0.01).Shape()
+                body = BRepAlgoAPI_Fuse(body, head).Shape()
+            elif f.hole == "countersink":
+                # 90° countersink: the cone narrows from head_diameter to the hole diameter
+                h = (f.head_diameter - f.diameter) / 2
+                cone = BRepPrimAPI_MakeCone(gp_Ax2(start, down), f.head_diameter / 2 + 0.01, r, h + 0.01).Shape()
+                body = BRepAlgoAPI_Fuse(body, cone).Shape()
+            tools.append(body)
+        out = tools[0]
+        for t in tools[1:]:
+            out = BRepAlgoAPI_Fuse(out, t).Shape()
+        return out
+
     def _tool_body(self, f: Feature):
         if f.type == "loft":
             return self._loft(f)
@@ -493,6 +539,8 @@ class Part:
             return op(shape, body).Shape()
         if shape is None:
             raise ModelError(f"{f.type} needs a body before it")
+        if f.type == "hole":
+            return BRepAlgoAPI_Cut(shape, self._hole_tools(f, shape)).Shape()
         if f.type in ("fillet", "chamfer"):
             edges = select_edges(shape, f.edges)
             if not edges:

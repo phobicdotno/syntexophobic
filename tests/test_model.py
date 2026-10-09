@@ -375,3 +375,31 @@ def test_parameters_drive_sketch_and_features(tmp_path):
     part.parameters["thick"] = "missing * 2"
     with pytest.raises(ModelError, match="Unknown parameter"):
         part.build()
+
+
+def test_hole_feature_simple_counterbore_countersink():
+    base = Sketch()
+    base.rectangle(0, 0, 60, 20)
+    top = Sketch(offset=10)                       # points on the top face
+    for x in (10, 30, 50):
+        top.point(x, 10)
+
+    def made(**kw):
+        part = Part("Plate", [Feature("extrude", sketch="base", distance=10),
+                              Feature("hole", sketch="top", **kw)], {"base": base, "top": top})
+        return part.build()
+
+    plain = 60 * 20 * 10
+    through = made(diameter=5, depth=0)
+    assert abs(volume(through) - (plain - 3 * math.pi * 2.5 ** 2 * 10)) < 1e-2
+    assert sorted((h.x, h.diameter) for h in geometry.find_holes(through)) == [(10, 5), (30, 5), (50, 5)]
+    blind = made(diameter=5, depth=6)
+    assert abs(volume(blind) - (plain - 3 * math.pi * 2.5 ** 2 * 6)) < 1e-2
+    cb = made(hole="counterbore", diameter=5, depth=0, head_diameter=9, head_depth=4)
+    assert abs(volume(cb) - (plain - 3 * (math.pi * 4.5 ** 2 * 4 + math.pi * 2.5 ** 2 * 6))) < 1e-2
+    cs = made(hole="countersink", diameter=5, depth=0, head_diameter=9)
+    cone = math.pi * 2 / 3 * (4.5 ** 2 + 4.5 * 2.5 + 2.5 ** 2)        # 90° frustum, 2 mm tall
+    assert abs(volume(cs) - (plain - 3 * (cone + math.pi * 2.5 ** 2 * 8))) < 1e-2
+    with pytest.raises(ModelError, match="no free points"):
+        Part("x", [Feature("extrude", sketch="base", distance=10), Feature("hole", sketch="base")],
+             {"base": base}).build()

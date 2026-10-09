@@ -10,6 +10,7 @@ from .model import Feature, ModelError, Part
 from .sketch import Sketch
 
 FEATURE_CHOICES = {
+    "hole": ["simple", "counterbore", "countersink"],
     "operation": ["new", "join", "cut", "intersect"],
     "direction": ["X", "Y", "Z", "circular"],
     "plane": ["XY", "XZ", "YZ"],
@@ -24,8 +25,10 @@ FEATURE_FIELDS = {
     "chamfer": ["name", "radius", "edges", "suppressed"],
     "shell": ["name", "faces", "thickness", "suppressed"],
     "mirror": ["name", "plane", "suppressed"],
+    "hole": ["name", "sketch", "hole", "diameter", "depth", "head_diameter", "head_depth", "suppressed"],
 }
-FEATURE_LABELS = {"path": "Path sketch", "radius": "Radius / distance", "edges": "Edges (|Z, >Z, %CIRCLE…)",
+FEATURE_LABELS = {"hole": "Hole type", "depth": "Depth (0 = through)", "head_diameter": "Head Ø",
+                  "head_depth": "Counterbore depth", "path": "Path sketch", "radius": "Radius / distance", "edges": "Edges (|Z, >Z, %CIRCLE…)",
                   "faces": "Open faces (>Z, <Z…)", "count": "Pattern count", "spacing": "Pattern spacing",
                   "direction": "Pattern direction", "axis": "Axis (line id)"}
 
@@ -60,7 +63,8 @@ class DesignPanel(QWidget):
                 ("Revolve", lambda: self.add("revolve")), ("Loft", lambda: self.add("loft")),
                 ("Sweep", lambda: self.add("sweep")), ("Fillet", lambda: self.add("fillet")),
                 ("Chamfer", lambda: self.add("chamfer")), ("Shell", lambda: self.add("shell")),
-                ("Mirror", lambda: self.add("mirror")), ("Edit sketch", self.open_sketch),
+                ("Mirror", lambda: self.add("mirror")), ("Hole", lambda: self.add("hole")),
+                ("Edit sketch", self.open_sketch),
                 ("Remove", self.remove), ("Up", lambda: self.move(-1)), ("Down", lambda: self.move(1)))):
             b = QPushButton(text)
             b.clicked.connect(slot)
@@ -103,7 +107,7 @@ class DesignPanel(QWidget):
         feats = self.part.features if self.part else []
         f = feats[row] if 0 <= row < len(feats) else None
         self.form.set(f, FEATURE_FIELDS.get(f.type) if f else None)
-        if f is not None and f.type in ("extrude", "revolve", "sweep"):
+        if f is not None and f.type in ("extrude", "revolve", "sweep", "hole"):
             self._sketch_combo(f, "Sketch", "sketch")
         if f is not None and f.type == "sweep":
             self._sketch_combo(f, "Path sketch", "path")
@@ -315,6 +319,11 @@ class DesignPanel(QWidget):
             if kind == "sweep":
                 f.path = sketches[-1]
             f.operation = "new" if not self.part.features else "join"
+        if kind == "hole":
+            if not sketches:
+                self.status.emit("Put points in a sketch first (Sketch on face, then Point).")
+                return
+            f.sketch = sketches[-1]
         if kind in ("extrude", "revolve"):
             if not sketches:
                 self.status.emit("Make a sketch first: New sketch…")
