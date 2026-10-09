@@ -3,7 +3,7 @@
 Each release has a version and a build number; Help → About shows a one-line summary of
 every release, read from this file.
 
-## Unreleased
+## v0.6.1 (build 8) — 2026-10-09
 
 **Fixes**
 - New from STEP / STL and New design did nothing on a computer where git has no name and
@@ -11,6 +11,8 @@ every release, read from this file.
   swallowed. Commits now fall back to a built-in identity when git has none; without git
   installed at all, projects open with history turned off and the History panel says how
   to install it. Any other failure creating a project shows an error instead of nothing.
+- The AppImage carries its own git, used when the computer has none, so version history
+  works there too.
 
 ## v0.6.0 (build 7) — 2026-10-09
 
