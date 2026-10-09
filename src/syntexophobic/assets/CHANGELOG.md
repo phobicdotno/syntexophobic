@@ -42,7 +42,7 @@ every release, read from this file.
 - Import: an STL as a body, a STEP cutting it, the saved project rebuilt and machined.
 - Single-line text: cap height, every stroke engraved exactly once.
 - Engrave: on the lines, depth, no lifts on open lines, only the band cut; rapids with
-  V-bits and ball ends; depth from the part surface with a faced-off top. Six new mutants (25 in all); `tools/mutants.py <words>` runs
+  V-bits and ball ends; depth from the part surface with a faced-off top. Six new mutants (24 in all); `tools/mutants.py <words>` runs
   only the matching ones.
 
 ## v0.5.1 (build 6) — 2026-10-09
