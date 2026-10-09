@@ -9,7 +9,7 @@ part surface is a gouge. All array work goes through the compute backend.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 from numba import njit
@@ -45,6 +45,7 @@ class Result:
     gouge_depth: float         # deepest cut below the part surface, mm (0 = none)
     gouge_cells: int
     removed_cm3: float
+    frames: list = field(default_factory=list)   # (operation, tool tip (x, y, z), tool Ø, stock)
 
     def gouges(self, tol: float = 0.02) -> np.ndarray:
         return _normal_depth(self.part, self.stock, self.grid.res) > tol
@@ -112,55 +113,72 @@ def _disc(r: float, res: float):
     return dx[keep], dy[keep]
 
 
-def simulate(setup, toolpaths, res: float = 0.25, backend=None) -> Result:
+def _cut(be, grid, stock, P, tp, res):
+    """Remove material along the ordered points P of one toolpath. Returns the stock."""
+    xp = be.xp
+    r = tp.tool_diameter / 2
+    # A quarter cell narrower than the tool: cells the tool edge only grazes (exactly on
+    # the part outline) are not counted as cut, so the check is exact to ±res/4.
+    r_cut = r - res * 0.25
+    # Candidates: snapping the centre to the grid moves it at most res·√2/2.
+    dx, dy = (be.asarray(a.astype(np.int32)) for a in _disc(r_cut + res * 0.71, res))
+    ball = getattr(tp, "tool_shape", "flat") == "ball"
+    flat = stock.reshape(-1)
+    if ball and xp is np:                     # compiled kernel on the CPU
+        _stamp_ball(stock, grid.x0, grid.y0, res, P, r_cut, r)
+        return stock
+    if ball:                                  # every cell under a ball sits at its own height
+        for start in range(0, P.shape[0], 20000):
+            idx, zv = _stamp(xp, grid, be.asarray(P[start:start + 20000]), dx, dy, r_cut, r)
+            _scatter_min(xp, flat, idx, zv)
+        return flat.reshape(grid.ny, grid.nx)
+    # Most points cut at one depth per level: for those a boolean mask of every cell
+    # the disc touches is enough. Ramp points (each at its own depth) need a min-reduce.
+    zs, counts = np.unique(np.round(P[:, 2], 6), return_counts=True)
+    level_z = set(zs[counts >= 200].tolist())
+    on_level = np.isin(np.round(P[:, 2], 6), list(level_z))
+    for z in level_z:
+        sel = be.asarray(P[on_level & (np.round(P[:, 2], 6) == z)])
+        mask = xp.zeros(flat.shape[0], dtype=bool)
+        for start in range(0, sel.shape[0], 20000):
+            idx, _ = _stamp(xp, grid, sel[start:start + 20000], dx, dy, r_cut)
+            mask[idx] = True
+        flat = xp.where(mask, xp.minimum(flat, z), flat)
+    rest = be.asarray(P[~on_level])
+    for start in range(0, rest.shape[0], 20000):
+        idx, zv = _stamp(xp, grid, rest[start:start + 20000], dx, dy, r_cut)
+        _scatter_min(xp, flat, idx, zv)
+    return flat.reshape(grid.ny, grid.nx)
+
+
+def simulate(setup, toolpaths, res: float = 0.25, backend=None, snapshots: int = 0) -> Result:
+    """Cut the stock with every toolpath. With snapshots > 0, also keep about that many
+    copies of the stock along the way, in cutting order, for playback (Result.frames)."""
     be = backend or compute.get()
     xp = be.xp
     grid = Grid.over(setup.stock, res)
     stock = xp.full((grid.ny, grid.nx), setup.stock.zmax, dtype=xp.float64)
-    for tp in toolpaths:
-        r = tp.tool_diameter / 2
-        # A quarter cell narrower than the tool: cells the tool edge only grazes (exactly on
-        # the part outline) are not counted as cut, so the check is exact to ±res/4.
-        r_cut = r - res * 0.25
-        # Candidates: snapping the centre to the grid moves it at most res·√2/2.
-        dx, dy = (be.asarray(a.astype(np.int32)) for a in _disc(r_cut + res * 0.71, res))
-        P = _feed_points(tp, res)
+    paths = [(tp, _feed_points(tp, res)) for tp in toolpaths]
+    total = sum(len(P) for _, P in paths) or 1
+    frames = []
+    for tp, P in paths:
         if not len(P):
             continue
-        ball = getattr(tp, "tool_shape", "flat") == "ball"
-        flat = stock.reshape(-1)
-        if ball and xp is np:                     # compiled kernel on the CPU
-            _stamp_ball(stock, grid.x0, grid.y0, res, P, r_cut, r)
+        if not snapshots:
+            stock = _cut(be, grid, stock, P, tp, res)
             continue
-        if ball:                                  # every cell under a ball sits at its own height
-            for start in range(0, P.shape[0], 20000):
-                idx, zv = _stamp(xp, grid, be.asarray(P[start:start + 20000]), dx, dy, r_cut, r)
-                _scatter_min(xp, flat, idx, zv)
-            stock = flat.reshape(grid.ny, grid.nx)
-            continue
-        # Most points cut at one depth per level: for those a boolean mask of every cell
-        # the disc touches is enough. Ramp points (each at its own depth) need a min-reduce.
-        zs, counts = np.unique(np.round(P[:, 2], 6), return_counts=True)
-        level_z = set(zs[counts >= 200].tolist())
-        on_level = np.isin(np.round(P[:, 2], 6), list(level_z))
-        for z in level_z:
-            sel = be.asarray(P[on_level & (np.round(P[:, 2], 6) == z)])
-            mask = xp.zeros(flat.shape[0], dtype=bool)
-            for start in range(0, sel.shape[0], 20000):
-                idx, _ = _stamp(xp, grid, sel[start:start + 20000], dx, dy, r_cut)
-                mask[idx] = True
-            flat = xp.where(mask, xp.minimum(flat, z), flat)
-        rest = be.asarray(P[~on_level])
-        for start in range(0, rest.shape[0], 20000):
-            idx, zv = _stamp(xp, grid, rest[start:start + 20000], dx, dy, r_cut)
-            _scatter_min(xp, flat, idx, zv)
-        stock = flat.reshape(grid.ny, grid.nx)
+        pieces = max(1, round(snapshots * len(P) / total))
+        bounds = np.linspace(0, len(P), pieces + 1).astype(int)
+        for a, b in zip(bounds, bounds[1:]):
+            if b > a:
+                stock = _cut(be, grid, stock, P[a:b], tp, res)
+                frames.append((tp.op.name, tuple(P[b - 1]), tp.tool_diameter, be.to_numpy(stock).copy()))
     stock = be.to_numpy(stock)
     part = part_heightmap(setup.shape, grid)
     depth = _normal_depth(part, stock, res)
     removed = float(np.sum(setup.stock.zmax - stock)) * res * res / 1000.0
     return Result(grid, stock, part, float(max(depth.max(), 0.0)),
-                  int((depth > 0.02).sum()), removed)
+                  int((depth > 0.02).sum()), removed, frames)
 
 
 def _normal_depth(part, stock, res: float) -> np.ndarray:

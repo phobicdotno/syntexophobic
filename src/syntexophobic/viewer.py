@@ -135,7 +135,7 @@ class Viewer(QVTKRenderWindowInteractor):
         self.shape = None
         self.picking = False                # only pick while the Design workspace wants it
         self.GetRenderWindow().GetInteractor().SetInteractorStyle(self.style)
-        self._model = self._stock = self._sim = None
+        self._model = self._stock = self._sim = self._tool = None
         self._paths: list[vtkActor] = []
         axes = vtkAxesActor()
         self._axes = vtkOrientationMarkerWidget()
@@ -367,6 +367,29 @@ class Viewer(QVTKRenderWindowInteractor):
         if self._sim:
             self.ren.RemoveActor(self._sim)
             self._sim = None
+        self.show_tool(None)
+
+    def show_tool(self, tip, diameter: float = 6.0, length: float = 25.0) -> None:
+        """A cutter standing with its tip at `tip` (x, y, z); None hides it."""
+        from vtkmodules.vtkFiltersSources import vtkCylinderSource
+        if self._tool:
+            self.ren.RemoveActor(self._tool)
+            self._tool = None
+        if tip is not None:
+            cyl = vtkCylinderSource()
+            cyl.SetRadius(diameter / 2)
+            cyl.SetHeight(length)
+            cyl.SetResolution(32)
+            mapper = vtkPolyDataMapper()
+            mapper.SetInputConnection(cyl.GetOutputPort())
+            self._tool = vtkActor()
+            self._tool.SetMapper(mapper)
+            self._tool.RotateX(90)                     # the source stands along Y
+            self._tool.SetPosition(tip[0], tip[1], tip[2] + length / 2)
+            self._tool.GetProperty().SetColor(0.85, 0.87, 0.90)
+            self._tool.GetProperty().SetOpacity(0.85)
+            self.ren.AddActor(self._tool)
+        self.GetRenderWindow().Render()
 
     def set_model_visible(self, on: bool) -> None:
         for actor in (self._model, self._edges):

@@ -418,3 +418,20 @@ def test_tool_library_and_exact_stock(pocket_part, tmp_path, monkeypatch):
     p.job.stock.width = 50
     p.save_job()
     assert "smaller" in p.setup().warning
+
+
+def test_simulation_snapshots_play_back_in_order(pocket_part, tmp_path):
+    import numpy as np
+    from syntexophobic import simulate
+    p = Project.create(tmp_path / "play", pocket_part)
+    for op in p.job.operations:
+        op.bottom = 10.0
+    p.save_job()
+    tps = p.toolpaths()
+    full = simulate.simulate(p.setup(), tps, res=0.25)
+    played = simulate.simulate(p.setup(), tps, res=0.25, snapshots=20)
+    assert 15 <= len(played.frames) <= 25 and not full.frames
+    removed = [float(np.sum(p.setup().stock.zmax - f[3])) for f in played.frames]
+    assert all(b >= a - 1e-9 for a, b in zip(removed, removed[1:]))        # material only goes
+    assert np.allclose(played.frames[-1][3], full.stock)                     # same end result
+    assert {f[0] for f in played.frames} == {tp.op.name for tp in tps}

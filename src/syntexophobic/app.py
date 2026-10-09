@@ -316,6 +316,13 @@ class MainWindow(QMainWindow):
         self.section_slider.valueChanged.connect(lambda v: self.set_section(self.section_axis))
         self.section_slider_action = tb.addWidget(self.section_slider)
         self.section_slider_action.setVisible(False)
+        self.play_slider = QSlider(Qt.Horizontal)
+        self.play_slider.setMaximumWidth(260)
+        self.play_slider.setToolTip("Simulation playback: drag to see the stock at each moment")
+        self.play_slider.valueChanged.connect(self._play)
+        self.play_action = tb.addWidget(self.play_slider)
+        self.play_action.setVisible(False)
+        self.sim_result = None
         self.section_axis = None
         self.a_measure = m_view.addAction("Measure")
         self.a_measure.setCheckable(True)
@@ -491,6 +498,19 @@ class MainWindow(QMainWindow):
         dock.setMinimumWidth(330)
         self.addDockWidget(Qt.LeftDockWidgetArea, dock)
         self.design_dock = dock
+
+    def _play(self, i: int):
+        """Show the stock and the tool at playback frame i."""
+        from dataclasses import replace
+        r = self.sim_result
+        if r is None or not r.frames:
+            return
+        name, tip, dia, stock = r.frames[i]
+        self.viewer.show_simulation(replace(r, stock=stock))
+        self.viewer.set_section(self.section_axis, self.section_slider.value() / 1000)
+        last = i == len(r.frames) - 1
+        self.viewer.show_tool(None if last else tip, dia)
+        self.status.setText(f"Playback {i + 1}/{len(r.frames)}: {name}" + ("  (end)" if last else ""))
 
     def set_section(self, axis):
         self.section_axis = axis
@@ -933,6 +953,8 @@ class MainWindow(QMainWindow):
         self.a_generate.setEnabled(True)
         self.toolpaths = toolpaths
         self.viewer.clear_simulation()
+        self.play_action.setVisible(False)
+        self.sim_result = None
         self.c_model.setChecked(True)
         self.c_paths.setChecked(True)
         self._redraw_paths()
@@ -954,7 +976,7 @@ class MainWindow(QMainWindow):
         self.a_simulate.setEnabled(False)
         self.status.setText("Simulating material removal…")
         setup, tps = self.project.setup(), self.toolpaths
-        task = Task(lambda: sim.simulate(setup, tps))
+        task = Task(lambda: sim.simulate(setup, tps, snapshots=40))
         task.signals.done.connect(self._simulated)
         task.signals.failed.connect(self._failed)
         self.pool.start(task)
@@ -965,6 +987,13 @@ class MainWindow(QMainWindow):
         self.c_paths.setChecked(False)
         self.viewer.show_simulation(result)
         self.viewer.set_section(self.section_axis, self.section_slider.value() / 1000)
+        self.sim_result = result
+        if result.frames:
+            self.play_slider.blockSignals(True)
+            self.play_slider.setRange(0, len(result.frames) - 1)
+            self.play_slider.setValue(len(result.frames) - 1)
+            self.play_slider.blockSignals(False)
+            self.play_action.setVisible(True)
         if result.gouge_cells:
             self.status.setText(f"Gouge: the tool cuts up to {result.gouge_depth:.2f} mm into the part "
                                 f"({result.gouge_cells} cells, shown red). Do not run this file.")

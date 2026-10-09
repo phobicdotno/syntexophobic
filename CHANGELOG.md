@@ -52,6 +52,8 @@ All notable changes to Syntexophobic. The format follows
   it. Sketch planes can be custom (origin, X direction, normal, stored in the sketch
   file); faces square to an axis still become XY / XZ / YZ with an offset. The normal
   points out of the material, so a positive extrude adds and a negative one cuts.
+- **Simulation playback**: the simulation keeps about 40 snapshots in cutting order; a
+  slider in the toolbar shows the stock at any moment with the tool drawn where it is.
 - **Section view** (View > Section > X / Y / Z): cuts the model, its edges and the
   simulated stock with a plane, moved with a slider in the toolbar; it stays while the
   part is rebuilt or re-simulated.
