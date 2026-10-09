@@ -3,6 +3,17 @@
 Each release has a version and a build number; Help → About shows a one-line summary of
 every release, read from this file.
 
+## Unreleased
+
+**Fixes**
+- Full screen and maximize work: with the Design and Job panels both open at start, the
+  window asked for at least 1010 px of height, more than a laptop screen, so the window
+  manager would not maximize it or make it full screen. Only the current workspace's
+  panel shows now, and tall panels scroll instead of stretching the window.
+
+**Interface**
+- View → *Full screen* (F11).
+
 ## v0.6.1 (build 8) — 2026-10-09
 
 **Fixes**

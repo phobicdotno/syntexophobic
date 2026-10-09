@@ -8,12 +8,12 @@ import traceback
 from dataclasses import fields
 from pathlib import Path
 
-from PySide6.QtCore import QByteArray, QObject, QRunnable, QSettings, QSize, Qt, QThreadPool, QTimer, Signal
+from PySide6.QtCore import QByteArray, QEvent, QObject, QRunnable, QSettings, QSize, Qt, QThreadPool, QTimer, Signal
 from PySide6.QtGui import QAction, QActionGroup, QColor, QFont, QIcon, QKeySequence, QPainter, QPalette, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDockWidget, QDoubleSpinBox, QFileDialog,
     QFormLayout, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
-    QListWidgetItem, QMainWindow, QMessageBox, QPlainTextEdit, QPushButton, QSpinBox,
+    QListWidgetItem, QMainWindow, QMessageBox, QPlainTextEdit, QPushButton, QScrollArea, QSpinBox,
     QSlider, QSplitter, QStackedWidget, QToolBar, QVBoxLayout, QWidget,
 )
 
@@ -200,6 +200,16 @@ class Task(QRunnable):
             self.signals.failed.emit(traceback.format_exc())
 
 
+def _scrolling(body: QWidget) -> QScrollArea:
+    """Body in a scroll area, so a tall dock never forces the window taller than the screen."""
+    area = QScrollArea()
+    area.setWidget(body)
+    area.setWidgetResizable(True)
+    area.setFrameShape(QScrollArea.NoFrame)
+    area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+    return area
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -238,6 +248,7 @@ class MainWindow(QMainWindow):
         self._space_status(self.spacemouse.is_connected)
         self.design_panel.status.connect(self.status.setText)
         self._start_control_server()
+        self.set_workspace(self.c_workspace.currentText())   # one of the Design / Job docks, not both
         self._enable(False)
 
     # ---- layout -----------------------------------------------------------------------
@@ -349,6 +360,10 @@ class MainWindow(QMainWindow):
         self.a_measure.toggled.connect(self._measure_mode)
         self._measure_picks = []
         m_view.addSeparator()
+        self.a_fullscreen = m_view.addAction("Full screen")
+        self.a_fullscreen.setCheckable(True)
+        self.a_fullscreen.setShortcut(QKeySequence(QKeySequence.FullScreen))
+        self.a_fullscreen.toggled.connect(self.set_fullscreen)
         m_style = m_view.addMenu("Toolbar")
         group = QActionGroup(self)
         self.toolbar_styles = {}
@@ -359,6 +374,15 @@ class MainWindow(QMainWindow):
             group.addAction(a)
             self.toolbar_styles[key] = a
         self.set_toolbar_style(QSettings().value("toolbar_style", "icons"))
+
+    def set_fullscreen(self, on: bool):
+        self.setWindowState(self.windowState() | Qt.WindowFullScreen if on
+                            else self.windowState() & ~Qt.WindowFullScreen)
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() == QEvent.WindowStateChange:   # also when the window manager changes it
+            self.a_fullscreen.setChecked(self.isFullScreen())
 
     def set_toolbar_style(self, key: str):
         tb = self.toolbar
@@ -431,7 +455,7 @@ class MainWindow(QMainWindow):
 
         for f in (self.f_stock, self.f_machine, self.f_tool, self.f_op):
             f.changed.connect(self._job_edited)
-        dock.setWidget(body)
+        dock.setWidget(_scrolling(body))
         dock.setMinimumWidth(330)
         self.addDockWidget(Qt.LeftDockWidgetArea, dock)
         self.job_dock = dock
@@ -513,7 +537,7 @@ class MainWindow(QMainWindow):
         col = QVBoxLayout(body)
         col.addWidget(self.design_note)
         col.addWidget(self.design_panel)
-        dock.setWidget(body)
+        dock.setWidget(_scrolling(body))
         dock.setMinimumWidth(330)
         self.addDockWidget(Qt.LeftDockWidgetArea, dock)
         self.design_dock = dock
