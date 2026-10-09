@@ -50,10 +50,21 @@ def save(tools: list[Tool]) -> None:
     p.write_text("\n".join(out))
 
 
-def add(tool: Tool) -> None:
+def same(a: Tool, b: Tool) -> bool:
+    """The same cutter: diameter, flutes and shape (and angle for a V-bit) match."""
+    return (abs(a.diameter - b.diameter) < 1e-3 and a.flutes == b.flutes and a.shape == b.shape
+            and (a.shape != "vbit" or abs(a.angle - b.angle) < 1e-3))
+
+
+def add(tool: Tool) -> Tool | None:
+    """Add `tool` unless the library has the same cutter; returns the one already there."""
     tools = load()
+    for t in tools:
+        if same(t, tool):
+            return t
     tools.append(replace(tool, id=0))
     save(tools)
+    return None
 
 
 def into_job(job, tool: Tool) -> Tool:

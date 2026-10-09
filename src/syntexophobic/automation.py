@@ -395,6 +395,28 @@ class Session:
             _update(j.tool(id), values)
         return self._job_change(change)
 
+    # ---- tool library (shared by every project; no project needed) -------------------------
+
+    def library_list(self) -> dict:
+        from . import library
+        return {"library": str(library.path()), "tools": _clean(library.load())}
+
+    def library_add(self, add_to_job: bool = False, **values) -> dict:
+        """Add a cutter to the user's tool library (name, diameter, flutes, shape, angle),
+        unless it has the same one already; `add_to_job` also puts it in the open job."""
+        from . import library
+        t = Tool(id=0)
+        _update(t, values)
+        if t.diameter <= 0 or t.flutes < 1 or t.shape not in ("flat", "ball", "vbit"):
+            raise CommandError("A tool needs diameter > 0, flutes >= 1 and shape flat, ball or vbit")
+        there = library.add(t)
+        result = {"added": there is None, "tool": _clean(there or t), "library": str(library.path())}
+        if there is not None:
+            result["note"] = "The library already has this cutter; nothing was added"
+        if add_to_job:
+            result["job"] = self._job_change(lambda j: library.into_job(j, there or t))["job"]
+        return result
+
     def add_operation(self, **values) -> dict:
         """Fields as in job.Operation: type (rough, adaptive, finish, profile, parallel,
         vcarve, engrave, drill, bore), tool, stepdown, stepover, leave, feed, plunge, bottom, side..."""
