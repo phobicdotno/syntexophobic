@@ -294,6 +294,26 @@ def upward_flat_levels(shape: TopoDS_Shape, min_area: float = 1.0) -> list[float
     return [max(g, key=lambda z: area[z]) for g in levels if sum(area[z] for z in g) >= need]
 
 
+def horizontal_levels(shape: TopoDS_Shape, limit: int = 400) -> list[float]:
+    """Heights of every horizontal flat face, up or down, however small (0.01 mm apart at
+    most): where thin plates and overhangs start and end. A finely faceted model has
+    countless; then only the `limit` with the most area are kept."""
+    from OCP.BRepGProp import BRepGProp
+    from OCP.GProp import GProp_GProps
+    area: dict[float, float] = {}
+    exp = TopExp_Explorer(shape, TopAbs_FACE)
+    while exp.More():
+        face = TopoDS.Face(exp.Current())
+        surf = BRepAdaptor_Surface(face)
+        if surf.GetType() == GeomAbs_Plane and abs(surf.Plane().Axis().Direction().Z()) > 0.999:
+            props = GProp_GProps()
+            BRepGProp.SurfaceProperties_s(face, props)
+            z = round(surf.Plane().Location().Z(), 2)
+            area[z] = area.get(z, 0.0) + props.Mass()
+        exp.Next()
+    return sorted(sorted(area, key=lambda z: -area[z])[:limit])
+
+
 @dataclass(frozen=True)
 class Hole:
     x: float
@@ -317,13 +337,71 @@ def _normal_towards_axis(face, surf, axis) -> bool:
     return n.X() * (loc.X() - p.X()) + n.Y() * (loc.Y() - p.Y()) > 0
 
 
-def find_holes(shape: TopoDS_Shape) -> list[Hole]:
-    """Vertical round holes: full cylinders with material outside them.
+def find_holes(shape: TopoDS_Shape, slicer=None, flats=None) -> list[Hole]:
+    """Vertical round holes: full cylinders with material outside them, plus round holes
+    made of flat facets (a model read from STL) found in slices.
 
     A hole is often split into two half-cylinder faces, so faces are grouped by axis and
     radius and must cover a full turn together. Partial cylinders (fillets in pocket
     corners) and bosses (material inside) are left out.
     """
+    holes = _cylinder_holes(shape)
+    for h in _faceted_holes(shape, slicer, flats):
+        if not any(math.hypot(h.x - c.x, h.y - c.y) < 0.1 and abs(h.diameter - c.diameter) < 0.1 for c in holes):
+            holes.append(h)
+    return sorted(holes, key=lambda h: (h.y, h.x))
+
+
+def _faceted_holes(shape, slicer=None, flats=None) -> list[Hole]:
+    """Round holes of a faceted model: between each pair of flat levels the part is sliced
+    halfway, and an inner loop (material around it) whose corners all lie on one circle is a
+    hole through that band; bands above each other with the same circle join up. The
+    diameter is the circle through the facet corners, as the mesh was made from."""
+    b = bounding_box(shape)
+    levels = sorted({round(z, 4) for z in [b.zmin, b.zmax] + list(flats if flats is not None else upward_flat_levels(shape))})
+    slicer = slicer or MeshSlicer(shape)
+    bands: list[Hole] = []
+    for lo, hi in zip(levels, levels[1:]):
+        if hi - lo < 0.2:
+            continue
+        for loops in slicer.slice((lo + hi) / 2):
+            for i, loop in enumerate(loops):
+                if len(loop) < 8:
+                    continue
+                inside = sum(_point_in_loop(loop[0], other) for j, other in enumerate(loops) if j != i)
+                if inside % 2 == 0:                 # an outline, not a hole in one
+                    continue
+                import numpy as np
+                P = np.asarray(loop, float)                # least-squares circle (corners can be uneven)
+                A = np.column_stack([2 * P[:, 0], 2 * P[:, 1], np.ones(len(P))])
+                (cx, cy, c), *_ = np.linalg.lstsq(A, (P ** 2).sum(1), rcond=None)
+                radii = np.hypot(P[:, 0] - cx, P[:, 1] - cy)
+                r = float(np.sqrt(c + cx * cx + cy * cy))
+                if radii.max() - radii.min() <= max(0.02, 0.02 * r):
+                    bands.append(Hole(float(cx), float(cy), 2 * r, hi, lo))
+    holes: list[Hole] = []
+    for h in sorted(bands, key=lambda h: -h.top):     # join bands that continue downwards
+        k = next((k for k, g in enumerate(holes) if math.hypot(g.x - h.x, g.y - h.y) < 0.05
+                  and abs(g.diameter - h.diameter) < 0.05 and abs(g.bottom - h.top) < 1e-3), None)
+        if k is None:
+            holes.append(h)
+        else:
+            g = holes[k]
+            holes[k] = Hole(g.x, g.y, max(g.diameter, h.diameter), g.top, h.bottom)
+    return holes
+
+
+def _point_in_loop(pt, loop) -> bool:
+    x, y = pt
+    hit = False
+    for i in range(len(loop)):
+        (x1, y1), (x2, y2) = loop[i - 1], loop[i]
+        if (y1 > y) != (y2 > y) and x < x1 + (y - y1) * (x2 - x1) / (y2 - y1):
+            hit = not hit
+    return hit
+
+
+def _cylinder_holes(shape: TopoDS_Shape) -> list[Hole]:
     groups: dict[tuple, list] = {}
     exp = TopExp_Explorer(shape, TopAbs_FACE)
     while exp.More():
@@ -343,7 +421,7 @@ def find_holes(shape: TopoDS_Shape) -> list[Hole]:
     for (x, y, r), parts in groups.items():
         if sum(p[0] for p in parts) >= 2 * math.pi - 1e-3:
             holes.append(Hole(x, y, 2 * r, max(p[2] for p in parts), min(p[1] for p in parts)))
-    return sorted(holes, key=lambda h: (h.y, h.x))
+    return holes
 
 
 def unique(shape: TopoDS_Shape, kind) -> list:

@@ -1,6 +1,6 @@
 [project]
 name = "syntexophobic"
-version = "0.6.2"
+version = "0.6.3"
 description = "2.5D CAM for GRBL machines with git-style job history"
 readme = "README.md"
 authors = [
@@ -26,7 +26,7 @@ cuda = ["cupy-cuda12x>=13"]
 syntexophobic = "syntexophobic:main"
 
 [build-system]
-requires = ["uv_build>=0.12.23,<0.13.0"]
+requires = ["uv_build>=0.12.23,<0.14.0"]
 build-backend = "uv_build"
 
 [dependency-groups]

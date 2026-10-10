@@ -3,6 +3,29 @@
 Each release has a version and a build number; Help → About shows a one-line summary of
 every release, read from this file.
 
+## v0.6.3 (build 10) — 2026-10-11
+
+**Fixes**
+- Roughing, adaptive clearing and ball-end finishing could cut through a thin plate lying
+  between two cutting levels (an enclosure's top panel) into the space under it: the part
+  above each level was only known from the slices at the levels themselves. Each level's
+  keep-out is now the part's whole shadow from above, sliced every 0.5 mm and just above
+  and below every horizontal face. On a real enclosure adaptive clearing went 100 mm deep
+  into the part before; now nothing, with half the moves.
+- A profile cut-out on its own made rapids 0.5 mm into stock: each pass dropped fast to
+  just above the previous level even where the outline grows further down and nothing had
+  been cut there yet. A pass now starts that low only where the tool has cut on the level
+  above.
+- Drilling and boring found no holes in a model read from STL (no cylinder faces, only
+  facets). Round holes are now also found in slices, with their size and depth.
+- The window tests crashed the whole test run on Qt's offscreen platform (the 3D view needs
+  a real display); they run in a child process on the desktop's display now, and wait for
+  the window manager to apply full screen.
+
+**Testing**
+- A bug hunt runs every operation on several parts (the demo plate as STEP and as STL, a
+  real enclosure); each bug found has a regression test and mutants (30 in all).
+
 ## v0.6.2 (build 9) — 2026-10-09
 
 **Fixes**

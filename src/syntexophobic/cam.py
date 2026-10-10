@@ -122,13 +122,35 @@ def _cells_to_region(mask, x0: float, y0: float, res: float):
     return _boolean(_to_int(rows), [], pyclipper.CT_UNION) if rows else []
 
 
+def _point_inside(region, pt) -> bool:
+    """Is the XY point inside the region (clipper paths, holes by even-odd), or on its edge?"""
+    p = _to_int([[pt]])[0][0]
+    hits = [pyclipper.PointInPolygon(p, path) for path in region]
+    return any(h == -1 for h in hits) or sum(h != 0 for h in hits) % 2 == 1
+
+
+def _on_paths(loops, pt, tol: float = 0.01) -> bool:
+    """Does the XY point lie on one of the closed polylines (mm), within tol?"""
+    x, y = pt
+    for loop in loops:
+        n = len(loop)
+        for i in range(n):
+            (ax, ay), (bx, by) = loop[i], loop[(i + 1) % n]
+            dx, dy = bx - ax, by - ay
+            L2 = dx * dx + dy * dy
+            t = 0.0 if L2 == 0 else max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / L2))
+            if math.hypot(x - ax - t * dx, y - ay - t * dy) <= tol:
+                return True
+    return False
+
+
 def _segment_inside(region, a, b) -> bool:
     """Is the straight XY line a-b entirely inside the region (clipper paths)?"""
     if not region:
         return False
     seg = _to_int([[a, b]])[0]
     if seg[0] == seg[1]:
-        return pyclipper.PointInPolygon(seg[0], region[0]) != 0 if len(region) == 1 else True
+        return _point_inside(region, a)
     pc = pyclipper.Pyclipper()
     pc.AddPath(seg, pyclipper.PT_SUBJECT, False)
     pc.AddPaths(region, pyclipper.PT_CLIP, True)
@@ -190,7 +212,7 @@ class Setup:
             cache["flats"] = geometry.upward_flat_levels(shape)
             cache["slices"] = {}
             cache["slicer"] = geometry.MeshSlicer(shape)
-            cache["holes"] = geometry.find_holes(shape)
+            cache["holes"] = geometry.find_holes(shape, cache["slicer"], cache["flats"])
         self.part = cache["part"]
         self.cache = cache
         st, b = job.stock, self.part
@@ -215,6 +237,38 @@ class Setup:
         if key not in self._slices:
             self._slices[key] = _region_from_slices(self.slicer.slice(z + EPS))
         return self._slices[key]
+
+    def shadow(self, z: float):
+        """Everything of the part at or above z, seen from above: where a straight tool with
+        its end at z may not be. Slices at the cutting levels alone miss a thin plate lying
+        between two of them (an enclosure's top panel, a lid), and the tool would go through
+        it into the space below; so slices are taken every 0.5 mm and just above and below
+        every horizontal face, and joined from the top down."""
+        c = self.cache
+        if "shadow_samples" not in c:
+            b = self.part
+            heights = {h + d for h in geometry.horizontal_levels(self.shape) for d in (-2e-3, 2e-3)}
+            n = int((b.zmax - b.zmin) / 0.5)
+            heights |= {b.zmax - 0.5 * k for k in range(1, n + 1)} | {b.zmax - 2e-3, b.zmin + 2e-3}
+            c["shadow_samples"] = sorted((h for h in heights if b.zmin < h < b.zmax), reverse=True)
+            c["shadow_acc"] = []                       # (sample, union of slices down to it)
+        samples, acc = c["shadow_samples"], c["shadow_acc"]
+        while len(acc) < len(samples) and samples[len(acc)] >= z:
+            s = samples[len(acc)]
+            reg = self.slice_region(s)
+            acc.append((s, _boolean(acc[-1][1], reg, pyclipper.CT_UNION) if acc and acc[-1][1] else reg))
+        region = []
+        lo, hi = 0, len(acc)                           # the last sample at or above z
+        while lo < hi:
+            mid = (lo + hi) // 2
+            if acc[mid][0] >= z:
+                lo = mid + 1
+            else:
+                hi = mid
+        if lo:
+            region = acc[lo - 1][1]
+        here = self.slice_region(z) if z < self.part.zmax else []
+        return _boolean(region, here, pyclipper.CT_UNION) if region and here else (region or here)
 
     def stock_rect(self):
         s = self.stock
@@ -332,16 +386,14 @@ def ball_keep_out(setup: "Setup", z: float, r: float, leave: float, samples: int
     for h in hs:                                      # top down, so `above` accumulates
         zz = z + h
         if zz <= zmax:
-            above = _boolean(above, setup.slice_region(zz), pyclipper.CT_UNION)
+            above = setup.shadow(zz)
         if above:
             # material at heights between this sample and the next one up is in `above`
             # too; the ball is widest at the top of that band, so widen by that width
             out = _boolean(out, _offset(above, width(higher_h) + leave), pyclipper.CT_UNION)
         higher_h = h
     # material higher than the equator: everything there, widened by the full radius
-    higher = []
-    for zz in sorted({lv for lv in setup.flats if lv > z + r} | {zmax - 1e-3}, reverse=True):
-        higher = _boolean(higher, setup.slice_region(zz), pyclipper.CT_UNION)
+    higher = setup.shadow(z + r)
     if higher:
         out = _boolean(out, _offset(higher, r + leave), pyclipper.CT_UNION)
     return out
@@ -481,7 +533,7 @@ def _adaptive(setup: Setup, op: Operation) -> Toolpath:
     s = setup.stock
     forbidden: list = []
     for z in levels:
-        forbidden = _boolean(forbidden, setup.slice_region(z), pyclipper.CT_UNION)
+        forbidden = setup.shadow(z)
         keep_out = _offset(forbidden, r + op.leave)
         # the centre may leave the stock (to start in the open), never come near the part;
         # shrunk by a cell so grid rounding cannot step over the line
@@ -775,16 +827,23 @@ def _generate(setup: Setup, op: Operation) -> Toolpath:
     forbidden: list = []
     clearance = top + 0.5
     stay_low = op.type == "rough" and op.rest_from is None
+    # where the tool centre went on the level above: a pass may start just above that
+    # level only there (the tool cleared everything above it); elsewhere, e.g. where a
+    # profile's outline grows further down, there can still be stock up to the top
+    cut_area, cut_lines = [], []
     for z in levels:
-        forbidden = _boolean(forbidden, setup.slice_region(z), pyclipper.CT_UNION)
+        forbidden = setup.shadow(z)                  # the part at and above this level
         allowed = (_boolean(_offset(setup.stock_rect(), 0.9 * r), _offset(forbidden, r + op.leave),
                             pyclipper.CT_DIFFERENCE) if stay_low else [])
         last = None
-        for ring in _rings(op, forbidden, setup, r, tool.diameter, z):
+        rings = _rings(op, forbidden, setup, r, tool.diameter, z)
+        for ring in rings:
             for loop in _to_mm(ring):
                 if len(loop) < 2:
                     continue
-                pts = _ramp_and_lap(loop, clearance, z, op.ramp_angle)
+                start = clearance if (_point_inside(cut_area, loop[0]) or _on_paths(cut_lines, loop[0])) \
+                    else top + 0.5
+                pts = _ramp_and_lap(loop, start, z, op.ramp_angle)
                 if tabs and z < tab_top:
                     pts = _lift_over_tabs(pts, tabs, reach, tab_top)
                 _hop(moves, last, pts[0][:2], allowed, pts[0][2], travel)
@@ -792,6 +851,10 @@ def _generate(setup: Setup, op: Operation) -> Toolpath:
                     moves.append(Move("feed", x, y, zz, op.feed))
                 last = pts[-1][:2]
         clearance = z + 0.5
+        # roughing rings are nested offsets, so the outermost covers the whole area its
+        # passes cleared; wall passes clear only along their own path
+        cut_area = rings[0] if (rings and op.type == "rough") else []
+        cut_lines = [loop for ring in rings for loop in _to_mm(ring)]
     moves.append(Move("rapid", None, None, safe))
     return tp
 
