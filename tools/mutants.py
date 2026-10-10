@@ -83,7 +83,9 @@ def run(name, filename, old, new):
         return name, "PATTERN NOT FOUND (update this mutant)"
     path.write_text(text.replace(old, new, 1))
     env = dict(os.environ, PYTHONPATH=str(tmp / "src"), NUMBA_CACHE_DIR=str(tmp / "numba"))
-    r = subprocess.run([sys.executable, "-m", "pytest", "-x", "-q", "-p", "no:cacheprovider", str(ROOT / "tests")],
+    # the window tests open real windows on the desktop; they check no machining
+    r = subprocess.run([sys.executable, "-m", "pytest", "-x", "-q", "-p", "no:cacheprovider", str(ROOT / "tests"),
+                        "--ignore", str(ROOT / "tests" / "test_window.py")],
                        cwd=tmp, env=env, capture_output=True, text=True)
     shutil.rmtree(tmp, ignore_errors=True)
     return name, "caught" if r.returncode != 0 else "SURVIVED"
