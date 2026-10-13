@@ -331,8 +331,16 @@ class MainWindow(QMainWindow):
         quit_.setShortcut(QKeySequence("Ctrl+Q"))
         quit_.triggered.connect(self.close)
         tb.addSeparator()
-        act("Iso view", lambda: self.viewer.view_iso(), "iso", "1", m_view)
+        act("Home (iso)", lambda: self.viewer.view_iso(), "iso", "1", m_view)
         act("Top view", lambda: self.viewer.view_top(), "top", "2", m_view)
+        act("Fit", lambda: self.viewer.fit(), "fit", "F", m_view)
+        m_views = m_view.addMenu("More views")
+        for label, fn, key in (("Front", self.viewer.view_front, "3"), ("Back", self.viewer.view_back, None),
+                                ("Right", self.viewer.view_right, "4"), ("Left", self.viewer.view_left, None),
+                                ("Bottom", self.viewer.view_bottom, None)):
+            a = m_views.addAction(label, fn)
+            if key:
+                a.setShortcut(QKeySequence(key))
         tb.addSeparator()
         m_view.addSeparator()
         self.c_paths = act("Toolpaths", lambda _: self._redraw_paths(), "toolpaths", "T", m_view, True, toolbar=False)
