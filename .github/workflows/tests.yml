@@ -28,4 +28,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: ./tools/windows/ci-mesa.sh "$(uv run python -c 'import sys, os; print(os.path.dirname(sys._base_executable))')"
-      - run: uv run pytest -q            # Linux without a window: tests/conftest.py picks offscreen
+      # Linux without a window: tests/conftest.py picks offscreen. GitHub's macOS runners have no
+      # GPU and VTK's first render never returns there, so the window tests run on Linux and Windows.
+      - run: uv run pytest -q ${{ runner.os == 'macOS' && '--ignore=tests/test_window.py' || '' }}

@@ -65,7 +65,7 @@ jobs:
           mkdir -p build/try && ditto -x -k dist/*.zip build/try
           APP=build/try/Syntexophobic.app/Contents
           $APP/MacOS/Syntexophobic --version
-          $APP/MacOS/python3 tools/smoke.py
+          $APP/MacOS/python3 tools/smoke.py --no-show      # the runner has no GPU: VTK cannot draw
           if [ -x $APP/Resources/git/git ]; then $APP/Resources/git/git --version; fi
       - uses: actions/upload-artifact@v5
         with:
