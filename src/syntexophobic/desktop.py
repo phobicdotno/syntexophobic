@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 APP_ID = "syntexophobic"          # .desktop name, icon name, and QGuiApplication.desktopFileName
@@ -95,7 +96,8 @@ def _refresh(icons: Path, applications: Path):
 def integrate():
     """At start-up: when running as an AppImage on Linux, make sure its menu entry and icon exist."""
     appimage = os.environ.get("APPIMAGE")
-    if not appimage or not os.path.isfile(appimage) or os.environ.get("SYNTEXOPHOBIC_NO_DESKTOP_ENTRY"):
+    if (not sys.platform.startswith("linux") or not appimage or not os.path.isfile(appimage)
+            or os.environ.get("SYNTEXOPHOBIC_NO_DESKTOP_ENTRY")):
         return
     try:
         install(appimage)

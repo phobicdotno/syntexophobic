@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from dataclasses import asdict, fields
 from pathlib import Path
 
@@ -28,6 +29,15 @@ from .sketch import CONSTRAINT_TYPES, Sketch
 
 STATE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "syntexophobic"
 SOCKET = STATE / "control.sock"
+
+
+def control_name() -> str:
+    """Where the window listens: the socket file, or on Windows (no Unix sockets) a named
+    pipe, named after that file so each user and each cache folder gets its own."""
+    if sys.platform == "win32":
+        import hashlib
+        return "syntexophobic-" + hashlib.sha1(str(SOCKET).encode()).hexdigest()[:16]
+    return str(SOCKET)
 
 
 class CommandError(RuntimeError):
@@ -271,12 +281,12 @@ class Session:
         if not src.exists():
             raise CommandError(f"No file at {src}")
         folder = self._need().folder
-        if folder in src.resolve().parents:
-            return str(src.resolve().relative_to(folder))
+        if folder in src.resolve().parents:            # with / on Windows too, so the project moves
+            return src.resolve().relative_to(folder).as_posix()
         dest = folder / sub / src.name
         dest.parent.mkdir(exist_ok=True)
         shutil.copy2(src, dest)
-        return str(dest.relative_to(folder))
+        return dest.relative_to(folder).as_posix()
 
     def trace_image(self, sketch: str, path: str, width: float, x: float = 0.0, y: float = 0.0,
                     threshold: float = 0.5, invert: bool = False) -> dict:
@@ -532,6 +542,23 @@ def server_command() -> list[str]:
     return [sys.executable, "-m", "syntexophobic", "mcp"]
 
 
+def _send_pipe(request: bytes) -> bytes:
+    """The window's named pipe (Windows): opened like a file, which waits for the reply."""
+    try:
+        pipe = open(rf"\\.\pipe\{control_name()}", "r+b", buffering=0)
+    except OSError as e:
+        raise ConnectionError(str(e)) from e
+    with pipe:
+        pipe.write(request)
+        buf = b""
+        while not buf.endswith(b"\n"):
+            chunk = pipe.read(1 << 20)
+            if not chunk:
+                break
+            buf += chunk
+    return buf
+
+
 COMMANDS = [n for n in dir(Session) if not n.startswith("_") and callable(getattr(Session, n))]
 
 
@@ -545,21 +572,25 @@ def run(session: Session, cmd: str, args: dict):
 
 def send(cmd: str, args: dict | None = None, timeout: float = 600.0):
     """Run a command in the open window; raises ConnectionError if none is listening."""
-    import socket
-    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    s.settimeout(timeout)
-    try:
-        s.connect(str(SOCKET))
-    except OSError as e:
-        raise ConnectionError(str(e)) from e
-    with s:
-        s.sendall((json.dumps({"cmd": cmd, "args": args or {}}) + "\n").encode())
-        buf = b""
-        while not buf.endswith(b"\n"):
-            chunk = s.recv(1 << 20)
-            if not chunk:
-                break
-            buf += chunk
+    request = (json.dumps({"cmd": cmd, "args": args or {}}) + "\n").encode()
+    if sys.platform == "win32":
+        buf = _send_pipe(request)
+    else:
+        import socket
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.settimeout(timeout)
+        try:
+            s.connect(str(SOCKET))
+        except OSError as e:
+            raise ConnectionError(str(e)) from e
+        with s:
+            s.sendall(request)
+            buf = b""
+            while not buf.endswith(b"\n"):
+                chunk = s.recv(1 << 20)
+                if not chunk:
+                    break
+                buf += chunk
     reply = json.loads(buf.decode())
     if not reply.get("ok"):
         raise CommandError(reply.get("error", "failed"))

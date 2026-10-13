@@ -1,4 +1,7 @@
 import os
+import sys
+
+import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -50,6 +53,7 @@ def test_stale_icon_cache_is_not_left_hiding_the_icon(tmp_path, monkeypatch):
     assert not cache.exists()
 
 
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="menu entries are for Linux desktops")
 def test_integrate_only_for_an_appimage(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
     monkeypatch.delenv("APPIMAGE", raising=False)

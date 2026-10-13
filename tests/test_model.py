@@ -563,6 +563,7 @@ def test_import_step_and_stl_as_bodies(tmp_path):
     r = s.import_model(str(tmp_path / "block.stl"), name="block")
     assert r["volume_mm3"] == pytest.approx(12000, rel=1e-6)
     r = s.import_model(str(tmp_path / "pin.step"), operation="cut")
+    assert r["built"], r
     assert r["volume_mm3"] == pytest.approx(12000 - math.pi * 25 * 10, rel=1e-3)
     assert (tmp_path / "proj/imports/block.stl").exists() and (tmp_path / "proj/imports/pin.step").exists()
     part = Part.load(tmp_path / "proj" / "model.toml")

@@ -377,7 +377,7 @@ def install_app(release: Release, current: Path, tok: str | None = None,
     if not release.asset_url:
         raise UpdateError(f"release {release.tag} has no macOS app")
     current = current.resolve()
-    if "/AppTranslocation/" in str(current):
+    if "/AppTranslocation/" in current.as_posix():
         raise UpdateError("macOS runs this copy from a read-only place: move Syntexophobic.app to "
                           "Applications in Finder, start it from there, then update")
     tok = token() if tok is None else tok

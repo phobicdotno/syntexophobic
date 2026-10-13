@@ -924,10 +924,10 @@ class MainWindow(QMainWindow):
         self.session = automation.Session()
         self.session.window = self
         automation.STATE.mkdir(parents=True, exist_ok=True)
-        QLocalServer.removeServer(str(automation.SOCKET))
+        QLocalServer.removeServer(automation.control_name())
         self.control = QLocalServer(self)
         self.control.setSocketOptions(QLocalServer.UserAccessOption)      # only this user
-        if self.control.listen(str(automation.SOCKET)):
+        if self.control.listen(automation.control_name()):
             self.control.newConnection.connect(self._control_connection)
 
     def _control_connection(self):
