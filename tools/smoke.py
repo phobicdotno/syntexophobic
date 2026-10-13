@@ -4,6 +4,9 @@ numba) and the window opens on it (Qt, VTK). Run with the build's own Python:
 
     build/AppDir/usr/python/bin/python3 tools/smoke.py
     build/Syntexophobic.app/Contents/MacOS/python3 tools/smoke.py
+
+--no-show makes the window without showing it: GitHub's macOS runners have no GPU, and VTK's
+first render there never returns.
 """
 
 import faulthandler
@@ -50,7 +53,8 @@ step("simulation")
 result = simulate.simulate(project.setup(), paths, res=1.0)
 step("window")
 win = MainWindow()
-win.show()
+if "--no-show" not in sys.argv:
+    win.show()
 win.load(project)
 for _ in range(20):
     app.processEvents()
