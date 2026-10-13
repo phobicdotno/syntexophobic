@@ -337,9 +337,17 @@ class MainWindow(QMainWindow):
         act("Top view", lambda: self.viewer.view_top(), "top", "4", m_view)
         act("Fit", lambda: self.viewer.fit(), "fit", "F", m_view)
         m_views = m_view.addMenu("More views")
-        for label, fn, key in (("Back", self.viewer.view_back, None), ("Left", self.viewer.view_left, None),
-                                ("Bottom", self.viewer.view_bottom, None)):
+        for label, fn in (("Back", self.viewer.view_back), ("Left", self.viewer.view_left),
+                          ("Bottom", self.viewer.view_bottom)):
             m_views.addAction(label, fn)
+        m_style3d = m_view.addMenu("Visual style")
+        grp = QActionGroup(self)
+        for label, key in (("Shaded with edges", "edges"), ("Shaded", "shaded"), ("Wireframe", "wireframe")):
+            a = m_style3d.addAction(label)
+            a.setCheckable(True)
+            a.setChecked(key == "edges")
+            grp.addAction(a)
+            a.triggered.connect(lambda _=False, k=key: self.viewer.set_visual_style(k))
         tb.addSeparator()
         m_view.addSeparator()
         self.c_paths = act("Toolpaths", lambda _: self._redraw_paths(), "toolpaths", "T", m_view, True, toolbar=False)

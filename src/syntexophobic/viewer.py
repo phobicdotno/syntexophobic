@@ -141,6 +141,8 @@ class Viewer(QVTKRenderWindowInteractor):
         self.GetRenderWindow().GetInteractor().SetInteractorStyle(self.style)
         self._model = self._stock = self._sim = self._tool = None
         self._paths: list[vtkActor] = []
+        self._style = "edges"          # shaded | edges | wireframe
+        self._model_visible = True
         axes = vtkAxesActor()
         self._axes = vtkOrientationMarkerWidget()
         self._axes.SetOrientationMarker(axes)
@@ -204,6 +206,7 @@ class Viewer(QVTKRenderWindowInteractor):
         if old is None or any(b[i] < old[i] - pad for i in (0, 2, 4)) or any(b[i] > old[i] + pad for i in (1, 3, 5)):
             self.ren.ResetCamera(*b)
             self._fitted = b
+        self._update_model_display()                 # keep the chosen visual style across rebuilds
 
     def _show_edges(self, shape) -> None:
         """Model edges as dark lines (CAD look); also what edge picking hits."""
@@ -466,10 +469,25 @@ class Viewer(QVTKRenderWindowInteractor):
         self.GetRenderWindow().Render()
 
     def set_model_visible(self, on: bool) -> None:
-        for actor in (self._model, self._edges):
-            if actor:
-                actor.SetVisibility(on)
-            self.GetRenderWindow().Render()
+        self._model_visible = on
+        self._update_model_display()
+
+    def set_visual_style(self, style: str) -> None:
+        """shaded (surfaces only), edges (surfaces + CAD edges), or wireframe."""
+        self._style = style
+        self._update_model_display()
+
+    def _update_model_display(self) -> None:
+        if self._model:
+            self._model.SetVisibility(self._model_visible)
+            prop = self._model.GetProperty()
+            if self._style == "wireframe":
+                prop.SetRepresentationToWireframe()
+            else:
+                prop.SetRepresentationToSurface()
+        if self._edges:
+            self._edges.SetVisibility(self._model_visible and self._style == "edges")
+        self.GetRenderWindow().Render()
 
     # ---- camera ---------------------------------------------------------------------
 
