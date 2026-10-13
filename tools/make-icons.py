@@ -50,6 +50,11 @@ ICONS = {
            '<path d="M8 4v12"/><path d="M4 8h16"/>',
     "model": '<path d="M12 2.5l8.5 4.9v9.2L12 21.5l-8.5-4.9V7.4z"/>'
              '<path d="M12 2.5v19M3.5 7.4 12 12l8.5-4.6"/>',
+    # view presets: a cube with one face filled to say which way it faces
+    "front": '<path d="M6 9.5h9v9H6z" fill="currentColor" fill-opacity="0.2"/>'
+             '<path d="M6 9.5h9v9H6z"/><path d="M6 9.5L9 6h9l-3 3.5"/><path d="M15 18.5L18 15V6"/>',
+    "right": '<path d="M9 9.5h9v9H9z" fill="currentColor" fill-opacity="0.2"/>'
+             '<path d="M9 9.5h9v9H9z"/><path d="M9 9.5L6 6M9 18.5L6 15V6l3 3.5"/><path d="M6 6h9l3 3.5"/>',
 
     # ---- sketch: create -----------------------------------------------------------
     "select": '<path d="M5 3l0 15 3.8-3.6 2.3 5.2 2.2-1-2.3-5.1H16z" fill="currentColor" stroke="none"/>'

@@ -148,7 +148,23 @@ class Viewer(QVTKRenderWindowInteractor):
         self._axes.SetViewport(0.0, 0.0, 0.14, 0.2)
         self._axes.EnabledOn()
         self._axes.InteractiveOff()
+        self._add_view_cube()
         self.Initialize()
+
+    def _add_view_cube(self) -> None:
+        """Fusion's ViewCube, top-right: click a face, edge or corner to snap the camera.
+        VTK's camera-orientation widget drives the main camera directly."""
+        self._viewcube = None
+        try:
+            from vtkmodules.vtkInteractionWidgets import vtkCameraOrientationWidget
+            cube = vtkCameraOrientationWidget()
+            cube.SetParentRenderer(self.ren)
+            rep = cube.GetRepresentation()
+            rep.AnchorToUpperRight()
+            cube.On()
+            self._viewcube = cube
+        except Exception:                 # older VTK without the widget: the axis triad stays
+            pass
 
     # ---- scene ----------------------------------------------------------------------
 
@@ -457,20 +473,38 @@ class Viewer(QVTKRenderWindowInteractor):
 
     # ---- camera ---------------------------------------------------------------------
 
-    def view_iso(self) -> None:
+    def _set_view(self, position, up) -> None:
         cam = self.ren.GetActiveCamera()
         cam.SetFocalPoint(0, 0, 0)
-        cam.SetPosition(1, -1.4, 1.1)
-        cam.SetViewUp(0, 0, 1)
+        cam.SetPosition(*position)
+        cam.SetViewUp(*up)
         self.ren.ResetCamera()
         self._fitted = self.ren.ComputeVisiblePropBounds()
         self.GetRenderWindow().Render()
 
+    def view_iso(self) -> None:
+        self._set_view((1, -1.4, 1.1), (0, 0, 1))
+
     def view_top(self) -> None:
-        cam = self.ren.GetActiveCamera()
-        cam.SetFocalPoint(0, 0, 0)
-        cam.SetPosition(0, 0, 1)
-        cam.SetViewUp(0, 1, 0)
+        self._set_view((0, 0, 1), (0, 1, 0))
+
+    def view_bottom(self) -> None:
+        self._set_view((0, 0, -1), (0, 1, 0))
+
+    def view_front(self) -> None:
+        self._set_view((0, -1, 0), (0, 0, 1))
+
+    def view_back(self) -> None:
+        self._set_view((0, 1, 0), (0, 0, 1))
+
+    def view_right(self) -> None:
+        self._set_view((1, 0, 0), (0, 0, 1))
+
+    def view_left(self) -> None:
+        self._set_view((-1, 0, 0), (0, 0, 1))
+
+    def fit(self) -> None:
+        """Fit everything in view (the toolbar Fit and the nav home)."""
         self.ren.ResetCamera()
         self._fitted = self.ren.ComputeVisiblePropBounds()
         self.GetRenderWindow().Render()
