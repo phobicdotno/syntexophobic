@@ -1,5 +1,6 @@
 """The "Update available" bar above the 3D view: the new version, what changed in it, and
-an Update button that installs it (the AppImage) or shows the command that does."""
+an Update button that installs it (the AppImage or the macOS app) or shows the command
+that does."""
 
 from __future__ import annotations
 
@@ -144,8 +145,10 @@ class UpdateBar(QFrame):
         self.changed.emit(f"Syntexophobic {up.latest.version} is available.")
 
     def _update_tip(self) -> str:
-        app = update.running_appimage()
+        app = update.running_build()
         if app and self.pending.latest.asset_url:
+            if app.suffix == ".app":
+                return f"Download {self.pending.latest.asset} and put it in place of {app.name}"
             return f"Download {self.pending.latest.asset} next to {app.name} and start it from now on"
         return f"Shows how: {update.how_to_update()}"
 
@@ -162,15 +165,16 @@ class UpdateBar(QFrame):
 
     def install(self, install=update.install):
         up = self.pending
-        app = update.running_appimage()
+        app = update.running_build()
         if app is None or not up.latest.asset_url:
             cmd = update.how_to_update()
             QApplication.clipboard().setText(cmd)
+            what = "the macOS app" if update.running_app() else "the AppImage"
             QMessageBox.information(
                 self.window(), "Update Syntexophobic",
-                f"This copy of Syntexophobic is not the AppImage. To update it, run:\n\n    {cmd}\n\n"
+                f"This copy of Syntexophobic is not {what}. To update it, run:\n\n    {cmd}\n\n"
                 "(copied to the clipboard), then start it again. Or download "
-                f"{up.latest.asset or 'the AppImage'} from {up.latest.page}")
+                f"{up.latest.asset or what} from {up.latest.page}")
             return
         self.b_update.setEnabled(False)
         self.b_skip.hide()
@@ -185,7 +189,9 @@ class UpdateBar(QFrame):
         self.installed = done
         def home(p):
             return str(p).replace(str(update.Path.home()), "~", 1)
-        where = (f"{home(done.links[0])} now starts it" if done.links else f"saved as {home(done.path)}")
+        where = (f"{home(done.links[0])} now starts it" if done.links
+                 else f"{home(done.path)} is the new version" if done.path.suffix == ".app"
+                 else f"saved as {home(done.path)}")
         self.text.setText(f"<b>Syntexophobic {html.escape(self.pending.latest.version)} is installed</b>: "
                           f"{html.escape(where)}. Restart to use it.")
         self.b_update.hide()
@@ -204,5 +210,11 @@ class UpdateBar(QFrame):
         QMessageBox.warning(self.window(), "Update failed", err)
 
     def restart(self):
-        if self.installed and QProcess.startDetached(str(self.installed.start), []):
+        if not self.installed:
+            return
+        start = self.installed.start
+        # a macOS app starts through `open`; -n: a new instance, as this one is still running
+        started = (QProcess.startDetached("open", ["-n", str(start)]) if start.suffix == ".app"
+                   else QProcess.startDetached(str(start), []))
+        if started:
             self.window().close()

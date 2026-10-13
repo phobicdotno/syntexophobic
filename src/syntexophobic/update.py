@@ -1,7 +1,8 @@
 """Update check against the GitHub repository's releases: is there a version newer than
 this one, what changed in it (the release notes are the CHANGELOG section of that
 version), and, when this is the AppImage, download the new one and point the
-~/Applications link at it.
+~/Applications link at it; when this is the macOS app, download the new app and put it
+in the running one's place.
 
 The repository is private, so the check needs a GitHub login: SYNTEXOPHOBIC_GITHUB_TOKEN,
 GH_TOKEN or GITHUB_TOKEN, else `gh auth token`, else the token git already stores for
@@ -12,9 +13,12 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import re
 import shutil
 import subprocess
+import sys
+import tempfile
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -24,6 +28,8 @@ from typing import Callable
 REPO = "phobicdotno/syntexophobic"
 API = f"https://api.github.com/repos/{REPO}"
 LINK = Path.home() / "Applications" / "Syntexophobic.AppImage"   # what the menu entry starts
+# where the macOS updater keeps the app it replaced, so it can be put back
+PREVIOUS = Path.home() / "Library" / "Caches" / "syntexophobic" / "previous"
 
 
 class UpdateError(Exception):
@@ -37,8 +43,8 @@ class Release:
     name: str
     notes: str                 # markdown: the CHANGELOG section of this version
     page: str                  # the release on github.com
-    asset: str = ""            # AppImage file name
-    asset_url: str = ""        # API url of the AppImage (needs the token, as the repo is private)
+    asset: str = ""            # file name of this platform's build: the AppImage, or the zipped macOS app
+    asset_url: str = ""        # API url of that file (needs the token, as the repo is private)
     asset_size: int = 0
     blocks_url: str = ""       # API url of <AppImage>.blocks, for downloading only what changed
 
@@ -130,14 +136,23 @@ def fetch_releases(tok: str) -> list[dict]:
         raise UpdateError(f"could not reach GitHub ({getattr(e, 'reason', e)})") from e
 
 
-def releases(data: list[dict]) -> list[Release]:
-    """Published releases with a version tag, newest first."""
+def asset_suffix(system: str = "", machine: str = "") -> str:
+    """How this platform's build ends: Syntexophobic-0.6.3-x86_64.AppImage on Linux,
+    Syntexophobic-0.6.3-macOS-arm64.zip on a Mac (the app, zipped with ditto)."""
+    if (system or sys.platform) == "darwin":
+        return f"-macOS-{machine or platform.machine()}.zip"
+    return ".AppImage"
+
+
+def releases(data: list[dict], suffix: str | None = None) -> list[Release]:
+    """Published releases with a version tag, newest first; the asset is this platform's build."""
+    suffix = asset_suffix() if suffix is None else suffix
     out = []
     for d in data:
         if d.get("draft") or d.get("prerelease") or parse_version(d.get("tag_name", "")) is None:
             continue
         assets = d.get("assets", [])
-        app = next((a for a in assets if a.get("name", "").endswith(".AppImage")), {})
+        app = next((a for a in assets if a.get("name", "").endswith(suffix)), {})
         blocks = next((a for a in assets if app and a.get("name") == app["name"] + ".blocks"), {})
         out.append(Release(d["tag_name"].lstrip("v"), d["tag_name"], d.get("name") or d["tag_name"],
                            d.get("body") or "", d.get("html_url", ""),
@@ -163,6 +178,17 @@ def running_appimage() -> Path | None:
     """The AppImage file this program runs from (its runtime sets $APPIMAGE)."""
     p = os.environ.get("APPIMAGE")
     return Path(p) if p and Path(p).is_file() else None
+
+
+def running_app() -> Path | None:
+    """The macOS app bundle this program runs from (its launcher sets $SYNTEXOPHOBIC_APP)."""
+    p = os.environ.get("SYNTEXOPHOBIC_APP")
+    return Path(p) if p and p.endswith(".app") and Path(p).is_dir() else None
+
+
+def running_build() -> Path | None:
+    """What an update replaces: the AppImage or the macOS app, None when run from source."""
+    return running_appimage() or running_app()
 
 
 def how_to_update() -> str:
@@ -293,7 +319,9 @@ def install(release: Release, current: Path, tok: str | None = None,
     """Puts the new AppImage next to the running one and moves the links that started the
     running one over to it. The old file stays, so pointing the link back undoes it.
     Downloads only what changed when the release has a block index, else (or when that
-    fails) the whole AppImage."""
+    fails) the whole AppImage. For the macOS app, see install_app."""
+    if current.suffix == ".app":
+        return install_app(release, current, tok, progress, fetch)
     if not release.asset_url:
         raise UpdateError(f"release {release.tag} has no AppImage")
     tok = token() if tok is None else tok
@@ -312,3 +340,62 @@ def install(release: Release, current: Path, tok: str | None = None,
     for link in links:
         repoint(link, dest)
     return Installed(dest, links, links[0] if links else dest, got)
+
+
+def unzip(archive: Path, dest: Path):
+    """Unpacks a zipped app with its symlinks and permissions: ditto on a Mac, else unzip."""
+    if shutil.which("ditto"):
+        cmd = ["ditto", "-x", "-k", str(archive), str(dest)]
+    elif shutil.which("unzip"):
+        cmd = ["unzip", "-q", str(archive), "-d", str(dest)]
+    else:
+        raise UpdateError("neither ditto nor unzip is installed")
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode:
+        raise UpdateError(f"could not unpack the download ({r.stderr.strip() or r.returncode})")
+
+
+def install_app(release: Release, current: Path, tok: str | None = None,
+                progress: Callable[[float, str], None] | None = None,
+                fetch: Callable[..., None] = download, unpack: Callable[[Path, Path], None] = unzip,
+                previous: Path | None = None) -> Installed:
+    """macOS: downloads the zipped app, unpacks it next to the running one and swaps the two,
+    so the Dock, Launchpad and Spotlight start the new version. The running app keeps
+    running from where it moved to: PREVIOUS/Syntexophobic-<old version>.app, which also
+    lets it be put back."""
+    if not release.asset_url:
+        raise UpdateError(f"release {release.tag} has no macOS app")
+    current = current.resolve()
+    if "/AppTranslocation/" in str(current):
+        raise UpdateError("macOS runs this copy from a read-only place: move Syntexophobic.app to "
+                          "Applications in Finder, start it from there, then update")
+    tok = token() if tok is None else tok
+    from .about import version
+    previous = PREVIOUS if previous is None else previous
+    stage = Path(tempfile.mkdtemp(prefix=".syntexophobic-update-", dir=current.parent))
+    try:
+        archive = stage / release.asset
+        fetch(release.asset_url, archive, tok, release.asset_size,
+              progress and (lambda f: progress(f, "Downloading")))
+        if progress:
+            progress(1.0, "Unpacking")
+        unpack(archive, stage / "new")
+        new = next((stage / "new").glob("*.app"), None)
+        if new is None:
+            raise UpdateError(f"{release.asset} holds no app")
+        old = stage / current.name
+        os.rename(current, old)                       # same folder, so both renames are instant
+        try:
+            os.rename(new, current)
+        except OSError:
+            os.rename(old, current)
+            raise
+        previous.mkdir(parents=True, exist_ok=True)
+        kept = previous / f"{current.stem}-{version()}.app"
+        shutil.rmtree(kept, ignore_errors=True)
+        shutil.move(old, kept)
+    except OSError as e:
+        raise UpdateError(f"could not replace {current} ({e})") from e
+    finally:
+        shutil.rmtree(stage, ignore_errors=True)
+    return Installed(current, [], current, release.asset_size)

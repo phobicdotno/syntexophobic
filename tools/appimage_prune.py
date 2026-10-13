@@ -3,6 +3,9 @@ desktop window needs, and every library those link against; delete the rest (Qt'
 engine, QML, multimedia, 3D, most of VTK). Run with the AppDir's own Python:
 
     AppDir/usr/python/bin/python3 tools/appimage_prune.py AppDir
+
+The macOS app is pruned the same way, its libraries being Mach-O files and Qt's frameworks
+(build-macos.sh runs it on Syntexophobic.app/Contents, the app's Python prefix).
 """
 
 import os
@@ -15,6 +18,10 @@ from pathlib import Path
 PLUGINS = {"platforms", "platformthemes", "platforminputcontexts", "xcbglintegrations", "egldeviceintegrations",
            "imageformats", "iconengines", "generic", "tls", "networkinformation", "wayland-decoration-client",
            "wayland-graphics-integration-client", "wayland-shell-integration", "printsupport"}
+MAC = sys.platform == "darwin"
+if MAC:     # the macOS style, the camera (Take photo…) and the camera permission prompt
+    PLUGINS |= {"styles", "multimedia", "permissions"}
+MACHO = {b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe"}     # 64-bit and universal Mach-O
 
 
 def imported_modules() -> set[str]:
@@ -34,22 +41,44 @@ def imported_modules() -> set[str]:
 
 
 def needed(path: Path) -> list[str]:
+    if MAC:     # @rpath/QtCore.framework/Versions/A/QtCore, @rpath/libvtkCommonCore-9.6.dylib: by file name
+        out = subprocess.run(["otool", "-L", str(path)], capture_output=True, text=True).stdout
+        return [Path(line.split(" (")[0].strip()).name for line in out.splitlines()[1:] if " (" in line]
     out = subprocess.run(["readelf", "-d", str(path)], capture_output=True, text=True).stdout
     return re.findall(r"\(NEEDED\)\s+Shared library: \[(.+?)\]", out)
 
 
+def libraries(root: Path) -> list[Path]:
+    """The shared libraries under root: *.so* files, or on macOS every Mach-O file (dylibs,
+    extension modules, framework binaries such as QtCore.framework/Versions/A/QtCore)."""
+    if not MAC:
+        return [f for f in root.rglob("*.so*") if f.is_file()]
+    out = []
+    for f in root.rglob("*"):
+        if f.is_file() and not f.is_symlink():
+            with open(f, "rb") as fh:
+                if fh.read(4) in MACHO:
+                    out.append(f)
+    return out
+
+
+def framework(f: Path) -> Path | None:
+    """QtFoo.framework for its binary QtFoo.framework/Versions/A/QtFoo."""
+    fw = next((p for p in f.parents if p.suffix == ".framework"), None)
+    return fw if fw is not None and f.name == fw.stem else None
+
+
 def main(appdir: Path):
-    site = next((appdir / "usr/python/lib").glob("python3.*/site-packages"))
+    site = next(p for lib in (appdir / "usr/python/lib", appdir / "lib") for p in lib.glob("python3.*/site-packages"))
     pyside, vtk = site / "PySide6", site / "vtkmodules"
     pruned = [pyside, vtk]                      # only these two trees are trimmed
     by_name: dict[str, Path] = {}
     for root in site.iterdir():
         if root.is_dir():
-            for f in root.rglob("*.so*"):
-                if f.is_file():
-                    by_name.setdefault(f.name, f)
+            for f in libraries(root):
+                by_name.setdefault(f.name, f)
     seeds = {Path(f) for f in imported_modules()}
-    seeds |= {f for d in PLUGINS for f in (pyside / "Qt/plugins" / d).glob("*.so")}
+    seeds |= {f for d in PLUGINS for f in (pyside / "Qt/plugins" / d).glob("*.dylib" if MAC else "*.so")}
     keep, todo = set(), list(seeds)
     while todo:
         f = todo.pop()
@@ -60,11 +89,15 @@ def main(appdir: Path):
     # symlinked sonames (libfoo.so.6 -> libfoo.so.6.9.1): keep both ends
     keep |= {f.resolve() for f in keep}
     before = sum(f.stat().st_size for p in pruned for f in p.rglob("*") if f.is_file() and not f.is_symlink())
+    kept_names = {k.name for k in keep}
     for p in pruned:
-        for f in list(p.rglob("*.so*")):
-            if f.is_file() and f not in keep and f.resolve() not in keep and not any(
-                    k.name == f.name for k in keep):
-                f.unlink()
+        for f in libraries(p):
+            if f.exists() and f not in keep and f.resolve() not in keep and f.name not in kept_names:
+                fw = framework(f) if MAC else None
+                if fw is not None:
+                    shutil.rmtree(fw)               # the whole framework: headers, resources, links
+                elif fw is None and not (MAC and any(q.suffix == ".framework" for q in f.parents)):
+                    f.unlink()
     for d in (pyside / "Qt/plugins").iterdir():
         if d.name not in PLUGINS:
             shutil.rmtree(d)

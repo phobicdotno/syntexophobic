@@ -525,6 +525,8 @@ def server_command() -> list[str]:
         return [uv, "run", "--project", str(root), "syntexophobic", "mcp"]
     if os.environ.get("APPIMAGE"):                     # the AppImage file; its Python is in a temporary mount
         return [os.environ["APPIMAGE"], "mcp"]
+    if os.environ.get("SYNTEXOPHOBIC_APP"):            # the macOS app: its launcher sets the environment up
+        return [str(Path(os.environ["SYNTEXOPHOBIC_APP"]) / "Contents/MacOS/Syntexophobic"), "mcp"]
     return [sys.executable, "-m", "syntexophobic", "mcp"]
 
 

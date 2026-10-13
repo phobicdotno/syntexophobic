@@ -3,7 +3,7 @@
 # Syntexophobic
 
 Parametric CAD and 2.5D CAM for GRBL machines (Shapeoko, Nomad, Carbide Motion), with a
-git-style history instead of a timeline. Built on OpenCascade, Qt and VTK. Linux desktop.
+git-style history instead of a timeline. Built on OpenCascade, Qt and VTK. Linux and macOS.
 
 *σύντηξις (sýntēxis): melting together, fusion.*
 
@@ -22,9 +22,23 @@ chmod +x Syntexophobic-*-x86_64.AppImage
 It carries its own Python and libraries (x86-64 Linux; the window needs X11 or XWayland).
 Build it from a clone with `./tools/build-appimage.sh` (writes `dist/`).
 
+**On a Mac** (Apple silicon, macOS 12 or later): download `Syntexophobic-<version>-macOS-arm64.zip`,
+open it and move *Syntexophobic* to Applications. It is not signed by Apple, so the first
+start says macOS cannot check it: System Settings → Privacy & Security → *Open Anyway*
+(or `xattr -dr com.apple.quarantine /Applications/Syntexophobic.app`). For Claude Code:
+`/Applications/Syntexophobic.app/Contents/MacOS/Syntexophobic install-mcp`. Build it on a Mac
+with `./tools/build-macos.sh`.
+
+**Releases** are built by GitHub Actions: pushing a version tag (`git tag v0.6.3 && git push
+origin v0.6.3`, after the version in `pyproject.toml` and a `## v0.6.3` section in
+`CHANGELOG.md`) builds the AppImage with its `.blocks` file and the macOS app, tries both,
+and publishes them as the release, with that CHANGELOG section as its notes.
+
 **Updates:** when a newer release is on GitHub, a bar above the view says so, with what's new.
 In the AppImage, *Update* downloads the new one next to it and points
-`~/Applications/Syntexophobic.AppImage` (the link a menu entry should start) at it. It
+`~/Applications/Syntexophobic.AppImage` (the link a menu entry should start) at it. In the
+macOS app, it downloads the new app and puts it in the old one's place (the old one is kept
+in `~/Library/Caches/syntexophobic/previous`). It
 downloads only what changed when the release also has the `.AppImage.blocks` file that
 `./tools/build-appimage.sh` writes next to the AppImage (attach both). The
 repository is private, so the check uses your GitHub login: `gh auth login`, `GH_TOKEN`, or

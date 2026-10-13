@@ -1,9 +1,18 @@
 import io
 import os
+import zipfile
 
 import pytest
 
 from syntexophobic import update
+
+ASSET_SUFFIX = update.asset_suffix
+
+
+@pytest.fixture(autouse=True)
+def on_linux(monkeypatch):
+    """The tests read releases as the Linux program does, whatever they run on."""
+    monkeypatch.setattr(update, "asset_suffix", lambda *a: ".AppImage")
 
 NOTES_070 = "**CAM**\n- Faster roughing\n\n**Testing**\n- more\n"
 NOTES_061 = "**Fixes**\n- A crash\n"
@@ -11,7 +20,8 @@ NOTES_061 = "**Fixes**\n- A crash\n"
 
 def gh(tag, body="", draft=False, prerelease=False, asset=True):
     v = tag.lstrip("v")
-    assets = [{"name": f"Syntexophobic-{v}-x86_64.AppImage", "url": f"https://api/assets/{v}", "size": 4}] if asset else []
+    assets = [{"name": f"Syntexophobic-{v}-macOS-arm64.zip", "url": f"https://api/assets/{v}.zip", "size": 9},
+              {"name": f"Syntexophobic-{v}-x86_64.AppImage", "url": f"https://api/assets/{v}", "size": 4}] if asset else []
     return {"tag_name": tag, "name": f"Syntexophobic {v}", "body": body, "html_url": f"https://gh/{tag}",
             "draft": draft, "prerelease": prerelease, "assets": assets}
 
@@ -34,6 +44,15 @@ def test_check_lists_newer_published_releases_newest_first():
     assert up.notes().index("Syntexophobic 0.7.0") < up.notes().index("Syntexophobic 0.6.1")
     assert update.check("0.7.0", fetch=lambda tok: DATA, tok="t") is None
     assert update.check("0.7.0", fetch=lambda tok: [], tok="t") is None
+
+
+def test_each_platform_gets_its_own_build():
+    assert ASSET_SUFFIX("linux") == ".AppImage"
+    assert ASSET_SUFFIX("darwin", "arm64") == "-macOS-arm64.zip"
+    mac = update.releases(DATA, ASSET_SUFFIX("darwin", "arm64"))[0]
+    assert mac.asset == "Syntexophobic-0.7.0-macOS-arm64.zip" and mac.asset_url.endswith(".zip")
+    assert mac.asset_size == 9 and mac.blocks_url == ""
+    assert update.releases(DATA, ASSET_SUFFIX("darwin", "x86_64"))[0].asset == ""   # no Intel build
 
 
 def test_check_passes_the_token_and_reports_no_access(monkeypatch):
@@ -81,6 +100,51 @@ def test_install_without_a_link_leaves_the_new_file_to_start(tmp_path, monkeypat
     up = update.check("0.6.0", fetch=lambda tok: DATA, tok="t")
     done = update.install(up.latest, old, tok="t", fetch=lambda url, dest, *a: dest.write_text("new"))
     assert done.links == [] and done.start == done.path == tmp_path / up.latest.asset
+
+
+def _app(folder, text):
+    (folder / "Syntexophobic.app/Contents/MacOS").mkdir(parents=True)
+    (folder / "Syntexophobic.app/Contents/MacOS/Syntexophobic").write_text(text)
+    return folder / "Syntexophobic.app"
+
+
+def test_install_app_puts_the_new_macos_app_in_place_and_keeps_the_old(tmp_path, monkeypatch):
+    monkeypatch.setattr("syntexophobic.about.version", lambda: "0.6.0")
+    apps, build = tmp_path / "Applications", tmp_path / "build"
+    apps.mkdir()
+    build.mkdir()
+    current = _app(apps, "old")
+    _app(build, "new")
+
+    def fetch(url, dest, tok, size, progress):
+        assert url == "https://api/assets/0.7.0.zip" and tok == "t"
+        with zipfile.ZipFile(dest, "w") as z:          # as `ditto -c -k --keepParent` lays it out
+            z.write(build / "Syntexophobic.app/Contents/MacOS/Syntexophobic",
+                    "Syntexophobic.app/Contents/MacOS/Syntexophobic")
+        progress(1.0)
+
+    def unpack(archive, dest):
+        zipfile.ZipFile(archive).extractall(dest)
+    release = update.releases(DATA, ASSET_SUFFIX("darwin", "arm64"))[0]
+    steps = []
+    done = update.install_app(release, current, "t", lambda f, what: steps.append(what), fetch, unpack,
+                              previous=tmp_path / "previous")
+    assert done.path == done.start == current.resolve() and done.links == []
+    assert (current / "Contents/MacOS/Syntexophobic").read_text() == "new"
+    kept = tmp_path / "previous/Syntexophobic-0.6.0.app/Contents/MacOS/Syntexophobic"
+    assert kept.read_text() == "old"                   # the old app, to put back
+    assert sorted(p.name for p in apps.iterdir()) == ["Syntexophobic.app"]   # no download left behind
+    assert steps == ["Downloading", "Unpacking"]
+
+    with pytest.raises(update.UpdateError, match="holds no app"):
+        update.install_app(release, current, "t", None, lambda url, dest, *a: dest.write_text("x"),
+                           lambda archive, dest: dest.mkdir(), previous=tmp_path / "previous")
+    assert (current / "Contents/MacOS/Syntexophobic").read_text() == "new"
+    assert sorted(p.name for p in apps.iterdir()) == ["Syntexophobic.app"]
+
+    moved = _app(tmp_path / "private/var/folders/x/AppTranslocation/1234/d", "old")
+    with pytest.raises(update.UpdateError, match="move Syntexophobic.app to Applications"):
+        update.install_app(release, moved, "t", fetch=fetch, unpack=unpack)
 
 
 def test_a_cut_download_leaves_nothing(tmp_path, monkeypatch):
