@@ -73,22 +73,15 @@ class DesignPanel(QWidget):
         self.browser.currentItemChanged.connect(lambda cur, _prev: self._tree_select(cur))
         self.browser.itemDoubleClicked.connect(lambda it, _col: self._tree_activate(it))
         bl.addWidget(self.browser)
-        grid = QGridLayout()
-        for i, (text, slot) in enumerate((
-                ("Parameters…", self.edit_parameters),
-                ("New sketch…", self.new_sketch), ("Sketch on face", self.sketch_on_face),
-                ("Extrude", lambda: self.add("extrude")),
-                ("Revolve", lambda: self.add("revolve")), ("Loft", lambda: self.add("loft")),
-                ("Sweep", lambda: self.add("sweep")), ("Fillet", lambda: self.add("fillet")),
-                ("Chamfer", lambda: self.add("chamfer")), ("Shell", lambda: self.add("shell")),
-                ("Mirror", lambda: self.add("mirror")), ("Hole", lambda: self.add("hole")),
-                ("Relief…", self.add_relief), ("Import…", self.add_import),
-                ("Edit sketch", self.open_sketch),
-                ("Remove", self.remove), ("Up", lambda: self.move(-1)), ("Down", lambda: self.move(1)))):
+        # Creating features lives on the top ribbon (Fusion-style); the browser keeps only
+        # the context actions for the selected item.
+        row = QHBoxLayout()
+        for text, slot in (("Edit sketch", self.open_sketch), ("Remove", self.remove),
+                           ("Up", lambda: self.move(-1)), ("Down", lambda: self.move(1))):
             b = QPushButton(text)
             b.clicked.connect(slot)
-            grid.addWidget(b, i // 3, i % 3)
-        bl.addLayout(grid)
+            row.addWidget(b)
+        bl.addLayout(row)
         col.addWidget(box)
 
         self.form = DataForm()

@@ -243,6 +243,7 @@ class MainWindow(QMainWindow):
         self._build_job_dock()
         self._build_history_dock()
         self._build_design_dock()
+        self._build_ribbon()
         self._build_assistant_dock()
         self.status = QLabel("Start a new design to model a part, or open a STEP / STL file to machine one.")
         self.statusBar().addWidget(self.status, 1)
@@ -317,9 +318,9 @@ class MainWindow(QMainWindow):
         act("New from STEP / STL…", self.new_project, "new", "Ctrl+N", m_file)
         act("Open project…", self.open_project, "open", "Ctrl+O", m_file)
         tb.addSeparator()
-        self.a_generate = act("Generate toolpaths", self.generate, "generate", "Ctrl+G", m_paths)
-        self.a_simulate = act("Simulate", self.simulate, "simulate", "Ctrl+R", m_paths)
-        self.a_export = act("Export G-code…", self.export_gcode, "export", "Ctrl+E", m_file)
+        self.a_generate = act("Generate toolpaths", self.generate, "generate", "Ctrl+G", m_paths, toolbar=False)
+        self.a_simulate = act("Simulate", self.simulate, "simulate", "Ctrl+R", m_paths, toolbar=False)
+        self.a_export = act("Export G-code…", self.export_gcode, "export", "Ctrl+E", m_file, toolbar=False)
         m_file.addSeparator()
         for text, slot in (("Import DXF as sketch…", self.import_dxf), ("Export sketch as DXF…", self.export_dxf),
                            ("Export model (STEP / STL)…", self.export_model),
@@ -334,9 +335,9 @@ class MainWindow(QMainWindow):
         act("Top view", lambda: self.viewer.view_top(), "top", "2", m_view)
         tb.addSeparator()
         m_view.addSeparator()
-        self.c_paths = act("Toolpaths", lambda _: self._redraw_paths(), "toolpaths", "T", m_view, True)
-        self.c_rapids = act("Rapids", lambda _: self._redraw_paths(), "rapids", "R", m_view, True)
-        self.c_model = act("Model", lambda on: self.viewer.set_model_visible(on), "model", "M", m_view, True)
+        self.c_paths = act("Toolpaths", lambda _: self._redraw_paths(), "toolpaths", "T", m_view, True, toolbar=False)
+        self.c_rapids = act("Rapids", lambda _: self._redraw_paths(), "rapids", "R", m_view, True, toolbar=False)
+        self.c_model = act("Model", lambda on: self.viewer.set_model_visible(on), "model", "M", m_view, True, toolbar=False)
 
         m_view.addSeparator()
         m_section = m_view.addMenu("Section")
@@ -387,6 +388,78 @@ class MainWindow(QMainWindow):
             group.addAction(a)
             self.toolbar_styles[key] = a
         self.set_toolbar_style(QSettings().value("toolbar_style", "icons"))
+
+    def _build_ribbon(self):
+        """The Fusion-style tool ribbon under the app bar: a Design tab (Create / Modify /
+        Insert / Inspect) and a Manufacture tab (Actions / Display), swapped by workspace."""
+        from PySide6.QtWidgets import QFrame
+        from .design_ui import _ribbon_button, _ribbon_group
+        dp = self.design_panel
+
+        def qa(icon, text, slot, tip=None):
+            a = QAction(mono_icon(icon, self.palette()), text, self)
+            a.setToolTip(tip or text)
+            a.triggered.connect(lambda _=False, s=slot: s())
+            return a
+
+        def page(groups):
+            w = QWidget()
+            row = QHBoxLayout(w)
+            row.setContentsMargins(4, 0, 4, 0)
+            row.setSpacing(0)
+            for i, (title, buttons) in enumerate(groups):
+                if i:
+                    line = QFrame()
+                    line.setFrameShape(QFrame.VLine)
+                    line.setProperty("ribbonSep", True)
+                    row.addWidget(line)
+                row.addWidget(_ribbon_group(title, buttons))
+            row.addStretch(1)
+            return w
+
+        # ---- Design tab ----
+        big = {"extrude", "revolve"}
+        create = [qa("sketch_new", "Create Sketch", dp.new_sketch, "New sketch on a plane"),
+                  qa("sketch_face", "Sketch on Face", dp.sketch_on_face, "New sketch on the picked flat face"),
+                  qa("extrude", "Extrude", lambda: dp.add("extrude")),
+                  qa("revolve", "Revolve", lambda: dp.add("revolve")),
+                  qa("loft", "Loft", lambda: dp.add("loft")),
+                  qa("sweep", "Sweep", lambda: dp.add("sweep")),
+                  qa("hole", "Hole", lambda: dp.add("hole"))]
+        modify = [qa("fillet", "Fillet", lambda: dp.add("fillet")),
+                  qa("chamfer", "Chamfer", lambda: dp.add("chamfer")),
+                  qa("shell", "Shell", lambda: dp.add("shell")),
+                  qa("mirror", "Mirror", lambda: dp.add("mirror"))]
+        insert = [qa("relief", "Relief", dp.add_relief, "Relief from a picture"),
+                  qa("import", "Insert STEP/STL", dp.add_import, "Import a STEP or STL body")]
+        self.a_parameters = qa("parameters", "Parameters", dp.edit_parameters, "Named parameters")
+        self.a_measure.setIcon(mono_icon("dimension", self.palette()))
+        inspect = [self.a_parameters, self.a_measure]
+        self.design_feature_actions = create + modify + insert + [self.a_parameters]
+        design_page = page([("CREATE", [_ribbon_button(a, big=a.text() in {"Extrude", "Revolve"}) for a in create]),
+                            ("MODIFY", [_ribbon_button(a) for a in modify]),
+                            ("INSERT", [_ribbon_button(a) for a in insert]),
+                            ("INSPECT", [_ribbon_button(a) for a in inspect])])
+
+        # ---- Manufacture tab ----
+        manu_page = page([("ACTIONS", [_ribbon_button(self.a_generate, big=True),
+                                       _ribbon_button(self.a_simulate, big=True),
+                                       _ribbon_button(self.a_export)]),
+                          ("DISPLAY", [_ribbon_button(self.c_paths), _ribbon_button(self.c_rapids),
+                                       _ribbon_button(self.c_model)])])
+
+        self.ribbon = QStackedWidget()
+        self.ribbon.addWidget(design_page)
+        self.ribbon.addWidget(manu_page)
+        self._design_page, self._manu_page = design_page, manu_page
+        rb = QToolBar("Ribbon")
+        rb.setObjectName("ribbon-toolbar")
+        rb.setMovable(False)
+        rb.setContextMenuPolicy(Qt.PreventContextMenu)
+        rb.addWidget(self.ribbon)
+        self.addToolBarBreak()
+        self.addToolBar(rb)
+        self.ribbon_toolbar = rb
 
     def set_fullscreen(self, on: bool):
         self.setWindowState(self.windowState() | Qt.WindowFullScreen if on
@@ -572,6 +645,8 @@ class MainWindow(QMainWindow):
         has_part = self.part is not None
         self.design_panel.setVisible(has_part)
         self.design_start.setVisible(not has_part)
+        for a in getattr(self, "design_feature_actions", []):
+            a.setEnabled(has_part)
         if self.project is None:
             self.design_note.setText("Model a part: start a new design, then draw a sketch and extrude it.\n\n"
                                      "To machine a finished part, use New from STEP / STL instead.")
@@ -680,6 +755,7 @@ class MainWindow(QMainWindow):
         self.viewer.picking = design or self.a_measure.isChecked()
         self.design_dock.setVisible(design)
         self.job_dock.setVisible(not design)
+        self.ribbon.setCurrentWidget(self._design_page if design else self._manu_page)
         for a in (self.a_generate, self.a_simulate, self.a_export, self.c_paths, self.c_rapids):
             a.setVisible(not design)
         if design:
@@ -845,6 +921,7 @@ class MainWindow(QMainWindow):
         col.addWidget(view)
         self.stack.addWidget(page)
         self.stack.setCurrentWidget(page)
+        self.ribbon_toolbar.hide()                   # the sketch page carries its own ribbon
         self.sketch_page, self.sketch_view = page, view
         view.solve_and_draw()
         QTimer.singleShot(0, view.fit)
@@ -856,6 +933,7 @@ class MainWindow(QMainWindow):
         self.stack.removeWidget(self.sketch_page)
         self.sketch_page.deleteLater()
         self.sketch_page = None
+        self.ribbon_toolbar.show()
         if save:
             self._design_changed()
 
