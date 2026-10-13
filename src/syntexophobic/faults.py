@@ -181,7 +181,12 @@ def signature(turn: Turn) -> str:
 def environment() -> dict[str, str]:
     from .about import build, version
     env = {"Version": f"{version()} (build {build()})" if build() else version()}
-    env["Running as"] = "AppImage " + os.environ["APPIMAGE"] if os.environ.get("APPIMAGE") else "source / installed"
+    if os.environ.get("APPIMAGE"):
+        env["Running as"] = "AppImage " + os.environ["APPIMAGE"]
+    elif os.environ.get("SYNTEXOPHOBIC_APP"):
+        env["Running as"] = "macOS app " + os.environ["SYNTEXOPHOBIC_APP"]
+    else:
+        env["Running as"] = "source / installed"
     root = Path(__file__).resolve().parents[2]
     if (root / ".git").exists():
         try:
@@ -193,7 +198,9 @@ def environment() -> dict[str, str]:
         osr = platform.freedesktop_os_release()
         env["OS"] = f"{osr.get('PRETTY_NAME', osr.get('NAME', ''))}, {platform.machine()}"
     except OSError:
-        env["OS"] = f"{platform.system()} {platform.release()}, {platform.machine()}"
+        mac = platform.mac_ver()[0]
+        env["OS"] = (f"macOS {mac}, {platform.machine()}" if mac
+                     else f"{platform.system()} {platform.release()}, {platform.machine()}")
     env["Kernel"] = platform.release()
     env["Python"] = sys.version.split()[0]
     try:

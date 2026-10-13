@@ -1383,7 +1383,9 @@ def _dark_palette(app: QApplication):
 
 def run(path: str | None = None) -> int:
     # VTK renders through X11; under Wayland, Qt must use XWayland for the GL view to embed.
-    os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
+    # macOS has only its own platform (cocoa), which VTK draws into directly.
+    if sys.platform.startswith("linux"):
+        os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
     # the window's WM_CLASS is (RESOURCE_NAME, application name): "syntexophobic", "Syntexophobic",
     # matching the menu entry, where it would otherwise be "__main__.py"
     os.environ.setdefault("RESOURCE_NAME", desktop.APP_ID)
