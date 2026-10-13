@@ -6,8 +6,8 @@ set -euo pipefail
 dest=$1
 tmp=$(mktemp -d)
 gh release download --repo pal1000/mesa-dist-win --pattern 'mesa3d-*-release-msvc.7z' --dir "$tmp"
-7z e -bd -y -o"$tmp/x64" "$tmp"/mesa3d-*.7z 'x64/*.dll' >/dev/null
-for dll in opengl32.dll libgallium_wgl.dll libglapi.dll; do
-    if [ -f "$tmp/x64/$dll" ]; then cp "$tmp/x64/$dll" "$dest/"; fi
-done
-ls "$dest"/opengl32.dll
+7z x -bd -y -o"$tmp/mesa" "$tmp"/mesa3d-*.7z >/dev/null
+# opengl32.dll loads the driver (libgallium_wgl.dll) and its helpers from its own folder
+cp "$tmp"/mesa/x64/*.dll "$dest/"
+ls "$tmp"/mesa/x64
+echo "GALLIUM_DRIVER=llvmpipe" >> "${GITHUB_ENV:-/dev/null}"
