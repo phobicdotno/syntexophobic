@@ -5,7 +5,12 @@ from __future__ import annotations
 from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (QComboBox, QGridLayout, QGroupBox, QHBoxLayout, QInputDialog,
-                               QLabel, QListWidget, QPushButton, QToolBar, QVBoxLayout, QWidget)
+                               QLabel, QListWidget, QPushButton, QToolBar, QTreeWidget,
+                               QTreeWidgetItem, QVBoxLayout, QWidget)
+
+FEATURE_ICON = {"extrude": "extrude", "revolve": "revolve", "loft": "loft", "sweep": "sweep",
+                "fillet": "fillet", "chamfer": "chamfer", "shell": "shell", "mirror": "mirror",
+                "hole": "hole", "relief": "relief", "import": "import"}
 
 from pathlib import Path
 
@@ -54,14 +59,20 @@ class DesignPanel(QWidget):
         self._DataForm = DataForm
         self.part: Part | None = None
         self.picked_face = None          # (x, y, z) of the last face clicked with no feature using it
+        self._row = -1                   # the active feature (index into part.features), or -1
+        self._feat_items: list[QTreeWidgetItem] = []
         col = QVBoxLayout(self)
 
-        box = QGroupBox("Features (built top to bottom)")
+        box = QGroupBox("Browser")
         bl = QVBoxLayout(box)
-        self.l_features = QListWidget()
-        self.l_features.currentRowChanged.connect(self._pick)
-        self.l_features.itemDoubleClicked.connect(lambda _: self.open_sketch())
-        bl.addWidget(self.l_features)
+        self.browser = QTreeWidget()
+        self.browser.setHeaderHidden(True)
+        self.browser.setIndentation(14)
+        self.browser.setExpandsOnDoubleClick(False)
+        self.browser.setMinimumHeight(220)
+        self.browser.currentItemChanged.connect(lambda cur, _prev: self._tree_select(cur))
+        self.browser.itemDoubleClicked.connect(lambda it, _col: self._tree_activate(it))
+        bl.addWidget(self.browser)
         grid = QGridLayout()
         for i, (text, slot) in enumerate((
                 ("Parameters…", self.edit_parameters),
@@ -98,18 +109,103 @@ class DesignPanel(QWidget):
         self.part = part
         self._fill()
 
+    def _icon(self, name: str):
+        from .app import mono_icon
+        return mono_icon(name, self.palette())
+
+    def _feature_label(self, i: int, f: Feature) -> str:
+        text = f.name or f.type.capitalize()
+        if f.type in ("extrude", "revolve", "loft", "sweep") and f.sketch:
+            text += f"  ·  {f.sketch}, {f.operation}"
+        return text + ("  (off)" if f.suppressed else "")
+
     def _fill(self, row: int = 0) -> None:
-        self.l_features.blockSignals(True)
-        self.l_features.clear()
+        """Rebuild the browser tree: Origin planes, Sketches and the feature history."""
+        from PySide6.QtGui import QColor
+        self.browser.blockSignals(True)
+        self.browser.clear()
+        self._feat_items = []
+
+        origin = QTreeWidgetItem(self.browser, ["Origin"])
+        origin.setFlags(Qt.ItemIsEnabled)
+        for plane in ("XY", "XZ", "YZ"):
+            it = QTreeWidgetItem(origin, [f"{plane} plane"])
+            it.setData(0, Qt.UserRole, ("plane", plane))
+            it.setIcon(0, self._icon("sketch_new"))
+
+        sk_root = QTreeWidgetItem(self.browser, ["Sketches"])
+        sk_root.setFlags(Qt.ItemIsEnabled)
+        for name in sorted(self.part.sketches):
+            it = QTreeWidgetItem(sk_root, [name])
+            it.setData(0, Qt.UserRole, ("sketch", name))
+            it.setIcon(0, self._icon("sketch_new"))
+
+        feat_root = QTreeWidgetItem(self.browser, ["Features"])
+        feat_root.setFlags(Qt.ItemIsEnabled)
         for i, f in enumerate(self.part.features):
-            text = f"{i + 1}. {f.name or f.type.capitalize()}  ·  {f.type}"
-            if f.type in ("extrude", "revolve", "loft", "sweep"):
-                text += f" {f.sketch}, {f.operation}"
-            self.l_features.addItem(text + ("  (off)" if f.suppressed else ""))
-        self.l_features.blockSignals(False)
+            it = QTreeWidgetItem(feat_root, [self._feature_label(i, f)])
+            it.setData(0, Qt.UserRole, ("feature", i))
+            it.setIcon(0, self._icon(FEATURE_ICON.get(f.type, "model")))
+            if f.suppressed:
+                it.setForeground(0, QColor(130, 136, 145))
+            self._feat_items.append(it)
+
+        self.browser.expandAll()
+        self.browser.blockSignals(False)
         if self.part.features:
-            self.l_features.setCurrentRow(max(0, min(row, len(self.part.features) - 1)))
-        self._pick(self.l_features.currentRow())
+            self._row = max(0, min(row, len(self.part.features) - 1))
+            self.browser.setCurrentItem(self._feat_items[self._row])
+        else:
+            self._row = -1
+            self._pick(-1)
+
+    def _tree_select(self, item) -> None:
+        data = item.data(0, Qt.UserRole) if item else None
+        if data and data[0] == "feature":
+            self._row = data[1]
+            self._pick(self._row)
+        elif data and data[0] == "sketch":
+            self.form.set(None, None)
+            self.selection.emit(None)
+            self.status.emit(f"Sketch {data[1]} — double-click to edit it.")
+        elif data and data[0] == "plane":
+            self.form.set(None, None)
+            self.selection.emit(None)
+            self.status.emit(f"{data[1]} plane — double-click for a new sketch on it.")
+        else:
+            self.selection.emit(None)
+
+    def _tree_activate(self, item) -> None:
+        data = item.data(0, Qt.UserRole) if item else None
+        if not data:
+            return
+        kind, val = data
+        if kind == "sketch":
+            self.edit_sketch.emit(val)
+        elif kind == "plane":
+            self._new_sketch_on_plane(val)
+        elif kind == "feature":
+            f = self.part.features[val]
+            if f.sketch:
+                self.edit_sketch.emit(f.sketch.split(";")[0])
+
+    def _new_sketch_on_plane(self, plane: str) -> None:
+        n = 1
+        while f"sketch{n}" in self.part.sketches:
+            n += 1
+        name = f"sketch{n}"
+        self.part.sketches[name] = Sketch(name=name, plane=plane, offset=0.0)
+        self.changed.emit()
+        self.edit_sketch.emit(name)
+
+    def current_row(self) -> int:
+        feats = self.part.features if self.part else []
+        return self._row if 0 <= self._row < len(feats) else -1
+
+    def set_current_row(self, row: int) -> None:
+        if 0 <= row < len(self._feat_items):
+            self.browser.setCurrentItem(self._feat_items[row])
+            self._row = row
 
     def _pick(self, row: int) -> None:
         feats = self.part.features if self.part else []
@@ -124,7 +220,7 @@ class DesignPanel(QWidget):
         self.selection.emit(f)
 
     def current(self) -> Feature | None:
-        row = self.l_features.currentRow()
+        row = self.current_row()
         feats = self.part.features if self.part else []
         return feats[row] if 0 <= row < len(feats) else None
 
@@ -206,14 +302,10 @@ class DesignPanel(QWidget):
                 break
 
     def _edited(self) -> None:
-        row = self.l_features.currentRow()
-        if 0 <= row < len(self.part.features):
+        row = self.current_row()
+        if 0 <= row < len(self.part.features) and row < len(self._feat_items):
             f = self.part.features[row]
-            item = self.l_features.item(row)
-            text = f"{row + 1}. {f.name or f.type.capitalize()}  ·  {f.type}"
-            if f.type in ("extrude", "revolve", "loft", "sweep"):
-                text += f" {f.sketch}, {f.operation}"
-            item.setText(text + ("  (off)" if f.suppressed else ""))
+            self._feat_items[row].setText(0, self._feature_label(row, f))
         self.changed.emit()
 
     def _check_expression(self, text: str):
@@ -392,21 +484,21 @@ class DesignPanel(QWidget):
         self.changed.emit()
 
     def remove(self) -> None:
-        row = self.l_features.currentRow()
+        row = self.current_row()
         if 0 <= row < len(self.part.features):
             del self.part.features[row]
             self._fill(row)
             self.changed.emit()
 
     def move(self, delta: int) -> None:
-        feats, row = self.part.features, self.l_features.currentRow()
+        feats, row = self.part.features, self.current_row()
         if 0 <= row < len(feats) and 0 <= row + delta < len(feats):
             feats[row], feats[row + delta] = feats[row + delta], feats[row]
             self._fill(row + delta)
             self.changed.emit()
 
     def open_sketch(self) -> None:
-        row = self.l_features.currentRow()
+        row = self.current_row()
         name = None
         if 0 <= row < len(self.part.features):
             name = self.part.features[row].sketch or None

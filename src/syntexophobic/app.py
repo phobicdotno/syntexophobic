@@ -731,10 +731,10 @@ class MainWindow(QMainWindow):
         self.project.reload()
         if self.part is not None:
             from .model import Part
-            row = self.design_panel.l_features.currentRow()
+            row = self.design_panel.current_row()
             self.part = Part.load(self.project.folder / self.project.job.model)
             self.design_panel.set_part(self.part)
-            self.design_panel.l_features.setCurrentRow(row)
+            self.design_panel.set_current_row(row)
         self._fill_job()
         self._refresh_model()
         self._refresh_history_status()
@@ -975,10 +975,10 @@ class MainWindow(QMainWindow):
             self.project.reload()
             if self.part is not None:
                 from .model import Part
-                row = self.design_panel.l_features.currentRow()
+                row = self.design_panel.current_row()
                 self.part = Part.load(self.project.folder / self.project.job.model)
                 self.design_panel.set_part(self.part)
-                self.design_panel.l_features.setCurrentRow(max(row, 0))
+                self.design_panel.set_current_row(max(row, 0))
             self._fill_job()
             self._refresh_model()
             self._refresh_history()
