@@ -94,7 +94,9 @@ def test_mcp_tool_errors_carry_their_message(tmp_path):
                 return bad, none
 
     bad, none = asyncio.run(go())
-    assert bad.is_error and "NotADirectoryError" in bad.content[0].text and str(blocker) in bad.content[0].text
+    text = bad.content[0].text       # Windows says FileExistsError, and shows the path as its repr
+    assert bad.is_error and ("NotADirectoryError" in text or "FileExistsError" in text)
+    assert str(blocker) in text or repr(str(blocker)) in text
     assert none.is_error and "No project open" in none.content[0].text
 
 
