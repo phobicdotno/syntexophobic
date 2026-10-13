@@ -212,7 +212,7 @@ def test_update_bar(tmp_path, monkeypatch):
         return update.Installed(tmp_path / release.asset, [tmp_path / "Syntexophobic.AppImage"],
                                 tmp_path / "Syntexophobic.AppImage")
     bar.show_update(fake())
-    bar.install(install=install)
+    bar.install(install=install, confirm=lambda *a: True)   # auto-accept the confirm dialog
     settle()
     assert "0.7.0 is installed" in bar.text.text() and "Restart to use it" in bar.text.text()
     assert bar.b_update.isHidden() and not bar.b_restart.isHidden()
