@@ -3,6 +3,38 @@
 Each release has a version and a build number; Help → About shows a one-line summary of
 every release, read from this file.
 
+## v0.6.3 (build 10) — 2026-10-13
+
+**Install**
+- Syntexophobic runs on macOS and Windows too. Every release now has three downloads:
+  the Linux AppImage, `Syntexophobic-<version>-macOS-arm64.zip` (the app for Apple silicon,
+  macOS 12 or later) and `Syntexophobic-<version>-windows-x64.zip` (a folder with
+  `Syntexophobic.exe`). Each carries its own Python and libraries; the Windows build also
+  brings git (MinGit), used when the machine has none. Neither is signed: the Mac's first
+  start needs System Settings → Privacy & Security → *Open Anyway*, Windows' SmartScreen
+  *More info* → *Run anyway*.
+- Releases are built by GitHub Actions: a version tag builds all three, starts each one
+  as a check, and publishes them with this changelog's section as the notes.
+
+**Updates**
+- On a Mac, *Update* downloads the new app and puts it in place of the running one (the
+  old one is kept in `~/Library/Caches/syntexophobic/previous`), then *Restart now*. On
+  Windows the update bar says where to download the new version, as Windows will not
+  replace the files of a running program.
+
+**Claude**
+- `install-mcp` registers the Mac app's or Windows build's own command. On Windows the
+  MCP server reaches the open window through a named pipe (Unix sockets elsewhere).
+
+**Fixes**
+- Files copied into a project (imports, pictures) are recorded with `/`, so a project
+  made on Windows opens on Linux and macOS.
+
+**Testing**
+- The tests run on Linux, macOS and Windows for every pull request; the window tests on
+  Linux and Windows (GitHub's Macs have no GPU for VTK). The macOS updater swaps the app and
+  keeps the old one; each platform picks its own download from a release.
+
 ## v0.6.2 (build 9) — 2026-10-09
 
 **Fixes**
