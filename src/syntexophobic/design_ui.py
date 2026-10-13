@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QTimer, Signal
+from PySide6.QtCore import QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (QComboBox, QGridLayout, QGroupBox, QHBoxLayout, QInputDialog,
                                QLabel, QListWidget, QPushButton, QToolBar, QVBoxLayout, QWidget)
 
@@ -444,62 +445,171 @@ def _export_dxf(view) -> None:
         view.status.emit(f"Saved {path}")
 
 
-def sketch_toolbar(view, on_finish) -> QWidget:
-    """Two rows for a SketchView: drawing tools and actions, then constraints."""
-    from .sketcher import RULES
-    tools, cons = QToolBar("Sketch"), QToolBar("Constraints")
-    for tb in (tools, cons):
-        tb.setMovable(False)
-    for key, text in (("select", "Select"), ("line", "Line"), ("rectangle", "Rectangle"),
-                      ("circle", "Circle"), ("arc", "Arc"), ("spline", "Spline"), ("polygon", "Polygon"), ("slot", "Slot"),
-                      ("text", "Text"), ("point", "Point"), ("trim", "Trim")):
-        a = tools.addAction(text)
-        a.setCheckable(True)
-        a.setChecked(key == "select")
-        a.setData(key)
-        a.triggered.connect(lambda _=False, k=key: (view.set_tool(k),
-                            [x.setChecked(x.data() == k) for x in tools.actions() if x.isCheckable()]))
-    tools.addSeparator()
-    for text, slot, tip in (("Fillet", view.fillet_selected, "Round the selected corner point"),
-                            ("Offset", view.offset_selected, "Parallel copy of the selected closed shape"),
-                            ("Mirror", view.mirror_selected, "Mirror the selection across the last selected line")):
-        a = tools.addAction(text)
-        a.setToolTip(tip)
-        a.triggered.connect(lambda _=False, f=slot: f())
-    tools.addSeparator()
-    a = tools.addAction("Dimension")
-    a.setToolTip("Length, distance, diameter or angle of the selection")
-    a.triggered.connect(lambda: view.dimension())
-    a = tools.addAction("Construction")
-    a.setToolTip("Toggle construction (reference) geometry for the selected lines and circles")
+# The Sketch contextual tab, laid out like Fusion: tool groups with a caption under each.
+# (key, icon, label, shortcut) — key is the SketchView tool name. Shortcuts echo Fusion.
+SKETCH_CREATE = [
+    ("select", "select", "Select", "Esc"),
+    ("line", "line", "Line", "L"),
+    ("rectangle", "rectangle", "Rectangle", "R"),
+    ("circle", "circle", "Circle", "C"),
+    ("arc", "arc", "Arc", "A"),
+    ("polygon", "polygon", "Polygon", "G"),
+    ("slot", "slot", "Slot", "O"),
+    ("spline", "spline", "Spline", "S"),
+    ("point", "point", "Point", "P"),
+    ("text", "text", "Text", "T"),
+]
+# (icon, label, attribute-or-callable name, tooltip)
+SKETCH_MODIFY = [
+    ("fillet", "Fillet", "fillet_selected", "Round the selected corner point"),
+    ("offset", "Offset", "offset_selected", "Parallel copy of the selected closed shape"),
+    ("mirror", "Mirror", "mirror_selected", "Mirror the selection across the last selected line"),
+    ("trim", "Trim", "_trim_tool", "Click a line segment to remove it"),
+    ("construction", "Construction", "_toggle_construction", "Toggle construction (reference) geometry"),
+    ("trace", "Trace…", "_trace", "Trace a picture's dark areas into outlines"),
+    ("dxf", "Export DXF…", "_export", "Save this sketch as a DXF drawing"),
+]
+# constraint-name -> icon (order is the ribbon order)
+CONSTRAINT_ICONS = {
+    "coincident": "coincident", "horizontal": "horizontal", "vertical": "vertical",
+    "parallel": "parallel", "perpendicular": "perpendicular", "tangent": "tangent",
+    "equal": "equal", "concentric": "concentric", "midpoint": "midpoint",
+    "point_on": "point_on", "symmetric": "symmetric", "fixed": "fixed",
+}
 
-    def toggle_construction():
+
+def _ribbon_button(action, big=False) -> QWidget:
+    from PySide6.QtWidgets import QToolButton
+    b = QToolButton()
+    b.setDefaultAction(action)
+    b.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+    b.setIconSize(QSize(28, 28) if big else QSize(22, 22))
+    b.setAutoRaise(True)
+    b.setProperty("ribbon", "big" if big else "1")
+    return b
+
+
+def _ribbon_group(title: str, buttons: list[QWidget]) -> QWidget:
+    """A titled column of tool buttons, Fusion-style: buttons on top, caption under."""
+    group = QWidget()
+    group.setProperty("ribbonGroup", True)
+    col = QVBoxLayout(group)
+    col.setContentsMargins(6, 2, 6, 2)
+    col.setSpacing(1)
+    row = QHBoxLayout()
+    row.setContentsMargins(0, 0, 0, 0)
+    row.setSpacing(1)
+    for b in buttons:
+        row.addWidget(b)
+    row.addStretch()
+    col.addLayout(row, 1)
+    caption = QLabel(title)
+    caption.setAlignment(Qt.AlignHCenter)
+    caption.setProperty("ribbonCaption", True)
+    col.addWidget(caption)
+    return group
+
+
+def sketch_toolbar(view, on_finish) -> QWidget:
+    """The Sketch contextual tab for a SketchView: Create, Modify, Constraints and
+    Inspect groups, laid out like Fusion, with a Finish Sketch button at the right."""
+    from PySide6.QtGui import QActionGroup
+    from PySide6.QtWidgets import QFrame, QToolButton
+    from .app import mono_icon
+    pal = view.palette()
+
+    def icon(name):
+        return mono_icon(name, pal)
+
+    # bound helpers the ribbon refers to by name
+    def _toggle_construction():
         s = view.sketch
         for e in view.selected:
             ent = s.lines.get(e) or s.circles.get(e) or s.arcs.get(e) or s.splines.get(e)
             if ent:
                 ent.construction = not ent.construction
         view.commit()
-    a.triggered.connect(toggle_construction)
-    tools.addSeparator()
-    a = tools.addAction("Trace image…")
-    a.setToolTip("Trace a picture's dark areas into outlines")
-    a.triggered.connect(lambda: _trace_dialog(view))
-    a = tools.addAction("Export DXF…")
-    a.triggered.connect(lambda: _export_dxf(view))
-    a = tools.addAction("Fit")
-    a.triggered.connect(view.fit)
-    tools.addSeparator()
-    a = tools.addAction("Finish sketch")
-    a.triggered.connect(on_finish)
-    for name in RULES:
-        a = cons.addAction(name.replace("_", " ").capitalize())
+    view._toggle_construction = _toggle_construction
+    view._trim_tool = lambda: _select_tool("trim")
+    view._trace = lambda: _trace_dialog(view)
+    view._export = lambda: _export_dxf(view)
+
+    bar = QWidget()
+    bar.setProperty("ribbonBar", True)
+    lay = QHBoxLayout(bar)
+    lay.setContentsMargins(4, 2, 4, 2)
+    lay.setSpacing(0)
+
+    def sep():
+        line = QFrame()
+        line.setFrameShape(QFrame.VLine)
+        line.setProperty("ribbonSep", True)
+        lay.addWidget(line)
+
+    # Create: the drawing tools, mutually exclusive
+    tool_group = QActionGroup(bar)
+    tool_group.setExclusive(True)
+    tool_actions = {}
+
+    def _select_tool(key):
+        view.set_tool(key)
+        if key in tool_actions:
+            tool_actions[key].setChecked(True)
+
+    buttons = []
+    for key, ic, label, shortcut in SKETCH_CREATE:
+        a = QAction(icon(ic), label, bar)
+        a.setCheckable(True)
+        a.setChecked(key == "select")
+        if shortcut and shortcut != "Esc":
+            a.setShortcut(shortcut)
+        a.setToolTip(f"{label}" + (f"  ({shortcut})" if shortcut else ""))
+        a.triggered.connect(lambda _=False, k=key: _select_tool(k))
+        tool_group.addAction(a)
+        tool_actions[key] = a
+        buttons.append(_ribbon_button(a, big=key in ("line", "rectangle", "circle")))
+    lay.addWidget(_ribbon_group("CREATE", buttons))
+    sep()
+
+    # Modify
+    buttons = []
+    for ic, label, fn, tip in SKETCH_MODIFY:
+        a = QAction(icon(ic), label, bar)
+        a.setToolTip(tip)
+        a.triggered.connect(lambda _=False, f=fn: getattr(view, f)())
+        buttons.append(_ribbon_button(a))
+    lay.addWidget(_ribbon_group("MODIFY", buttons))
+    sep()
+
+    # Constraints
+    buttons = []
+    from .sketcher import RULES
+    for name, ic in CONSTRAINT_ICONS.items():
+        if name not in RULES:
+            continue
+        a = QAction(icon(ic), name.replace("_", " ").capitalize(), bar)
         a.setToolTip("Needs: " + " or ".join(" + ".join(r) for r in RULES[name]))
         a.triggered.connect(lambda _=False, n=name: view.apply_constraint(n))
-    box = QWidget()
-    col = QVBoxLayout(box)
-    col.setContentsMargins(0, 0, 0, 0)
-    col.setSpacing(0)
-    col.addWidget(tools)
-    col.addWidget(cons)
-    return box
+        buttons.append(_ribbon_button(a))
+    lay.addWidget(_ribbon_group("CONSTRAINTS", buttons))
+    sep()
+
+    # Inspect
+    a_dim = QAction(icon("dimension"), "Dimension", bar)
+    a_dim.setShortcut("D")
+    a_dim.setToolTip("Length, distance, diameter or angle of the selection  (D)")
+    a_dim.triggered.connect(lambda: view.dimension())
+    a_fit = QAction(icon("fit"), "Fit", bar)
+    a_fit.setToolTip("Fit the sketch in the view")
+    a_fit.triggered.connect(view.fit)
+    lay.addWidget(_ribbon_group("INSPECT", [_ribbon_button(a_dim), _ribbon_button(a_fit)]))
+
+    lay.addStretch(1)
+
+    # Finish, set apart at the right like Fusion's green button
+    a_finish = QAction(icon("finish"), "Finish Sketch", bar)
+    a_finish.triggered.connect(on_finish)
+    finish = _ribbon_button(a_finish, big=True)
+    finish.setProperty("finish", True)
+    lay.addWidget(_ribbon_group("", [finish]))
+    return bar

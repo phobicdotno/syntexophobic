@@ -1369,16 +1369,71 @@ class MainWindow(QMainWindow):
 def _dark_palette(app: QApplication):
     app.setStyle("Fusion")
     p = QPalette()
-    base, window, text, accent = QColor(30, 32, 36), QColor(40, 43, 48), QColor(226, 229, 234), QColor(64, 160, 255)
+    base, window, text, accent = QColor(27, 29, 33), QColor(37, 40, 45), QColor(226, 229, 234), QColor(64, 160, 255)
     for role, c in ((QPalette.Window, window), (QPalette.WindowText, text), (QPalette.Base, base),
-                    (QPalette.AlternateBase, window), (QPalette.Text, text), (QPalette.Button, window),
+                    (QPalette.AlternateBase, QColor(33, 36, 41)), (QPalette.Text, text), (QPalette.Button, window),
                     (QPalette.ButtonText, text), (QPalette.Highlight, accent),
                     (QPalette.HighlightedText, QColor(255, 255, 255)), (QPalette.ToolTipBase, base),
-                    (QPalette.ToolTipText, text), (QPalette.PlaceholderText, QColor(130, 136, 145))):
+                    (QPalette.ToolTipText, text), (QPalette.PlaceholderText, QColor(130, 136, 145)),
+                    (QPalette.Link, accent)):
         p.setColor(role, c)
     p.setColor(QPalette.Disabled, QPalette.Text, QColor(110, 115, 122))
     p.setColor(QPalette.Disabled, QPalette.ButtonText, QColor(110, 115, 122))
     app.setPalette(p)
+    app.setStyleSheet(_STYLESHEET)
+
+
+# Fusion-dark chrome: flat toolbars, ribbon groups with captions, a browser tree and the
+# green Finish button. Colours track the palette above (near-black canvas, grey panels, blue accent).
+_STYLESHEET = """
+QMainWindow, QDockWidget { background: #25282d; }
+QToolBar#main-toolbar { background: #1f2227; border: none; border-bottom: 1px solid #14161a; padding: 2px 4px; spacing: 2px; }
+QToolBar { background: transparent; border: none; }
+QToolBar::separator { background: #3a3e45; width: 1px; margin: 4px 6px; }
+QToolButton { border: 1px solid transparent; border-radius: 5px; padding: 3px; color: #e2e5ea; }
+QToolButton:hover { background: #343941; border-color: #3f444d; }
+QToolButton:pressed { background: #2b2f36; }
+QToolButton:checked { background: #16324d; border-color: #2d6ca8; }
+QToolButton::menu-indicator { image: none; }
+
+/* Sketch ribbon: grouped tool columns with a caption under each */
+QWidget[ribbonBar="true"] { background: #2a2d33; border-bottom: 1px solid #14161a; }
+QToolButton[ribbon="1"], QToolButton[ribbon="big"] { font-size: 10px; }
+QToolButton[ribbon="big"] { min-width: 46px; }
+QLabel[ribbonCaption="true"] { color: #7f868f; font-size: 8px; font-weight: 600; letter-spacing: 1px; }
+QFrame[ribbonSep="true"] { color: #3a3e45; max-width: 1px; margin: 3px 2px; }
+QToolButton[finish="true"] { color: #d7f5df; }
+QToolButton[finish="true"]:hover { background: #1f4d30; border-color: #2e8c52; }
+
+/* Browser tree (Fusion's left panel) */
+QTreeWidget, QTreeView { background: #1f2227; border: none; outline: 0; }
+QTreeView::item { padding: 3px 2px; border: none; }
+QTreeView::item:hover { background: #2c313a; }
+QTreeView::item:selected { background: #16324d; color: #ffffff; }
+QTreeView::branch { background: transparent; }
+
+QDockWidget::title { background: #1f2227; padding: 5px 8px; color: #aeb4bd; font-weight: 600; }
+QGroupBox { border: 1px solid #33373e; border-radius: 6px; margin-top: 10px; padding-top: 6px; }
+QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 4px; color: #aeb4bd; }
+QPushButton { background: #31353c; border: 1px solid #3c414a; border-radius: 5px; padding: 5px 10px; }
+QPushButton:hover { background: #3a3f47; }
+QPushButton:pressed { background: #2a2e34; }
+QListWidget, QPlainTextEdit, QLineEdit, QComboBox, QDoubleSpinBox, QTableWidget {
+    background: #1b1d21; border: 1px solid #33373e; border-radius: 5px; selection-background-color: #16324d; }
+QComboBox:hover, QLineEdit:focus { border-color: #2d6ca8; }
+QStatusBar { background: #1f2227; color: #aeb4bd; }
+QMenuBar { background: #1f2227; }
+QMenuBar::item:selected { background: #2c313a; }
+QTabBar::tab { background: #26292f; padding: 5px 12px; border-top-left-radius: 4px; border-top-right-radius: 4px; }
+QTabBar::tab:selected { background: #16324d; color: #ffffff; }
+QSplitter::handle { background: #14161a; }
+QScrollBar:vertical { background: transparent; width: 11px; }
+QScrollBar::handle:vertical { background: #3c414a; border-radius: 5px; min-height: 24px; }
+QScrollBar::handle:vertical:hover { background: #4a505a; }
+QScrollBar::add-line, QScrollBar::sub-line { height: 0; }
+QScrollBar:horizontal { background: transparent; height: 11px; }
+QScrollBar::handle:horizontal { background: #3c414a; border-radius: 5px; min-width: 24px; }
+"""
 
 
 def run(path: str | None = None) -> int:
