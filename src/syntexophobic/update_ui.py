@@ -146,6 +146,8 @@ class UpdateBar(QFrame):
 
     def _update_tip(self) -> str:
         app = update.running_build()
+        if update.running_windows_build():
+            return f"Shows where to download {self.pending.latest.asset or 'the new version'}"
         if app and self.pending.latest.asset_url:
             if app.suffix == ".app":
                 return f"Download {self.pending.latest.asset} and put it in place of {app.name}"
@@ -166,6 +168,12 @@ class UpdateBar(QFrame):
     def install(self, install=update.install):
         up = self.pending
         app = update.running_build()
+        if (folder := update.running_windows_build()) is not None:
+            QMessageBox.information(
+                self.window(), "Update Syntexophobic",
+                f"Download {up.latest.asset or 'the Windows build'} from {up.latest.page}, close "
+                f"Syntexophobic and unpack it in place of {folder}.")
+            return
         if app is None or not up.latest.asset_url:
             cmd = update.how_to_update()
             QApplication.clipboard().setText(cmd)

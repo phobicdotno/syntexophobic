@@ -138,9 +138,13 @@ def fetch_releases(tok: str) -> list[dict]:
 
 def asset_suffix(system: str = "", machine: str = "") -> str:
     """How this platform's build ends: Syntexophobic-0.6.3-x86_64.AppImage on Linux,
-    Syntexophobic-0.6.3-macOS-arm64.zip on a Mac (the app, zipped with ditto)."""
-    if (system or sys.platform) == "darwin":
+    Syntexophobic-0.6.3-macOS-arm64.zip on a Mac (the app, zipped with ditto),
+    Syntexophobic-0.6.3-windows-x64.zip on Windows (a folder with Syntexophobic.exe)."""
+    system = system or sys.platform
+    if system == "darwin":
         return f"-macOS-{machine or platform.machine()}.zip"
+    if system == "win32":
+        return "-windows-x64.zip"
     return ".AppImage"
 
 
@@ -184,6 +188,13 @@ def running_app() -> Path | None:
     """The macOS app bundle this program runs from (its launcher sets $SYNTEXOPHOBIC_APP)."""
     p = os.environ.get("SYNTEXOPHOBIC_APP")
     return Path(p) if p and p.endswith(".app") and Path(p).is_dir() else None
+
+
+def running_windows_build() -> Path | None:
+    """The Windows build's folder (Syntexophobic.exe sets $SYNTEXOPHOBIC_WINDOWS_APP). It is
+    not updated in place: Windows will not replace the files of a running program."""
+    p = os.environ.get("SYNTEXOPHOBIC_WINDOWS_APP")
+    return Path(p) if p and Path(p).is_dir() else None
 
 
 def running_build() -> Path | None:

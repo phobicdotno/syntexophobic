@@ -527,6 +527,8 @@ def server_command() -> list[str]:
         return [os.environ["APPIMAGE"], "mcp"]
     if os.environ.get("SYNTEXOPHOBIC_APP"):            # the macOS app: its launcher sets the environment up
         return [str(Path(os.environ["SYNTEXOPHOBIC_APP"]) / "Contents/MacOS/Syntexophobic"), "mcp"]
+    if os.environ.get("SYNTEXOPHOBIC_WINDOWS_APP"):    # the Windows build's folder, set by Syntexophobic.exe
+        return [str(Path(os.environ["SYNTEXOPHOBIC_WINDOWS_APP"]) / "Syntexophobic.exe"), "mcp"]
     return [sys.executable, "-m", "syntexophobic", "mcp"]
 
 

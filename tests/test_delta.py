@@ -89,4 +89,4 @@ def test_install_patches_and_falls_back_to_the_whole_file(tmp_path, monkeypatch)
 def test_release_lists_its_block_index():
     d = {"tag_name": "v1.0.0", "assets": [{"name": "S-1.0.0.AppImage", "url": "a", "size": 3},
                                           {"name": "S-1.0.0.AppImage.blocks", "url": "b", "size": 1}]}
-    assert update.releases([d])[0].blocks_url == "b"
+    assert update.releases([d], ".AppImage")[0].blocks_url == "b"

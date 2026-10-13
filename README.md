@@ -3,7 +3,7 @@
 # Syntexophobic
 
 Parametric CAD and 2.5D CAM for GRBL machines (Shapeoko, Nomad, Carbide Motion), with a
-git-style history instead of a timeline. Built on OpenCascade, Qt and VTK. Linux and macOS.
+git-style history instead of a timeline. Built on OpenCascade, Qt and VTK. Linux, macOS and Windows.
 
 *σύντηξις (sýntēxis): melting together, fusion.*
 
@@ -29,9 +29,14 @@ start says macOS cannot check it: System Settings → Privacy & Security → *Op
 `/Applications/Syntexophobic.app/Contents/MacOS/Syntexophobic install-mcp`. Build it on a Mac
 with `./tools/build-macos.sh`.
 
+**On Windows** (x64): download `Syntexophobic-<version>-windows-x64.zip`, unpack it and run
+`Syntexophobic\Syntexophobic.exe` (SmartScreen: *More info* → *Run anyway*). It carries its
+own Python and git. For Claude Code: `Syntexophobic.exe install-mcp`. Build it on Windows in
+Git Bash with `./tools/build-windows.sh`. The update bar says where to download a new version.
+
 **Releases** are built by GitHub Actions: pushing a version tag (`git tag v0.6.3 && git push
 origin v0.6.3`, after the version in `pyproject.toml` and a `## v0.6.3` section in
-`CHANGELOG.md`) builds the AppImage with its `.blocks` file and the macOS app, tries both,
+`CHANGELOG.md`) builds the AppImage with its `.blocks` file, the macOS app and the Windows build, tries each,
 and publishes them as the release, with that CHANGELOG section as its notes.
 
 **Updates:** when a newer release is on GitHub, a bar above the view says so, with what's new.

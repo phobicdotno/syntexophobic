@@ -185,6 +185,8 @@ def environment() -> dict[str, str]:
         env["Running as"] = "AppImage " + os.environ["APPIMAGE"]
     elif os.environ.get("SYNTEXOPHOBIC_APP"):
         env["Running as"] = "macOS app " + os.environ["SYNTEXOPHOBIC_APP"]
+    elif os.environ.get("SYNTEXOPHOBIC_WINDOWS_APP"):
+        env["Running as"] = "Windows build " + os.environ["SYNTEXOPHOBIC_WINDOWS_APP"]
     else:
         env["Running as"] = "source / installed"
     root = Path(__file__).resolve().parents[2]

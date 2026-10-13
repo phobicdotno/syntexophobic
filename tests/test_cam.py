@@ -255,10 +255,10 @@ def test_gcode_round_trip_simulates_clean(tmp_path):
     assert res.gouge_cells == 0
 
 
-def test_spacemouse_protocol_and_daemon_client(tmp_path):
+@pytest.mark.skipif(not hasattr(__import__("socket"), "AF_UNIX"), reason="no Unix sockets (Windows)")
+def test_spacemouse_protocol_and_daemon_client():
     """Parse spacenavd events and receive them through a fake daemon socket."""
-    import os, socket, struct
-    import os
+    import os, socket, struct, tempfile
     from PySide6.QtCore import QCoreApplication
     from PySide6.QtGui import QGuiApplication
     from syntexophobic import spacemouse as sm
@@ -269,7 +269,8 @@ def test_spacemouse_protocol_and_daemon_client(tmp_path):
 
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")      # a GUI app, so font tests can share it
     app = QCoreApplication.instance() or QGuiApplication([])
-    path = str(tmp_path / "spnav.sock")
+    # a short path: macOS's temporary folder is too long for a socket's 104 characters
+    path = os.path.join(tempfile.mkdtemp(dir="/tmp"), "spnav.sock")
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     server.bind(path)
     server.listen(1)
