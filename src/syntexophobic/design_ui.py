@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import (QComboBox, QGridLayout, QGroupBox, QHBoxLayout, QInputDialog,
-                               QLabel, QListWidget, QPushButton, QToolBar, QTreeWidget,
+from PySide6.QtWidgets import (QComboBox, QGroupBox, QHBoxLayout, QInputDialog,
+                               QLabel, QPushButton, QTreeWidget,
                                QTreeWidgetItem, QVBoxLayout, QWidget)
 
 FEATURE_ICON = {"extrude": "extrude", "revolve": "revolve", "loft": "loft", "sweep": "sweep",
