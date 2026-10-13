@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QTimer, Signal
-from PySide6.QtWidgets import (QComboBox, QGridLayout, QGroupBox, QHBoxLayout, QInputDialog,
-                               QLabel, QListWidget, QPushButton, QToolBar, QVBoxLayout, QWidget)
+from PySide6.QtCore import QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QAction
+from PySide6.QtWidgets import (QComboBox, QGroupBox, QHBoxLayout, QInputDialog,
+                               QLabel, QPushButton, QTreeWidget,
+                               QTreeWidgetItem, QVBoxLayout, QWidget)
+
+FEATURE_ICON = {"extrude": "extrude", "revolve": "revolve", "loft": "loft", "sweep": "sweep",
+                "fillet": "fillet", "chamfer": "chamfer", "shell": "shell", "mirror": "mirror",
+                "hole": "hole", "relief": "relief", "import": "import"}
 
 from pathlib import Path
 
@@ -53,30 +59,29 @@ class DesignPanel(QWidget):
         self._DataForm = DataForm
         self.part: Part | None = None
         self.picked_face = None          # (x, y, z) of the last face clicked with no feature using it
+        self._row = -1                   # the active feature (index into part.features), or -1
+        self._feat_items: list[QTreeWidgetItem] = []
         col = QVBoxLayout(self)
 
-        box = QGroupBox("Features (built top to bottom)")
+        box = QGroupBox("Browser")
         bl = QVBoxLayout(box)
-        self.l_features = QListWidget()
-        self.l_features.currentRowChanged.connect(self._pick)
-        self.l_features.itemDoubleClicked.connect(lambda _: self.open_sketch())
-        bl.addWidget(self.l_features)
-        grid = QGridLayout()
-        for i, (text, slot) in enumerate((
-                ("Parameters…", self.edit_parameters),
-                ("New sketch…", self.new_sketch), ("Sketch on face", self.sketch_on_face),
-                ("Extrude", lambda: self.add("extrude")),
-                ("Revolve", lambda: self.add("revolve")), ("Loft", lambda: self.add("loft")),
-                ("Sweep", lambda: self.add("sweep")), ("Fillet", lambda: self.add("fillet")),
-                ("Chamfer", lambda: self.add("chamfer")), ("Shell", lambda: self.add("shell")),
-                ("Mirror", lambda: self.add("mirror")), ("Hole", lambda: self.add("hole")),
-                ("Relief…", self.add_relief), ("Import…", self.add_import),
-                ("Edit sketch", self.open_sketch),
-                ("Remove", self.remove), ("Up", lambda: self.move(-1)), ("Down", lambda: self.move(1)))):
+        self.browser = QTreeWidget()
+        self.browser.setHeaderHidden(True)
+        self.browser.setIndentation(14)
+        self.browser.setExpandsOnDoubleClick(False)
+        self.browser.setMinimumHeight(220)
+        self.browser.currentItemChanged.connect(lambda cur, _prev: self._tree_select(cur))
+        self.browser.itemDoubleClicked.connect(lambda it, _col: self._tree_activate(it))
+        bl.addWidget(self.browser)
+        # Creating features lives on the top ribbon (Fusion-style); the browser keeps only
+        # the context actions for the selected item.
+        row = QHBoxLayout()
+        for text, slot in (("Edit sketch", self.open_sketch), ("Remove", self.remove),
+                           ("Up", lambda: self.move(-1)), ("Down", lambda: self.move(1))):
             b = QPushButton(text)
             b.clicked.connect(slot)
-            grid.addWidget(b, i // 3, i % 3)
-        bl.addLayout(grid)
+            row.addWidget(b)
+        bl.addLayout(row)
         col.addWidget(box)
 
         self.form = DataForm()
@@ -97,18 +102,103 @@ class DesignPanel(QWidget):
         self.part = part
         self._fill()
 
+    def _icon(self, name: str):
+        from .app import mono_icon
+        return mono_icon(name, self.palette())
+
+    def _feature_label(self, i: int, f: Feature) -> str:
+        text = f.name or f.type.capitalize()
+        if f.type in ("extrude", "revolve", "loft", "sweep") and f.sketch:
+            text += f"  ·  {f.sketch}, {f.operation}"
+        return text + ("  (off)" if f.suppressed else "")
+
     def _fill(self, row: int = 0) -> None:
-        self.l_features.blockSignals(True)
-        self.l_features.clear()
+        """Rebuild the browser tree: Origin planes, Sketches and the feature history."""
+        from PySide6.QtGui import QColor
+        self.browser.blockSignals(True)
+        self.browser.clear()
+        self._feat_items = []
+
+        origin = QTreeWidgetItem(self.browser, ["Origin"])
+        origin.setFlags(Qt.ItemIsEnabled)
+        for plane in ("XY", "XZ", "YZ"):
+            it = QTreeWidgetItem(origin, [f"{plane} plane"])
+            it.setData(0, Qt.UserRole, ("plane", plane))
+            it.setIcon(0, self._icon("sketch_new"))
+
+        sk_root = QTreeWidgetItem(self.browser, ["Sketches"])
+        sk_root.setFlags(Qt.ItemIsEnabled)
+        for name in sorted(self.part.sketches):
+            it = QTreeWidgetItem(sk_root, [name])
+            it.setData(0, Qt.UserRole, ("sketch", name))
+            it.setIcon(0, self._icon("sketch_new"))
+
+        feat_root = QTreeWidgetItem(self.browser, ["Features"])
+        feat_root.setFlags(Qt.ItemIsEnabled)
         for i, f in enumerate(self.part.features):
-            text = f"{i + 1}. {f.name or f.type.capitalize()}  ·  {f.type}"
-            if f.type in ("extrude", "revolve", "loft", "sweep"):
-                text += f" {f.sketch}, {f.operation}"
-            self.l_features.addItem(text + ("  (off)" if f.suppressed else ""))
-        self.l_features.blockSignals(False)
+            it = QTreeWidgetItem(feat_root, [self._feature_label(i, f)])
+            it.setData(0, Qt.UserRole, ("feature", i))
+            it.setIcon(0, self._icon(FEATURE_ICON.get(f.type, "model")))
+            if f.suppressed:
+                it.setForeground(0, QColor(130, 136, 145))
+            self._feat_items.append(it)
+
+        self.browser.expandAll()
+        self.browser.blockSignals(False)
         if self.part.features:
-            self.l_features.setCurrentRow(max(0, min(row, len(self.part.features) - 1)))
-        self._pick(self.l_features.currentRow())
+            self._row = max(0, min(row, len(self.part.features) - 1))
+            self.browser.setCurrentItem(self._feat_items[self._row])
+        else:
+            self._row = -1
+            self._pick(-1)
+
+    def _tree_select(self, item) -> None:
+        data = item.data(0, Qt.UserRole) if item else None
+        if data and data[0] == "feature":
+            self._row = data[1]
+            self._pick(self._row)
+        elif data and data[0] == "sketch":
+            self.form.set(None, None)
+            self.selection.emit(None)
+            self.status.emit(f"Sketch {data[1]} — double-click to edit it.")
+        elif data and data[0] == "plane":
+            self.form.set(None, None)
+            self.selection.emit(None)
+            self.status.emit(f"{data[1]} plane — double-click for a new sketch on it.")
+        else:
+            self.selection.emit(None)
+
+    def _tree_activate(self, item) -> None:
+        data = item.data(0, Qt.UserRole) if item else None
+        if not data:
+            return
+        kind, val = data
+        if kind == "sketch":
+            self.edit_sketch.emit(val)
+        elif kind == "plane":
+            self._new_sketch_on_plane(val)
+        elif kind == "feature":
+            f = self.part.features[val]
+            if f.sketch:
+                self.edit_sketch.emit(f.sketch.split(";")[0])
+
+    def _new_sketch_on_plane(self, plane: str) -> None:
+        n = 1
+        while f"sketch{n}" in self.part.sketches:
+            n += 1
+        name = f"sketch{n}"
+        self.part.sketches[name] = Sketch(name=name, plane=plane, offset=0.0)
+        self.changed.emit()
+        self.edit_sketch.emit(name)
+
+    def current_row(self) -> int:
+        feats = self.part.features if self.part else []
+        return self._row if 0 <= self._row < len(feats) else -1
+
+    def set_current_row(self, row: int) -> None:
+        if 0 <= row < len(self._feat_items):
+            self.browser.setCurrentItem(self._feat_items[row])
+            self._row = row
 
     def _pick(self, row: int) -> None:
         feats = self.part.features if self.part else []
@@ -123,7 +213,7 @@ class DesignPanel(QWidget):
         self.selection.emit(f)
 
     def current(self) -> Feature | None:
-        row = self.l_features.currentRow()
+        row = self.current_row()
         feats = self.part.features if self.part else []
         return feats[row] if 0 <= row < len(feats) else None
 
@@ -205,14 +295,10 @@ class DesignPanel(QWidget):
                 break
 
     def _edited(self) -> None:
-        row = self.l_features.currentRow()
-        if 0 <= row < len(self.part.features):
+        row = self.current_row()
+        if 0 <= row < len(self.part.features) and row < len(self._feat_items):
             f = self.part.features[row]
-            item = self.l_features.item(row)
-            text = f"{row + 1}. {f.name or f.type.capitalize()}  ·  {f.type}"
-            if f.type in ("extrude", "revolve", "loft", "sweep"):
-                text += f" {f.sketch}, {f.operation}"
-            item.setText(text + ("  (off)" if f.suppressed else ""))
+            self._feat_items[row].setText(0, self._feature_label(row, f))
         self.changed.emit()
 
     def _check_expression(self, text: str):
@@ -391,21 +477,21 @@ class DesignPanel(QWidget):
         self.changed.emit()
 
     def remove(self) -> None:
-        row = self.l_features.currentRow()
+        row = self.current_row()
         if 0 <= row < len(self.part.features):
             del self.part.features[row]
             self._fill(row)
             self.changed.emit()
 
     def move(self, delta: int) -> None:
-        feats, row = self.part.features, self.l_features.currentRow()
+        feats, row = self.part.features, self.current_row()
         if 0 <= row < len(feats) and 0 <= row + delta < len(feats):
             feats[row], feats[row + delta] = feats[row + delta], feats[row]
             self._fill(row + delta)
             self.changed.emit()
 
     def open_sketch(self) -> None:
-        row = self.l_features.currentRow()
+        row = self.current_row()
         name = None
         if 0 <= row < len(self.part.features):
             name = self.part.features[row].sketch or None
@@ -444,62 +530,171 @@ def _export_dxf(view) -> None:
         view.status.emit(f"Saved {path}")
 
 
-def sketch_toolbar(view, on_finish) -> QWidget:
-    """Two rows for a SketchView: drawing tools and actions, then constraints."""
-    from .sketcher import RULES
-    tools, cons = QToolBar("Sketch"), QToolBar("Constraints")
-    for tb in (tools, cons):
-        tb.setMovable(False)
-    for key, text in (("select", "Select"), ("line", "Line"), ("rectangle", "Rectangle"),
-                      ("circle", "Circle"), ("arc", "Arc"), ("spline", "Spline"), ("polygon", "Polygon"), ("slot", "Slot"),
-                      ("text", "Text"), ("point", "Point"), ("trim", "Trim")):
-        a = tools.addAction(text)
-        a.setCheckable(True)
-        a.setChecked(key == "select")
-        a.setData(key)
-        a.triggered.connect(lambda _=False, k=key: (view.set_tool(k),
-                            [x.setChecked(x.data() == k) for x in tools.actions() if x.isCheckable()]))
-    tools.addSeparator()
-    for text, slot, tip in (("Fillet", view.fillet_selected, "Round the selected corner point"),
-                            ("Offset", view.offset_selected, "Parallel copy of the selected closed shape"),
-                            ("Mirror", view.mirror_selected, "Mirror the selection across the last selected line")):
-        a = tools.addAction(text)
-        a.setToolTip(tip)
-        a.triggered.connect(lambda _=False, f=slot: f())
-    tools.addSeparator()
-    a = tools.addAction("Dimension")
-    a.setToolTip("Length, distance, diameter or angle of the selection")
-    a.triggered.connect(lambda: view.dimension())
-    a = tools.addAction("Construction")
-    a.setToolTip("Toggle construction (reference) geometry for the selected lines and circles")
+# The Sketch contextual tab, laid out like Fusion: tool groups with a caption under each.
+# (key, icon, label, shortcut) — key is the SketchView tool name. Shortcuts echo Fusion.
+SKETCH_CREATE = [
+    ("select", "select", "Select", "Esc"),
+    ("line", "line", "Line", "L"),
+    ("rectangle", "rectangle", "Rectangle", "R"),
+    ("circle", "circle", "Circle", "C"),
+    ("arc", "arc", "Arc", "A"),
+    ("polygon", "polygon", "Polygon", "G"),
+    ("slot", "slot", "Slot", "O"),
+    ("spline", "spline", "Spline", "S"),
+    ("point", "point", "Point", "P"),
+    ("text", "text", "Text", "T"),
+]
+# (icon, label, attribute-or-callable name, tooltip)
+SKETCH_MODIFY = [
+    ("fillet", "Fillet", "fillet_selected", "Round the selected corner point"),
+    ("offset", "Offset", "offset_selected", "Parallel copy of the selected closed shape"),
+    ("mirror", "Mirror", "mirror_selected", "Mirror the selection across the last selected line"),
+    ("trim", "Trim", "_trim_tool", "Click a line segment to remove it"),
+    ("construction", "Construction", "_toggle_construction", "Toggle construction (reference) geometry"),
+    ("trace", "Trace…", "_trace", "Trace a picture's dark areas into outlines"),
+    ("dxf", "Export DXF…", "_export", "Save this sketch as a DXF drawing"),
+]
+# constraint-name -> icon (order is the ribbon order)
+CONSTRAINT_ICONS = {
+    "coincident": "coincident", "horizontal": "horizontal", "vertical": "vertical",
+    "parallel": "parallel", "perpendicular": "perpendicular", "tangent": "tangent",
+    "equal": "equal", "concentric": "concentric", "midpoint": "midpoint",
+    "point_on": "point_on", "symmetric": "symmetric", "fixed": "fixed",
+}
 
-    def toggle_construction():
+
+def _ribbon_button(action, big=False) -> QWidget:
+    from PySide6.QtWidgets import QToolButton
+    b = QToolButton()
+    b.setDefaultAction(action)
+    b.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+    b.setIconSize(QSize(28, 28) if big else QSize(22, 22))
+    b.setAutoRaise(True)
+    b.setProperty("ribbon", "big" if big else "1")
+    return b
+
+
+def _ribbon_group(title: str, buttons: list[QWidget]) -> QWidget:
+    """A titled column of tool buttons, Fusion-style: buttons on top, caption under."""
+    group = QWidget()
+    group.setProperty("ribbonGroup", True)
+    col = QVBoxLayout(group)
+    col.setContentsMargins(6, 2, 6, 2)
+    col.setSpacing(1)
+    row = QHBoxLayout()
+    row.setContentsMargins(0, 0, 0, 0)
+    row.setSpacing(1)
+    for b in buttons:
+        row.addWidget(b)
+    row.addStretch()
+    col.addLayout(row, 1)
+    caption = QLabel(title)
+    caption.setAlignment(Qt.AlignHCenter)
+    caption.setProperty("ribbonCaption", True)
+    col.addWidget(caption)
+    return group
+
+
+def sketch_toolbar(view, on_finish) -> QWidget:
+    """The Sketch contextual tab for a SketchView: Create, Modify, Constraints and
+    Inspect groups, laid out like Fusion, with a Finish Sketch button at the right."""
+    from PySide6.QtGui import QActionGroup
+    from PySide6.QtWidgets import QFrame, QToolButton
+    from .app import mono_icon
+    pal = view.palette()
+
+    def icon(name):
+        return mono_icon(name, pal)
+
+    # bound helpers the ribbon refers to by name
+    def _toggle_construction():
         s = view.sketch
         for e in view.selected:
             ent = s.lines.get(e) or s.circles.get(e) or s.arcs.get(e) or s.splines.get(e)
             if ent:
                 ent.construction = not ent.construction
         view.commit()
-    a.triggered.connect(toggle_construction)
-    tools.addSeparator()
-    a = tools.addAction("Trace image…")
-    a.setToolTip("Trace a picture's dark areas into outlines")
-    a.triggered.connect(lambda: _trace_dialog(view))
-    a = tools.addAction("Export DXF…")
-    a.triggered.connect(lambda: _export_dxf(view))
-    a = tools.addAction("Fit")
-    a.triggered.connect(view.fit)
-    tools.addSeparator()
-    a = tools.addAction("Finish sketch")
-    a.triggered.connect(on_finish)
-    for name in RULES:
-        a = cons.addAction(name.replace("_", " ").capitalize())
+    view._toggle_construction = _toggle_construction
+    view._trim_tool = lambda: _select_tool("trim")
+    view._trace = lambda: _trace_dialog(view)
+    view._export = lambda: _export_dxf(view)
+
+    bar = QWidget()
+    bar.setProperty("ribbonBar", True)
+    lay = QHBoxLayout(bar)
+    lay.setContentsMargins(4, 2, 4, 2)
+    lay.setSpacing(0)
+
+    def sep():
+        line = QFrame()
+        line.setFrameShape(QFrame.VLine)
+        line.setProperty("ribbonSep", True)
+        lay.addWidget(line)
+
+    # Create: the drawing tools, mutually exclusive
+    tool_group = QActionGroup(bar)
+    tool_group.setExclusive(True)
+    tool_actions = {}
+
+    def _select_tool(key):
+        view.set_tool(key)
+        if key in tool_actions:
+            tool_actions[key].setChecked(True)
+
+    buttons = []
+    for key, ic, label, shortcut in SKETCH_CREATE:
+        a = QAction(icon(ic), label, bar)
+        a.setCheckable(True)
+        a.setChecked(key == "select")
+        if shortcut and shortcut != "Esc":
+            a.setShortcut(shortcut)
+        a.setToolTip(f"{label}" + (f"  ({shortcut})" if shortcut else ""))
+        a.triggered.connect(lambda _=False, k=key: _select_tool(k))
+        tool_group.addAction(a)
+        tool_actions[key] = a
+        buttons.append(_ribbon_button(a, big=key in ("line", "rectangle", "circle")))
+    lay.addWidget(_ribbon_group("CREATE", buttons))
+    sep()
+
+    # Modify
+    buttons = []
+    for ic, label, fn, tip in SKETCH_MODIFY:
+        a = QAction(icon(ic), label, bar)
+        a.setToolTip(tip)
+        a.triggered.connect(lambda _=False, f=fn: getattr(view, f)())
+        buttons.append(_ribbon_button(a))
+    lay.addWidget(_ribbon_group("MODIFY", buttons))
+    sep()
+
+    # Constraints
+    buttons = []
+    from .sketcher import RULES
+    for name, ic in CONSTRAINT_ICONS.items():
+        if name not in RULES:
+            continue
+        a = QAction(icon(ic), name.replace("_", " ").capitalize(), bar)
         a.setToolTip("Needs: " + " or ".join(" + ".join(r) for r in RULES[name]))
         a.triggered.connect(lambda _=False, n=name: view.apply_constraint(n))
-    box = QWidget()
-    col = QVBoxLayout(box)
-    col.setContentsMargins(0, 0, 0, 0)
-    col.setSpacing(0)
-    col.addWidget(tools)
-    col.addWidget(cons)
-    return box
+        buttons.append(_ribbon_button(a))
+    lay.addWidget(_ribbon_group("CONSTRAINTS", buttons))
+    sep()
+
+    # Inspect
+    a_dim = QAction(icon("dimension"), "Dimension", bar)
+    a_dim.setShortcut("D")
+    a_dim.setToolTip("Length, distance, diameter or angle of the selection  (D)")
+    a_dim.triggered.connect(lambda: view.dimension())
+    a_fit = QAction(icon("fit"), "Fit", bar)
+    a_fit.setToolTip("Fit the sketch in the view")
+    a_fit.triggered.connect(view.fit)
+    lay.addWidget(_ribbon_group("INSPECT", [_ribbon_button(a_dim), _ribbon_button(a_fit)]))
+
+    lay.addStretch(1)
+
+    # Finish, set apart at the right like Fusion's green button
+    a_finish = QAction(icon("finish"), "Finish Sketch", bar)
+    a_finish.triggered.connect(on_finish)
+    finish = _ribbon_button(a_finish, big=True)
+    finish.setProperty("finish", True)
+    lay.addWidget(_ribbon_group("", [finish]))
+    return bar

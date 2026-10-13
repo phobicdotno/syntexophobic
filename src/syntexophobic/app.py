@@ -243,6 +243,7 @@ class MainWindow(QMainWindow):
         self._build_job_dock()
         self._build_history_dock()
         self._build_design_dock()
+        self._build_ribbon()
         self._build_assistant_dock()
         self.status = QLabel("Start a new design to model a part, or open a STEP / STL file to machine one.")
         self.statusBar().addWidget(self.status, 1)
@@ -317,9 +318,9 @@ class MainWindow(QMainWindow):
         act("New from STEP / STL…", self.new_project, "new", "Ctrl+N", m_file)
         act("Open project…", self.open_project, "open", "Ctrl+O", m_file)
         tb.addSeparator()
-        self.a_generate = act("Generate toolpaths", self.generate, "generate", "Ctrl+G", m_paths)
-        self.a_simulate = act("Simulate", self.simulate, "simulate", "Ctrl+R", m_paths)
-        self.a_export = act("Export G-code…", self.export_gcode, "export", "Ctrl+E", m_file)
+        self.a_generate = act("Generate toolpaths", self.generate, "generate", "Ctrl+G", m_paths, toolbar=False)
+        self.a_simulate = act("Simulate", self.simulate, "simulate", "Ctrl+R", m_paths, toolbar=False)
+        self.a_export = act("Export G-code…", self.export_gcode, "export", "Ctrl+E", m_file, toolbar=False)
         m_file.addSeparator()
         for text, slot in (("Import DXF as sketch…", self.import_dxf), ("Export sketch as DXF…", self.export_dxf),
                            ("Export model (STEP / STL)…", self.export_model),
@@ -334,9 +335,9 @@ class MainWindow(QMainWindow):
         act("Top view", lambda: self.viewer.view_top(), "top", "2", m_view)
         tb.addSeparator()
         m_view.addSeparator()
-        self.c_paths = act("Toolpaths", lambda _: self._redraw_paths(), "toolpaths", "T", m_view, True)
-        self.c_rapids = act("Rapids", lambda _: self._redraw_paths(), "rapids", "R", m_view, True)
-        self.c_model = act("Model", lambda on: self.viewer.set_model_visible(on), "model", "M", m_view, True)
+        self.c_paths = act("Toolpaths", lambda _: self._redraw_paths(), "toolpaths", "T", m_view, True, toolbar=False)
+        self.c_rapids = act("Rapids", lambda _: self._redraw_paths(), "rapids", "R", m_view, True, toolbar=False)
+        self.c_model = act("Model", lambda on: self.viewer.set_model_visible(on), "model", "M", m_view, True, toolbar=False)
 
         m_view.addSeparator()
         m_section = m_view.addMenu("Section")
@@ -387,6 +388,78 @@ class MainWindow(QMainWindow):
             group.addAction(a)
             self.toolbar_styles[key] = a
         self.set_toolbar_style(QSettings().value("toolbar_style", "icons"))
+
+    def _build_ribbon(self):
+        """The Fusion-style tool ribbon under the app bar: a Design tab (Create / Modify /
+        Insert / Inspect) and a Manufacture tab (Actions / Display), swapped by workspace."""
+        from PySide6.QtWidgets import QFrame
+        from .design_ui import _ribbon_button, _ribbon_group
+        dp = self.design_panel
+
+        def qa(icon, text, slot, tip=None):
+            a = QAction(mono_icon(icon, self.palette()), text, self)
+            a.setToolTip(tip or text)
+            a.triggered.connect(lambda _=False, s=slot: s())
+            return a
+
+        def page(groups):
+            w = QWidget()
+            row = QHBoxLayout(w)
+            row.setContentsMargins(4, 0, 4, 0)
+            row.setSpacing(0)
+            for i, (title, buttons) in enumerate(groups):
+                if i:
+                    line = QFrame()
+                    line.setFrameShape(QFrame.VLine)
+                    line.setProperty("ribbonSep", True)
+                    row.addWidget(line)
+                row.addWidget(_ribbon_group(title, buttons))
+            row.addStretch(1)
+            return w
+
+        # ---- Design tab ----
+        big = {"extrude", "revolve"}
+        create = [qa("sketch_new", "Create Sketch", dp.new_sketch, "New sketch on a plane"),
+                  qa("sketch_face", "Sketch on Face", dp.sketch_on_face, "New sketch on the picked flat face"),
+                  qa("extrude", "Extrude", lambda: dp.add("extrude")),
+                  qa("revolve", "Revolve", lambda: dp.add("revolve")),
+                  qa("loft", "Loft", lambda: dp.add("loft")),
+                  qa("sweep", "Sweep", lambda: dp.add("sweep")),
+                  qa("hole", "Hole", lambda: dp.add("hole"))]
+        modify = [qa("fillet", "Fillet", lambda: dp.add("fillet")),
+                  qa("chamfer", "Chamfer", lambda: dp.add("chamfer")),
+                  qa("shell", "Shell", lambda: dp.add("shell")),
+                  qa("mirror", "Mirror", lambda: dp.add("mirror"))]
+        insert = [qa("relief", "Relief", dp.add_relief, "Relief from a picture"),
+                  qa("import", "Insert STEP/STL", dp.add_import, "Import a STEP or STL body")]
+        self.a_parameters = qa("parameters", "Parameters", dp.edit_parameters, "Named parameters")
+        self.a_measure.setIcon(mono_icon("dimension", self.palette()))
+        inspect = [self.a_parameters, self.a_measure]
+        self.design_feature_actions = create + modify + insert + [self.a_parameters]
+        design_page = page([("CREATE", [_ribbon_button(a, big=a.text() in {"Extrude", "Revolve"}) for a in create]),
+                            ("MODIFY", [_ribbon_button(a) for a in modify]),
+                            ("INSERT", [_ribbon_button(a) for a in insert]),
+                            ("INSPECT", [_ribbon_button(a) for a in inspect])])
+
+        # ---- Manufacture tab ----
+        manu_page = page([("ACTIONS", [_ribbon_button(self.a_generate, big=True),
+                                       _ribbon_button(self.a_simulate, big=True),
+                                       _ribbon_button(self.a_export)]),
+                          ("DISPLAY", [_ribbon_button(self.c_paths), _ribbon_button(self.c_rapids),
+                                       _ribbon_button(self.c_model)])])
+
+        self.ribbon = QStackedWidget()
+        self.ribbon.addWidget(design_page)
+        self.ribbon.addWidget(manu_page)
+        self._design_page, self._manu_page = design_page, manu_page
+        rb = QToolBar("Ribbon")
+        rb.setObjectName("ribbon-toolbar")
+        rb.setMovable(False)
+        rb.setContextMenuPolicy(Qt.PreventContextMenu)
+        rb.addWidget(self.ribbon)
+        self.addToolBarBreak()
+        self.addToolBar(rb)
+        self.ribbon_toolbar = rb
 
     def set_fullscreen(self, on: bool):
         self.setWindowState(self.windowState() | Qt.WindowFullScreen if on
@@ -572,6 +645,8 @@ class MainWindow(QMainWindow):
         has_part = self.part is not None
         self.design_panel.setVisible(has_part)
         self.design_start.setVisible(not has_part)
+        for a in getattr(self, "design_feature_actions", []):
+            a.setEnabled(has_part)
         if self.project is None:
             self.design_note.setText("Model a part: start a new design, then draw a sketch and extrude it.\n\n"
                                      "To machine a finished part, use New from STEP / STL instead.")
@@ -680,6 +755,7 @@ class MainWindow(QMainWindow):
         self.viewer.picking = design or self.a_measure.isChecked()
         self.design_dock.setVisible(design)
         self.job_dock.setVisible(not design)
+        self.ribbon.setCurrentWidget(self._design_page if design else self._manu_page)
         for a in (self.a_generate, self.a_simulate, self.a_export, self.c_paths, self.c_rapids):
             a.setVisible(not design)
         if design:
@@ -731,10 +807,10 @@ class MainWindow(QMainWindow):
         self.project.reload()
         if self.part is not None:
             from .model import Part
-            row = self.design_panel.l_features.currentRow()
+            row = self.design_panel.current_row()
             self.part = Part.load(self.project.folder / self.project.job.model)
             self.design_panel.set_part(self.part)
-            self.design_panel.l_features.setCurrentRow(row)
+            self.design_panel.set_current_row(row)
         self._fill_job()
         self._refresh_model()
         self._refresh_history_status()
@@ -845,6 +921,7 @@ class MainWindow(QMainWindow):
         col.addWidget(view)
         self.stack.addWidget(page)
         self.stack.setCurrentWidget(page)
+        self.ribbon_toolbar.hide()                   # the sketch page carries its own ribbon
         self.sketch_page, self.sketch_view = page, view
         view.solve_and_draw()
         QTimer.singleShot(0, view.fit)
@@ -856,6 +933,7 @@ class MainWindow(QMainWindow):
         self.stack.removeWidget(self.sketch_page)
         self.sketch_page.deleteLater()
         self.sketch_page = None
+        self.ribbon_toolbar.show()
         if save:
             self._design_changed()
 
@@ -975,10 +1053,10 @@ class MainWindow(QMainWindow):
             self.project.reload()
             if self.part is not None:
                 from .model import Part
-                row = self.design_panel.l_features.currentRow()
+                row = self.design_panel.current_row()
                 self.part = Part.load(self.project.folder / self.project.job.model)
                 self.design_panel.set_part(self.part)
-                self.design_panel.l_features.setCurrentRow(max(row, 0))
+                self.design_panel.set_current_row(max(row, 0))
             self._fill_job()
             self._refresh_model()
             self._refresh_history()
@@ -1369,16 +1447,71 @@ class MainWindow(QMainWindow):
 def _dark_palette(app: QApplication):
     app.setStyle("Fusion")
     p = QPalette()
-    base, window, text, accent = QColor(30, 32, 36), QColor(40, 43, 48), QColor(226, 229, 234), QColor(64, 160, 255)
+    base, window, text, accent = QColor(27, 29, 33), QColor(37, 40, 45), QColor(226, 229, 234), QColor(64, 160, 255)
     for role, c in ((QPalette.Window, window), (QPalette.WindowText, text), (QPalette.Base, base),
-                    (QPalette.AlternateBase, window), (QPalette.Text, text), (QPalette.Button, window),
+                    (QPalette.AlternateBase, QColor(33, 36, 41)), (QPalette.Text, text), (QPalette.Button, window),
                     (QPalette.ButtonText, text), (QPalette.Highlight, accent),
                     (QPalette.HighlightedText, QColor(255, 255, 255)), (QPalette.ToolTipBase, base),
-                    (QPalette.ToolTipText, text), (QPalette.PlaceholderText, QColor(130, 136, 145))):
+                    (QPalette.ToolTipText, text), (QPalette.PlaceholderText, QColor(130, 136, 145)),
+                    (QPalette.Link, accent)):
         p.setColor(role, c)
     p.setColor(QPalette.Disabled, QPalette.Text, QColor(110, 115, 122))
     p.setColor(QPalette.Disabled, QPalette.ButtonText, QColor(110, 115, 122))
     app.setPalette(p)
+    app.setStyleSheet(_STYLESHEET)
+
+
+# Fusion-dark chrome: flat toolbars, ribbon groups with captions, a browser tree and the
+# green Finish button. Colours track the palette above (near-black canvas, grey panels, blue accent).
+_STYLESHEET = """
+QMainWindow, QDockWidget { background: #25282d; }
+QToolBar#main-toolbar { background: #1f2227; border: none; border-bottom: 1px solid #14161a; padding: 2px 4px; spacing: 2px; }
+QToolBar { background: transparent; border: none; }
+QToolBar::separator { background: #3a3e45; width: 1px; margin: 4px 6px; }
+QToolButton { border: 1px solid transparent; border-radius: 5px; padding: 3px; color: #e2e5ea; }
+QToolButton:hover { background: #343941; border-color: #3f444d; }
+QToolButton:pressed { background: #2b2f36; }
+QToolButton:checked { background: #16324d; border-color: #2d6ca8; }
+QToolButton::menu-indicator { image: none; }
+
+/* Sketch ribbon: grouped tool columns with a caption under each */
+QWidget[ribbonBar="true"] { background: #2a2d33; border-bottom: 1px solid #14161a; }
+QToolButton[ribbon="1"], QToolButton[ribbon="big"] { font-size: 10px; }
+QToolButton[ribbon="big"] { min-width: 46px; }
+QLabel[ribbonCaption="true"] { color: #7f868f; font-size: 8px; font-weight: 600; letter-spacing: 1px; }
+QFrame[ribbonSep="true"] { color: #3a3e45; max-width: 1px; margin: 3px 2px; }
+QToolButton[finish="true"] { color: #d7f5df; }
+QToolButton[finish="true"]:hover { background: #1f4d30; border-color: #2e8c52; }
+
+/* Browser tree (Fusion's left panel) */
+QTreeWidget, QTreeView { background: #1f2227; border: none; outline: 0; }
+QTreeView::item { padding: 3px 2px; border: none; }
+QTreeView::item:hover { background: #2c313a; }
+QTreeView::item:selected { background: #16324d; color: #ffffff; }
+QTreeView::branch { background: transparent; }
+
+QDockWidget::title { background: #1f2227; padding: 5px 8px; color: #aeb4bd; font-weight: 600; }
+QGroupBox { border: 1px solid #33373e; border-radius: 6px; margin-top: 10px; padding-top: 6px; }
+QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 4px; color: #aeb4bd; }
+QPushButton { background: #31353c; border: 1px solid #3c414a; border-radius: 5px; padding: 5px 10px; }
+QPushButton:hover { background: #3a3f47; }
+QPushButton:pressed { background: #2a2e34; }
+QListWidget, QPlainTextEdit, QLineEdit, QComboBox, QDoubleSpinBox, QTableWidget {
+    background: #1b1d21; border: 1px solid #33373e; border-radius: 5px; selection-background-color: #16324d; }
+QComboBox:hover, QLineEdit:focus { border-color: #2d6ca8; }
+QStatusBar { background: #1f2227; color: #aeb4bd; }
+QMenuBar { background: #1f2227; }
+QMenuBar::item:selected { background: #2c313a; }
+QTabBar::tab { background: #26292f; padding: 5px 12px; border-top-left-radius: 4px; border-top-right-radius: 4px; }
+QTabBar::tab:selected { background: #16324d; color: #ffffff; }
+QSplitter::handle { background: #14161a; }
+QScrollBar:vertical { background: transparent; width: 11px; }
+QScrollBar::handle:vertical { background: #3c414a; border-radius: 5px; min-height: 24px; }
+QScrollBar::handle:vertical:hover { background: #4a505a; }
+QScrollBar::add-line, QScrollBar::sub-line { height: 0; }
+QScrollBar:horizontal { background: transparent; height: 11px; }
+QScrollBar::handle:horizontal { background: #3c414a; border-radius: 5px; min-width: 24px; }
+"""
 
 
 def run(path: str | None = None) -> int:
