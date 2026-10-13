@@ -32,7 +32,7 @@ jobs:
       - name: appimagetool, git and the libraries the AppImage carries
         run: |
           sudo apt-get update -q
-          sudo apt-get install -yq git libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3 libglib2.0-0 \
+          sudo apt-get install -yq git libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3 libglib2.0-0 libpulse0 \
             libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-util1 \
             libxcb-xkb1 libxkbcommon-x11-0
           mkdir -p ~/.local/bin
@@ -88,8 +88,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
       - name: Try it, unzipped as a download would be
         timeout-minutes: 10
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           7z x -bd -y -obuild/try dist/*.zip >/dev/null
+          ./tools/windows/ci-mesa.sh build/try/Syntexophobic/python   # the runner has no GPU
           cd build/try/Syntexophobic
           ./Syntexophobic.exe --version | tee version.txt
           grep -q Syntexophobic version.txt
