@@ -1,6 +1,9 @@
 import os
+import sys
 
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+# no window on Linux; macOS and Windows keep their own platform, as VTK's view draws into a
+# real native window there (given offscreen's fake one, it crashes)
+os.environ.setdefault("QT_QPA_PLATFORM", {"darwin": "cocoa", "win32": "windows"}.get(sys.platform, "offscreen"))
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 # One widgets application for every test: text and SpaceMouse tests would otherwise make a bare

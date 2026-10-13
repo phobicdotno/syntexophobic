@@ -21,6 +21,7 @@ NOTES_061 = "**Fixes**\n- A crash\n"
 def gh(tag, body="", draft=False, prerelease=False, asset=True):
     v = tag.lstrip("v")
     assets = [{"name": f"Syntexophobic-{v}-macOS-arm64.zip", "url": f"https://api/assets/{v}.zip", "size": 9},
+              {"name": f"Syntexophobic-{v}-windows-x64.zip", "url": f"https://api/assets/{v}-win.zip", "size": 8},
               {"name": f"Syntexophobic-{v}-x86_64.AppImage", "url": f"https://api/assets/{v}", "size": 4}] if asset else []
     return {"tag_name": tag, "name": f"Syntexophobic {v}", "body": body, "html_url": f"https://gh/{tag}",
             "draft": draft, "prerelease": prerelease, "assets": assets}
@@ -53,6 +54,8 @@ def test_each_platform_gets_its_own_build():
     assert mac.asset == "Syntexophobic-0.7.0-macOS-arm64.zip" and mac.asset_url.endswith(".zip")
     assert mac.asset_size == 9 and mac.blocks_url == ""
     assert update.releases(DATA, ASSET_SUFFIX("darwin", "x86_64"))[0].asset == ""   # no Intel build
+    assert ASSET_SUFFIX("win32") == "-windows-x64.zip"
+    assert update.releases(DATA, ASSET_SUFFIX("win32"))[0].asset == "Syntexophobic-0.7.0-windows-x64.zip"
 
 
 def test_check_passes_the_token_and_reports_no_access(monkeypatch):

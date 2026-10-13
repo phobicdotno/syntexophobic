@@ -5,7 +5,9 @@ engine, QML, multimedia, 3D, most of VTK). Run with the AppDir's own Python:
     AppDir/usr/python/bin/python3 tools/appimage_prune.py AppDir
 
 The macOS app is pruned the same way, its libraries being Mach-O files and Qt's frameworks
-(build-macos.sh runs it on Syntexophobic.app/Contents, the app's Python prefix).
+(build-macos.sh runs it on Syntexophobic.app/Contents, the app's Python prefix), and the
+Windows build's DLLs too (build-windows.sh runs it on the build's python folder; needs
+objdump, which Git for Windows and MinGW have).
 """
 
 import os
@@ -19,8 +21,14 @@ PLUGINS = {"platforms", "platformthemes", "platforminputcontexts", "xcbglintegra
            "imageformats", "iconengines", "generic", "tls", "networkinformation", "wayland-decoration-client",
            "wayland-graphics-integration-client", "wayland-shell-integration", "printsupport"}
 MAC = sys.platform == "darwin"
+WIN = sys.platform == "win32"
 if MAC:     # the macOS style, the camera (Take photo…) and the camera permission prompt
     PLUGINS |= {"styles", "multimedia", "permissions"}
+if WIN:     # the Windows styles and the camera
+    PLUGINS |= {"styles", "multimedia"}
+# loaded by name at run time, so no import table names them: Qt's software OpenGL for
+# machines without a GL driver, and its shader compiler
+ALWAYS = {"opengl32sw.dll", "d3dcompiler_47.dll"}
 MACHO = {b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe"}     # 64-bit and universal Mach-O
 
 
@@ -36,11 +44,17 @@ def imported_modules() -> set[str]:
             "for name in set(re.findall(r'\\b(PySide6\\.Qt\\w+|vtkmodules\\.[\\w.]+)', src)): importlib.import_module(name.rstrip('.'))\n"
             "print(json.dumps(sorted(getattr(m, '__file__', '') or '' for m in list(sys.modules.values()))))")
     import json
-    out = subprocess.run([sys.executable, "-c", code], check=True, capture_output=True, text=True).stdout
-    return {f for f in json.loads(out.strip().splitlines()[-1]) if f.endswith(".so")}
+    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    if r.returncode:
+        sys.exit(f"importing the program failed:\n{r.stderr}")
+    out = r.stdout
+    return {f for f in json.loads(out.strip().splitlines()[-1]) if f.endswith((".so", ".pyd"))}
 
 
 def needed(path: Path) -> list[str]:
+    if WIN:     # DLL names, matched without case as Windows does
+        out = subprocess.run(["objdump", "-p", str(path)], capture_output=True, text=True).stdout
+        return [n.lower() for n in re.findall(r"DLL Name: (\S+)", out)]
     if MAC:     # @rpath/QtCore.framework/Versions/A/QtCore, @rpath/libvtkCommonCore-9.6.dylib: by file name
         out = subprocess.run(["otool", "-L", str(path)], capture_output=True, text=True).stdout
         return [Path(line.split(" (")[0].strip()).name for line in out.splitlines()[1:] if " (" in line]
@@ -51,6 +65,8 @@ def needed(path: Path) -> list[str]:
 def libraries(root: Path) -> list[Path]:
     """The shared libraries under root: *.so* files, or on macOS every Mach-O file (dylibs,
     extension modules, framework binaries such as QtCore.framework/Versions/A/QtCore)."""
+    if WIN:
+        return [f for f in root.rglob("*") if f.suffix.lower() in (".dll", ".pyd") and f.is_file()]
     if not MAC:
         return [f for f in root.rglob("*.so*") if f.is_file()]
     out = []
@@ -62,6 +78,10 @@ def libraries(root: Path) -> list[Path]:
     return out
 
 
+def name(f: Path) -> str:
+    return f.name.lower() if WIN else f.name
+
+
 def framework(f: Path) -> Path | None:
     """QtFoo.framework for its binary QtFoo.framework/Versions/A/QtFoo."""
     fw = next((p for p in f.parents if p.suffix == ".framework"), None)
@@ -69,16 +89,21 @@ def framework(f: Path) -> Path | None:
 
 
 def main(appdir: Path):
-    site = next(p for lib in (appdir / "usr/python/lib", appdir / "lib") for p in lib.glob("python3.*/site-packages"))
+    if WIN:
+        site = appdir / "Lib/site-packages"
+    else:
+        site = next(p for lib in (appdir / "usr/python/lib", appdir / "lib") for p in lib.glob("python3.*/site-packages"))
     pyside, vtk = site / "PySide6", site / "vtkmodules"
     pruned = [pyside, vtk]                      # only these two trees are trimmed
     by_name: dict[str, Path] = {}
     for root in site.iterdir():
         if root.is_dir():
             for f in libraries(root):
-                by_name.setdefault(f.name, f)
+                by_name.setdefault(name(f), f)
+    plugins = pyside / ("plugins" if WIN else "Qt/plugins")
     seeds = {Path(f) for f in imported_modules()}
-    seeds |= {f for d in PLUGINS for f in (pyside / "Qt/plugins" / d).glob("*.dylib" if MAC else "*.so")}
+    seeds |= {f for d in PLUGINS for f in (plugins / d).glob("*.dll" if WIN else "*.dylib" if MAC else "*.so")}
+    seeds |= {by_name[n] for n in ALWAYS if n in by_name}
     keep, todo = set(), list(seeds)
     while todo:
         f = todo.pop()
@@ -89,20 +114,21 @@ def main(appdir: Path):
     # symlinked sonames (libfoo.so.6 -> libfoo.so.6.9.1): keep both ends
     keep |= {f.resolve() for f in keep}
     before = sum(f.stat().st_size for p in pruned for f in p.rglob("*") if f.is_file() and not f.is_symlink())
-    kept_names = {k.name for k in keep}
+    kept_names = {name(k) for k in keep}
     for p in pruned:
         for f in libraries(p):
-            if f.exists() and f not in keep and f.resolve() not in keep and f.name not in kept_names:
+            if f.exists() and f not in keep and f.resolve() not in keep and name(f) not in kept_names:
                 fw = framework(f) if MAC else None
                 if fw is not None:
                     shutil.rmtree(fw)               # the whole framework: headers, resources, links
                 elif fw is None and not (MAC and any(q.suffix == ".framework" for q in f.parents)):
                     f.unlink()
-    for d in (pyside / "Qt/plugins").iterdir():
-        if d.name not in PLUGINS:
+    for d in plugins.iterdir():
+        if d.is_dir() and d.name not in PLUGINS:
             shutil.rmtree(d)
     for junk in ("Qt/resources", "Qt/libexec", "Qt/qml", "Qt/translations", "Qt/metatypes", "include",
-                 "typesystems", "glue", "scripts"):
+                 "typesystems", "glue", "scripts",
+                 *(("resources", "qml", "translations", "metatypes", "examples") if WIN else ())):
         shutil.rmtree(pyside / junk, ignore_errors=True)
     after = sum(f.stat().st_size for p in pruned for f in p.rglob("*") if f.is_file() and not f.is_symlink())
     print(f"Qt + VTK: {before / 1e6:.0f} MB -> {after / 1e6:.0f} MB")

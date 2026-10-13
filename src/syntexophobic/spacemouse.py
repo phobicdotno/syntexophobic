@@ -69,6 +69,8 @@ class SpaceMouse(QObject):
     def connect_daemon(self) -> bool:
         if self.sock:
             return True
+        if not hasattr(socket, "AF_UNIX"):     # Windows: no spacenavd, nothing to connect to
+            return False
         for path in self.paths:
             try:
                 s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)

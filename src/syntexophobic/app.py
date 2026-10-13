@@ -1386,6 +1386,10 @@ def run(path: str | None = None) -> int:
     # macOS has only its own platform (cocoa), which VTK draws into directly.
     if sys.platform.startswith("linux"):
         os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
+    elif sys.platform == "win32":
+        # its own taskbar button and icon, not Python's (the launcher starts python.exe)
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("phobic.Syntexophobic")
     # the window's WM_CLASS is (RESOURCE_NAME, application name): "syntexophobic", "Syntexophobic",
     # matching the menu entry, where it would otherwise be "__main__.py"
     os.environ.setdefault("RESOURCE_NAME", desktop.APP_ID)

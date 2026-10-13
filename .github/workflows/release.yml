@@ -1,4 +1,4 @@
-# A version tag (v0.6.3) builds the Linux AppImage with its .blocks file and the macOS app,
+# A version tag (v0.6.3) builds the Linux AppImage with its .blocks file, the macOS app and the Windows build,
 # tries each one, and publishes them as that version's GitHub release, its notes taken
 # from CHANGELOG.md. Pull requests that change the build only build and try them.
 name: Release
@@ -22,10 +22,10 @@ jobs:
   linux:
     # the oldest supported Ubuntu, so the AppImage's bundled git and xcb libraries run on older desktops too
     runs-on: ubuntu-22.04
-    timeout-minutes: 45
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
       - name: The tag matches the version
         if: startsWith(github.ref, 'refs/tags/v')
         run: grep -qx "version = \"${GITHUB_REF_NAME#v}\"" pyproject.toml
@@ -41,10 +41,11 @@ jobs:
           chmod +x ~/.local/bin/appimagetool
       - run: ./tools/build-appimage.sh
       - name: Try it
+        timeout-minutes: 10
         run: |
           build/AppDir/usr/python/bin/python3 tools/smoke.py
           ./dist/*.AppImage --appimage-extract-and-run --version
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: linux
           path: dist/*
@@ -53,32 +54,61 @@ jobs:
 
   macos:
     runs-on: macos-15          # Apple silicon
-    timeout-minutes: 45
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
       - run: ./tools/build-macos.sh
       - name: Try it, unzipped as a download would be
+        timeout-minutes: 10
         run: |
           mkdir -p build/try && ditto -x -k dist/*.zip build/try
           APP=build/try/Syntexophobic.app/Contents
           $APP/MacOS/Syntexophobic --version
           $APP/MacOS/python3 tools/smoke.py
           if [ -x $APP/Resources/git/git ]; then $APP/Resources/git/git --version; fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: macos
           path: dist/*.zip
           if-no-files-found: error
           compression-level: 0
 
+  windows:
+    runs-on: windows-2022      # has MinGW's gcc and windres for the launcher
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+      - run: ./tools/build-windows.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Try it, unzipped as a download would be
+        timeout-minutes: 10
+        run: |
+          7z x -bd -y -obuild/try dist/*.zip >/dev/null
+          cd build/try/Syntexophobic
+          ./Syntexophobic.exe --version | tee version.txt
+          grep -q Syntexophobic version.txt
+          ./python/python.exe ../../../tools/smoke.py
+          ./git/cmd/git.exe --version
+      - uses: actions/upload-artifact@v5
+        with:
+          name: windows
+          path: dist/*.zip
+          if-no-files-found: error
+          compression-level: 0
+
   publish:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [linux, macos]
+    needs: [linux, macos, windows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v6
         with:
           path: dist
           merge-multiple: true
