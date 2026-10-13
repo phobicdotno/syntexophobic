@@ -391,7 +391,9 @@ class MainWindow(QMainWindow):
         m_view.addSeparator()
         self.a_fullscreen = m_view.addAction("Full screen")
         self.a_fullscreen.setCheckable(True)
-        self.a_fullscreen.setShortcut(QKeySequence(QKeySequence.FullScreen))
+        # F11 explicitly: QKeySequence.FullScreen is platform-theme dependent on X11 and
+        # often resolves to nothing, so the key did nothing.
+        self.a_fullscreen.setShortcuts([QKeySequence("F11"), QKeySequence(QKeySequence.FullScreen)])
         self.a_fullscreen.toggled.connect(self.set_fullscreen)
         m_style = m_view.addMenu("Toolbar")
         group = QActionGroup(self)
@@ -477,13 +479,22 @@ class MainWindow(QMainWindow):
         self.ribbon_toolbar = rb
 
     def set_fullscreen(self, on: bool):
-        self.setWindowState(self.windowState() | Qt.WindowFullScreen if on
-                            else self.windowState() & ~Qt.WindowFullScreen)
+        # showFullScreen/showNormal are the reliable way across window managers; plain
+        # setWindowState is quietly ignored by some. Remember maximize so exiting restores it.
+        if on:
+            self._was_maximized = self.isMaximized()
+            self.showFullScreen()
+        elif getattr(self, "_was_maximized", False):
+            self.showMaximized()
+        else:
+            self.showNormal()
 
     def changeEvent(self, event):
         super().changeEvent(event)
         if event.type() == QEvent.WindowStateChange:   # also when the window manager changes it
+            self.a_fullscreen.blockSignals(True)       # reflect the state without re-triggering
             self.a_fullscreen.setChecked(self.isFullScreen())
+            self.a_fullscreen.blockSignals(False)
 
     def set_toolbar_style(self, key: str):
         tb = self.toolbar
