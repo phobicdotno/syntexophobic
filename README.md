@@ -37,7 +37,9 @@ Git Bash with `./tools/build-windows.sh`. The update bar says where to download 
 **Releases** are built by GitHub Actions: pushing a version tag (`git tag v0.6.3 && git push
 origin v0.6.3`, after the version in `pyproject.toml` and a `## v0.6.3` section in
 `CHANGELOG.md`) builds the AppImage with its `.blocks` file, the macOS app and the Windows build, tries each,
-and publishes them as the release, with that CHANGELOG section as its notes.
+and publishes them as the release, with that CHANGELOG section as its notes. Or, without a
+tag: Actions → *Release* → *Run workflow* with *publish* ticked releases the version in
+`pyproject.toml` and makes its tag.
 
 **Updates:** when a newer release is on GitHub, a bar above the view says so, with what's new.
 In the AppImage, *Update* downloads the new one next to it and points

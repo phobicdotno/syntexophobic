@@ -1,6 +1,8 @@
 # A version tag (v0.6.3) builds the Linux AppImage with its .blocks file, the macOS app and the Windows build,
 # tries each one, and publishes them as that version's GitHub release, its notes taken
-# from CHANGELOG.md. Pull requests that change the build only build and try them.
+# from CHANGELOG.md. Pull requests that change the build only build and try them. Run by hand
+# (Actions → Release → Run workflow) with "publish" ticked, it releases the version in
+# pyproject.toml from the chosen branch and makes its tag.
 name: Release
 
 on:
@@ -14,6 +16,11 @@ on:
       - tools/release_notes.py
       - .github/workflows/release.yml
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the version in pyproject.toml as a release (makes its tag)
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -106,7 +113,7 @@ jobs:
           compression-level: 0
 
   publish:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.publish
     needs: [linux, macos, windows]
     runs-on: ubuntu-latest
     steps:
@@ -119,7 +126,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          V=${GITHUB_REF_NAME#v}
+          if [[ $GITHUB_REF == refs/tags/v* ]]; then
+            V=${GITHUB_REF_NAME#v}; TAG=(--verify-tag)
+          else                       # run by hand: the tag is made on this commit
+            V=$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml); TAG=(--target "$GITHUB_SHA")
+          fi
           python3 tools/release_notes.py "$V" notes > notes.md
-          gh release create "$GITHUB_REF_NAME" dist/* --verify-tag \
+          gh release create "v$V" dist/* "${TAG[@]}" \
             --title "$(python3 tools/release_notes.py "$V" title)" --notes-file notes.md
