@@ -3,6 +3,29 @@
 Each release has a version and a build number; Help → About shows a one-line summary of
 every release, read from this file.
 
+## v0.7.0 (build 11) — 2026-10-13
+
+**Design workspace**
+- The window follows Fusion's layout. The sketch tools are now a ribbon — Create, Modify,
+  Constraints and Inspect — with the drawing tools, constraints and a Finish Sketch button
+  grouped under captions.
+- The feature list is a browser tree: Origin planes, Sketches and the feature history, each
+  with its icon. Double-click a plane for a new sketch on it, a sketch to edit it, a feature
+  to open its sketch.
+- Creating features (Extrude, Revolve, Loft, Sweep, Hole, Fillet, Chamfer, Shell, Mirror,
+  Relief, Insert) moves onto a tool ribbon under the app bar that swaps between the Design
+  and Manufacture workspaces. The Claude assistant panel is unchanged.
+
+**3D view**
+- A ViewCube in the top-right corner: click a face, edge or corner to turn the model to it.
+- Front, Back, Left, Right, Top, Bottom and Home (iso) views, and Fit, on the app bar and
+  in the View menu.
+- Visual style: shaded, shaded with edges (the default), or wireframe, under View > Visual style.
+
+**Look**
+- A dark theme throughout, and a new icon set — every toolbar, sketch, constraint and
+  feature icon redrawn in one drafting style, drawn in the window's text colour.
+
 ## v0.6.3 (build 10) — 2026-10-13
 
 **Install**
