@@ -1570,5 +1570,5 @@ def run(path: str | None = None) -> int:
         QTimer.singleShot(3000, win.update_bar.check)
         recheck = QTimer(win)
         recheck.timeout.connect(win.update_bar.check)
-        recheck.start(6 * 3600 * 1000)
+        recheck.start(3600 * 1000)   # hourly, like phobiCCCP
     return app.exec()

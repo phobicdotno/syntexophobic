@@ -7,8 +7,10 @@ from __future__ import annotations
 import html
 
 from PySide6.QtCore import QObject, QProcess, QRunnable, QSettings, Qt, QThreadPool, Signal
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (QApplication, QDialog, QDialogButtonBox, QFrame, QHBoxLayout, QLabel,
-                               QMessageBox, QPushButton, QTextBrowser, QVBoxLayout)
+                               QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QTextBrowser,
+                               QToolButton, QVBoxLayout)
 
 from . import update
 
@@ -51,6 +53,91 @@ def notes_dialog(up: update.Update, parent=None) -> QDialog:
     return dlg
 
 
+def confirm_install(up: update.Update, parent=None) -> bool:
+    """Ask before downloading, showing what's new and what will happen (like phobiCCCP)."""
+    dlg = QDialog(parent)
+    dlg.setWindowTitle("Install update")
+    dlg.resize(560, 480)
+    lay = QVBoxLayout(dlg)
+    head = QLabel(f"Install Syntexophobic {up.latest.version}?")
+    head.setStyleSheet("font-weight: 600; font-size: 15px;")
+    lay.addWidget(head)
+    text = QTextBrowser()
+    text.setOpenExternalLinks(True)
+    text.setMarkdown(up.notes() + f"\n\n[The release on GitHub]({up.latest.page})")
+    lay.addWidget(text, 1)
+    size = f" (about {up.latest.asset_size / 1e6:.0f} MB)" if up.latest.asset_size else ""
+    warn = QLabel(f"Downloads {html.escape(up.latest.asset or 'the new version')}{size} and "
+                  "restarts Syntexophobic to use it.")
+    warn.setWordWrap(True)
+    lay.addWidget(warn)
+    buttons = QDialogButtonBox(QDialogButtonBox.Cancel)
+    buttons.addButton("Install", QDialogButtonBox.AcceptRole)
+    buttons.accepted.connect(dlg.accept)
+    buttons.rejected.connect(dlg.reject)
+    lay.addWidget(buttons)
+    return dlg.exec() == QDialog.Accepted
+
+
+class _UpgradeDialog(QDialog):
+    """A progress dialog for the download, with a Details log and a Restart button on
+    success — the phobiCCCP upgrade experience. Non-modal, driven by the install job."""
+
+    def __init__(self, up: update.Update, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"Installing Syntexophobic {up.latest.version}")
+        self.resize(460, 170)
+        self._phase = None
+        lay = QVBoxLayout(self)
+        self.head = QLabel(f"Installing Syntexophobic {up.latest.version}…")
+        self.head.setWordWrap(True)
+        lay.addWidget(self.head)
+        self.bar = QProgressBar()
+        self.bar.setRange(0, 100)
+        lay.addWidget(self.bar)
+        row = QHBoxLayout()
+        self.b_details = QToolButton()
+        self.b_details.setText("Details ▾")
+        self.b_details.setCheckable(True)
+        self.b_details.setAutoRaise(True)
+        self.b_details.toggled.connect(self._toggle)
+        row.addWidget(self.b_details)
+        row.addStretch()
+        lay.addLayout(row)
+        self.log = QPlainTextEdit()
+        self.log.setReadOnly(True)
+        self.log.setFont(QFont("monospace", 9))
+        self.log.hide()
+        lay.addWidget(self.log, 1)
+        self.buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        self.b_restart = self.buttons.addButton("Restart now", QDialogButtonBox.AcceptRole)
+        self.b_restart.hide()
+        self.buttons.rejected.connect(self.reject)
+        lay.addWidget(self.buttons)
+
+    def _toggle(self, on: bool):
+        self.log.setVisible(on)
+        self.b_details.setText("Details ▴" if on else "Details ▾")
+
+    def progress(self, f: float, what: str):
+        self.bar.setValue(max(0, min(100, int(f * 100))))
+        self.head.setText(f"{what}… {f:.0%}")
+        if what != self._phase:
+            self._phase = what
+            self.log.appendPlainText(what)
+
+    def finished(self, message: str):
+        self.bar.setValue(100)
+        self.head.setText(message)
+        self.log.appendPlainText("Done.")
+        self.b_restart.show()
+
+    def failed(self, err: str):
+        self.head.setText("Update failed — nothing was changed.")
+        self.log.appendPlainText(f"Error: {err}")
+        self.b_details.setChecked(True)      # show the log so the failure is visible
+
+
 class UpdateBar(QFrame):
     """Hidden until check() finds a newer release that was not skipped."""
 
@@ -63,6 +150,7 @@ class UpdateBar(QFrame):
         self.installed: update.Installed | None = None
         self._busy = False
         self._dismissed = ""           # version hidden with ✕: not shown again until the next start
+        self._dlg: _UpgradeDialog | None = None
         self.setObjectName("update-bar")
         self.setStyleSheet("#update-bar { background: #1d3b5c; border-bottom: 1px solid #40a0ff; }"
                            "#update-bar QLabel { color: #e2e5ea; }")
@@ -165,7 +253,7 @@ class UpdateBar(QFrame):
 
     # ---- installing --------------------------------------------------------------------
 
-    def install(self, install=update.install):
+    def install(self, install=update.install, confirm=confirm_install):
         up = self.pending
         app = update.running_build()
         if (folder := update.running_windows_build()) is not None:
@@ -184,14 +272,21 @@ class UpdateBar(QFrame):
                 "(copied to the clipboard), then start it again. Or download "
                 f"{up.latest.asset or what} from {up.latest.page}")
             return
+        if not confirm(up, self.window()):             # notes + warning before downloading
+            return
         self.b_update.setEnabled(False)
         self.b_skip.hide()
         self.b_update.setText("Downloading…")
+        self._dlg = _UpgradeDialog(up, self.window())
+        self._dlg.b_restart.clicked.connect(self.restart)
+        self._dlg.show()
         self._start(_Job(lambda progress: install(up.latest, app, progress=progress)),
                     self._installed, self._install_failed, self._progress)
 
     def _progress(self, f: float, what: str):
         self.b_update.setText(f"{what} {f:.0%}")
+        if self._dlg is not None:
+            self._dlg.progress(f, what)
 
     def _installed(self, done: update.Installed):
         self.installed = done
@@ -208,6 +303,9 @@ class UpdateBar(QFrame):
         size = self.pending.latest.asset_size
         fetched = (f" Downloaded {done.downloaded / 1e6:.1f} MB of {size / 1e6:.0f} MB (only what changed)."
                    if size and 0 < done.downloaded < size else "")
+        if self._dlg is not None:
+            self._dlg.finished(f"Syntexophobic {self.pending.latest.version} is installed. "
+                               "Restart to use it.")
         self.changed.emit(f"Installed Syntexophobic {self.pending.latest.version}.{fetched}")
 
     def _install_failed(self, err: str):
@@ -215,7 +313,10 @@ class UpdateBar(QFrame):
         self.b_update.setEnabled(True)
         self.b_skip.show()
         self.changed.emit(f"Update failed: {err}")
-        QMessageBox.warning(self.window(), "Update failed", err)
+        if self._dlg is not None:
+            self._dlg.failed(err)          # the dialog shows the error and its log
+        else:
+            QMessageBox.warning(self.window(), "Update failed", err)
 
     def restart(self):
         if not self.installed:
