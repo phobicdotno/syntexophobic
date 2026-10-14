@@ -66,15 +66,25 @@ HIDDEN = {
 ICONS = Path(__file__).with_name("assets") / "icons"
 
 
+ICON_INK = "#d8dce4"                                    # phobiCCCP's icon ink
+ICON_ACCENTS = ("#9fc8f2", "#f2a536", "#f0a030", "#e05050")  # its blue, ambers and red
+
+
 def mono_icon(name: str, palette: QPalette) -> QIcon:
-    """A line icon drawn in the palette's text colour (and a dimmed copy for disabled)."""
+    """A phobiCCCP-style line icon: the shape in ink, clicked points and helper lines in
+    blue, material in amber, removed parts in red. The disabled copy is all one grey."""
     from PySide6.QtSvg import QSvgRenderer
 
     svg = (ICONS / f"{name}.svg").read_text()
     icon = QIcon()
-    for mode, role in ((QIcon.Normal, QPalette.Active), (QIcon.Disabled, QPalette.Disabled)):
-        colour = palette.color(role, QPalette.WindowText).name()
-        renderer = QSvgRenderer(QByteArray(svg.replace("currentColor", colour).encode()))
+    for mode in (QIcon.Normal, QIcon.Disabled):
+        if mode == QIcon.Normal:
+            text = svg.replace("currentColor", ICON_INK)
+        else:
+            text = svg.replace("currentColor", palette.color(QPalette.Disabled, QPalette.WindowText).name())
+            for accent in ICON_ACCENTS:
+                text = text.replace(accent, palette.color(QPalette.Disabled, QPalette.WindowText).name())
+        renderer = QSvgRenderer(QByteArray(text.encode()))
         for size in (16, 22, 24, 32, 36, 48, 64):
             pm = QPixmap(size, size)
             pm.fill(Qt.transparent)
