@@ -15,6 +15,15 @@ every release, read from this file.
   variants included. New projects and designs ask where to save their `.cccp`; Open reads
   `.cccp` files and old project folders; File > Save project as… turns a folder into one.
 
+## v0.7.1 (build 12) — 2026-10-14
+
+**Send to phobiCCCP**
+- File → *Send to phobiCCCP…* hands the open project to phobiCCCP for machining: the part
+  as a 3D model, the XY sketches as vectors, the stock size and the whole project with its
+  history (.cccp). phobiCCCPs on the local network are found by themselves; over Tailscale,
+  type the computer's name or address. phobiCCCP asks before it opens anything.
+- `syntexophobic send <project> [host[:port]]` does the same from the command line.
+
 ## v0.7.0 (build 11) — 2026-10-13
 
 **Design workspace**
