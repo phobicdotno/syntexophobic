@@ -330,7 +330,7 @@ class MainWindow(QMainWindow):
         tb.addWidget(self.c_workspace)
         tb.addSeparator()
         self.a_new_design = act("New design…", self.new_design, "design", "Ctrl+Shift+N", m_file)
-        act("New from STEP / STL…", self.new_project, "new", "Ctrl+N", m_file)
+        act("New from STEP / STL / 3MF…", self.new_project, "new", "Ctrl+N", m_file)
         act("Open project…", self.open_project, "open", "Ctrl+O", m_file)
         self.a_save_as = act("Save project as…", self.save_project_as, "export", "Ctrl+Shift+S", m_file, toolbar=False)
         tb.addSeparator()
@@ -340,7 +340,7 @@ class MainWindow(QMainWindow):
         m_file.addSeparator()
         for text, slot in (("Import DXF as sketch…", self.import_dxf), ("Export sketch…", self.export_dxf),
                            ("Export model…", self.export_model),
-                           ("Convert STL to STEP…", self.convert_stl)):
+                           ("Convert STL / 3MF to STEP…", self.convert_stl)):
             m_file.addAction(text).triggered.connect(slot)
         m_file.addSeparator()
         m_file.addAction("Send to phobiCCCP…").triggered.connect(self.send_to_phobicccp)
@@ -997,7 +997,7 @@ class MainWindow(QMainWindow):
     # ---- project ----------------------------------------------------------------------
 
     def new_project(self):
-        step, _ = QFileDialog.getOpenFileName(self, "Model to machine", str(Path.home()), "Models (*.step *.stp *.stl *.STEP *.STP *.STL)")
+        step, _ = QFileDialog.getOpenFileName(self, "Model to machine", str(Path.home()), "Models (*.step *.stp *.stl *.3mf *.STEP *.STP *.STL *.3MF)")
         if not step:
             return
         target = self._ask_project_file(str(Path(step).with_suffix("")) + f"-cam{CCCP}")
@@ -1015,7 +1015,7 @@ class MainWindow(QMainWindow):
 
     def convert_stl(self):
         from . import geometry
-        src, _ = QFileDialog.getOpenFileName(self, "STL to convert", str(Path.home()), "STL (*.stl *.STL)")
+        src, _ = QFileDialog.getOpenFileName(self, "Mesh to convert", str(Path.home()), "Meshes (*.stl *.3mf *.STL *.3MF)")
         if not src:
             return
         dst, _ = QFileDialog.getSaveFileName(self, "Save STEP", str(Path(src).with_suffix(".step")), "STEP (*.step *.stp)")
@@ -1048,7 +1048,7 @@ class MainWindow(QMainWindow):
     def load_path(self, path: str):
         p = Path(path)
         try:
-            if p.suffix.lower() in (".step", ".stp", ".stl"):
+            if p.suffix.lower() in (".step", ".stp", ".stl", ".3mf"):
                 self.load(Project.create(p.with_name(p.stem + "-cam"), p))
             else:
                 self.load(Project.open(p))

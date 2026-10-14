@@ -114,7 +114,7 @@ class Session:
 
     def open_project(self, path: str) -> dict:
         p = Path(path).expanduser()
-        if p.suffix.lower() in (".step", ".stp", ".stl"):
+        if p.suffix.lower() in (".step", ".stp", ".stl", ".3mf"):
             return self.new_from_step(str(p))
         self.project = Project.open(p)
         return self.status()
