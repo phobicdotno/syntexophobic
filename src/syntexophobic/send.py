@@ -75,7 +75,11 @@ def discover(timeout: float = 0.8, port: int = PORT) -> list[Peer]:
             if not isinstance(d, dict) or d.get("app") != "phobiCCCP":
                 continue
             p = Peer(addr, int(d.get("port", port)), str(d.get("host") or addr), str(d.get("version", "")))
-            found[(p.host, p.port)] = p
+            # this computer answers both on loopback and on its network address: list it
+            # once, by the address other computers know it by
+            key = (p.name, p.port)
+            if key not in found or found[key].host.startswith("127."):
+                found[key] = p
     finally:
         s.close()
     return sorted(found.values(), key=lambda p: (p.name, p.host))
