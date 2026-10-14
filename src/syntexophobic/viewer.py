@@ -21,13 +21,33 @@ from vtkmodules.vtkRenderingCore import vtkActor, vtkPolyDataMapper, vtkRenderer
 
 from . import geometry
 
-# Operation colours cycle through these; rapids are drawn thin and red.
-OP_COLOURS = [(64, 160, 255), (255, 176, 59), (120, 214, 120), (214, 120, 214)]
-RAPID = (230, 70, 70)
+# phobiCCCP's 3D palette (isopreview.cpp / simulation.cpp), so both apps look alike.
+VIEW_BG = (0x15, 0x17, 0x1C)       # flat, no gradient
+BOARD_FILL = (0x21, 0x24, 0x2B)    # stock block
+BOARD_EDGE = (0x4A, 0x52, 0x60)
+AXIS_X, AXIS_Y, AXIS_Z = (0x8A, 0x4A, 0x4A), (0x4A, 0x7A, 0x4A), (0x4A, 0x5A, 0x8A)
+RAPID = (0x8A, 0x94, 0xA6)         # grey, faint
+TOOL = (0x7F, 0xD4, 0xFF)          # the cutter: translucent cyan
+INK = (0xD8, 0xDC, 0xE4)           # the part, as the icons' ink
+AMBER = (0xF2, 0xA5, 0x36)         # selection
+BLUE = (0x9F, 0xC8, 0xF2)          # helper geometry (measure line)
+SIM_UNCUT = (0xD9, 0xC5, 0x9E)     # light stock
+SIM_DEEP = (0x5C, 0x41, 0x24)      # full-depth floor
+SIM_THROUGH = (0x2B, 0x3D, 0x5A)   # slate: cut through to the spoilboard
+GOUGE = (0xE0, 0x50, 0x50)
+DEPTH_BUCKETS = 8                   # toolpaths go yellow at the top to red at the bottom
 
 
 def _rgb(c):
     return tuple(v / 255 for v in c)
+
+
+def depth_colour(f: float):
+    """phobiCCCP's toolpath colour for a cut a fraction f (0 top .. 1 bottom) down,
+    stepped into DEPTH_BUCKETS bands: HSV hue 0.14 (yellow) to 0 (red)."""
+    import colorsys
+    b = min(DEPTH_BUCKETS - 1, max(0, int(f * DEPTH_BUCKETS)))
+    return colorsys.hsv_to_rgb(0.14 * (1 - b / (DEPTH_BUCKETS - 1)), 0.9, 1.0)
 
 
 class FusionStyle(vtkInteractorStyleTrackballCamera):
@@ -129,9 +149,7 @@ class Viewer(QVTKRenderWindowInteractor):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.ren = vtkRenderer()
-        self.ren.SetBackground(0.13, 0.14, 0.16)
-        self.ren.SetBackground2(0.24, 0.26, 0.30)
-        self.ren.GradientBackgroundOn()
+        self.ren.SetBackground(*_rgb(VIEW_BG))
         self.GetRenderWindow().AddRenderer(self.ren)
         self.style = FusionStyle(self.ren)
         self.style.on_click = self._click
@@ -140,10 +158,21 @@ class Viewer(QVTKRenderWindowInteractor):
         self.picking = False                # only pick while the Design workspace wants it
         self.GetRenderWindow().GetInteractor().SetInteractorStyle(self.style)
         self._model = self._stock = self._sim = self._tool = None
+        self._stock_box = self._stock_fill = None
         self._paths: list[vtkActor] = []
         self._style = "edges"          # shaded | edges | wireframe
         self._model_visible = True
         axes = vtkAxesActor()
+        for shaft, tip, label, c in ((axes.GetXAxisShaftProperty(), axes.GetXAxisTipProperty(),
+                                      axes.GetXAxisCaptionActor2D(), AXIS_X),
+                                     (axes.GetYAxisShaftProperty(), axes.GetYAxisTipProperty(),
+                                      axes.GetYAxisCaptionActor2D(), AXIS_Y),
+                                     (axes.GetZAxisShaftProperty(), axes.GetZAxisTipProperty(),
+                                      axes.GetZAxisCaptionActor2D(), AXIS_Z)):
+            shaft.SetColor(*_rgb(c))
+            tip.SetColor(*_rgb(c))
+            label.GetCaptionTextProperty().SetColor(*_rgb(INK))
+            label.GetCaptionTextProperty().ShadowOff()
         self._axes = vtkOrientationMarkerWidget()
         self._axes.SetOrientationMarker(axes)
         self._axes.SetInteractor(self.GetRenderWindow().GetInteractor())
@@ -163,6 +192,14 @@ class Viewer(QVTKRenderWindowInteractor):
             cube.SetParentRenderer(self.ren)
             rep = cube.GetRepresentation()
             rep.AnchorToUpperRight()
+            rep.SetXAxisColor(*_rgb(AXIS_X))
+            rep.SetYAxisColor(*_rgb(AXIS_Y))
+            rep.SetZAxisColor(*_rgb(AXIS_Z))
+            rep.GetContainerProperty().SetColor(*_rgb(BOARD_FILL))
+            for label in (rep.GetXPlusLabelProperty(), rep.GetYPlusLabelProperty(), rep.GetZPlusLabelProperty(),
+                          rep.GetXMinusLabelProperty(), rep.GetYMinusLabelProperty(),
+                          rep.GetZMinusLabelProperty()):
+                label.SetColor(*_rgb(INK))
             cube.On()
             self._viewcube = cube
         except Exception:                 # older VTK without the widget: the axis triad stays
@@ -191,7 +228,7 @@ class Viewer(QVTKRenderWindowInteractor):
         self._model = vtkActor()
         self._model.SetMapper(mapper)
         prop = self._model.GetProperty()
-        prop.SetColor(0.78, 0.80, 0.84)
+        prop.SetColor(*_rgb(INK))
         prop.SetSpecular(0.25)
         prop.SetSpecularPower(30)
         self.ren.AddActor(self._model)
@@ -300,7 +337,7 @@ class Viewer(QVTKRenderWindowInteractor):
         for f in faces:
             polylines += geometry.edge_polylines(f)          # outline the face
         if polylines:
-            self._highlight = self._lines_actor(polylines, (1.0, 0.69, 0.23), 4.0)
+            self._highlight = self._lines_actor(polylines, _rgb(AMBER), 4.0)
             self.ren.AddActor(self._highlight)
         self.GetRenderWindow().Render()
 
@@ -313,70 +350,97 @@ class Viewer(QVTKRenderWindowInteractor):
 
     def show_measure_line(self, p, q) -> None:
         """A line between two measured points (drawn on top of the selection)."""
-        self._measure = self._lines_actor([[p, q]], (0.35, 0.85, 1.0), 3.0)
+        self._measure = self._lines_actor([[p, q]], _rgb(BLUE), 3.0)
         self.ren.AddActor(self._measure)
         self.GetRenderWindow().Render()
 
     def clear_model(self) -> None:
-        for name in ("_model", "_stock", "_edges", "_highlight"):
+        for name in ("_model", "_stock", "_stock_fill", "_edges", "_highlight"):
             actor = getattr(self, name)
             if actor:
                 self.ren.RemoveActor(actor)
                 setattr(self, name, None)
+        self._stock_box = None
         self.GetRenderWindow().Render()
 
     def show_stock(self, box: geometry.Box) -> None:
-        if self._stock:
-            self.ren.RemoveActor(self._stock)
+        for actor in (self._stock, self._stock_fill):
+            if actor:
+                self.ren.RemoveActor(actor)
         cube = vtkCubeSource()
         cube.SetBounds(box.xmin, box.xmax, box.ymin, box.ymax, box.zmin, box.zmax)
         mapper = vtkPolyDataMapper()
         mapper.SetInputConnection(cube.GetOutputPort())
-        self._stock = vtkActor()
-        self._stock.SetMapper(mapper)
-        p = self._stock.GetProperty()
+        # phobiCCCP's board: a dark translucent block with grey edges. Both actors share
+        # the mapper, so a section cut clips them together.
+        fill, edges = vtkActor(), vtkActor()
+        for actor in (fill, edges):
+            actor.SetMapper(mapper)
+            actor.PickableOff()
+        fill.GetProperty().SetColor(*_rgb(BOARD_FILL))
+        fill.GetProperty().SetOpacity(0.3)
+        fill.GetProperty().LightingOff()
+        p = edges.GetProperty()
         p.SetRepresentationToWireframe()
-        p.SetColor(0.95, 0.75, 0.40)
+        p.SetColor(*_rgb(BOARD_EDGE))
         p.SetLineWidth(1.5)
-        self.ren.AddActor(self._stock)
+        p.LightingOff()
+        self._stock_box = box
+        self._stock, self._stock_fill = edges, fill
+        self.ren.AddActor(fill)
+        self.ren.AddActor(edges)
 
     def show_toolpaths(self, toolpaths, show_rapids: bool = True) -> None:
         for a in self._paths:
             self.ren.RemoveActor(a)
         self._paths = []
-        for i, tp in enumerate(toolpaths):
+        # Like phobiCCCP, cuts are coloured by how deep they go (yellow at the top, red at
+        # the bottom) over the depth range of all the feed moves; rapids are faint grey.
+        zs = [z for tp in toolpaths for k, x, y, z, f in tp.positions() if k == "feed"]
+        span = (max(zs), min(zs)) if zs else (0.0, 0.0)
+        for tp in toolpaths:
             for kind in ("feed", "rapid") if show_rapids else ("feed",):
-                actor = self._polyline_actor(tp, kind, OP_COLOURS[i % len(OP_COLOURS)])
+                actor = self._polyline_actor(tp, kind, span)
                 if actor:
                     self._paths.append(actor)
                     self.ren.AddActor(actor)
         self.GetRenderWindow().Render()
 
-    def _polyline_actor(self, tp, kind: str, colour):
+    def _polyline_actor(self, tp, kind: str, span=(0.0, 0.0)):
+        from vtkmodules.vtkCommonCore import vtkUnsignedCharArray
         pts, lines = vtkPoints(), vtkCellArray()
+        colours = vtkUnsignedCharArray()
+        colours.SetNumberOfComponents(3)
+        colours.SetName("depth")
+        top, depth = span[0], max(span[0] - span[1], 1e-9)
         last = None
         flip = getattr(tp, "flip", None) if getattr(tp, "side", "top") == "bottom" else None
         for k, x, y, z, f in tp.positions():
+            zm = z                                     # machine Z, for the depth colour
             if flip:                                   # bottom side: back into the part's frame
                 y, z = 2 * flip[0] - y, 2 * flip[1] - z
             if last is not None and k == kind:
                 a = pts.InsertNextPoint(last)
                 b = pts.InsertNextPoint((x, y, z))
                 lines.InsertNextCell(2, (a, b))
+                c = RAPID if kind == "rapid" else [round(255 * v) for v in depth_colour((top - zm) / depth)]
+                colours.InsertNextTuple3(*c)
             last = (x, y, z)
         if lines.GetNumberOfCells() == 0:
             return None
         poly = vtkPolyData()
         poly.SetPoints(pts)
         poly.SetLines(lines)
+        poly.GetCellData().SetScalars(colours)
         mapper = vtkPolyDataMapper()
         mapper.SetInputData(poly)
+        mapper.SetColorModeToDirectScalars()
+        mapper.SetScalarModeToUseCellData()
         actor = vtkActor()
         actor.SetMapper(mapper)
         p = actor.GetProperty()
-        p.SetColor(*_rgb(RAPID if kind == "rapid" else colour))
         p.SetLineWidth(1.0 if kind == "rapid" else 1.8)
-        p.SetOpacity(0.45 if kind == "rapid" else 1.0)
+        p.SetOpacity(0.55 if kind == "rapid" else 1.0)
         p.LightingOff()
         return actor
 
@@ -397,11 +461,17 @@ class Viewer(QVTKRenderWindowInteractor):
         h = numpy_to_vtk(np.ascontiguousarray(result.stock.ravel()), deep=True)
         h.SetName("height")
         img.GetPointData().SetScalars(h)
-        rgb = np.empty((g.ny * g.nx, 3), np.uint8)
-        rgb[:] = (205, 170, 120)                                  # cut stock: wood
-        top = np.isclose(result.stock.ravel(), result.stock.max())
-        rgb[top] = (170, 140, 100)                                # untouched stock top
-        rgb[result.gouges().ravel()] = (235, 50, 50)              # gouge
+        # phobiCCCP's stock colours: light wood on top, darkening with depth to the
+        # full-depth floor, slate where it is cut through; gouges in red.
+        z = result.stock.ravel()
+        box = self._stock_box
+        ztop, zbot = (box.zmax, box.zmin) if box else (z.max(), z.min())
+        thick = max(ztop - zbot, 1e-9)
+        cut = z < ztop - 1e-4
+        f = np.where(cut, 0.12 + 0.88 * np.clip((ztop - z) / thick, 0, 1), 0.0)[:, None]
+        rgb = (np.array(SIM_UNCUT) + (np.array(SIM_DEEP) - np.array(SIM_UNCUT)) * f).round().astype(np.uint8)
+        rgb[z <= zbot + 1e-3] = SIM_THROUGH
+        rgb[result.gouges().ravel()] = GOUGE
         colours = numpy_to_vtk(rgb, deep=True)
         colours.SetName("colour")
         img.GetPointData().AddArray(colours)
@@ -422,6 +492,8 @@ class Viewer(QVTKRenderWindowInteractor):
         self._sim = vtkActor()
         self._sim.SetMapper(mapper)
         self._sim.GetProperty().SetSpecular(0.1)
+        self._sim.GetProperty().SetAmbient(0.35)        # phobiCCCP's 0.35 + 0.65 * light shading
+        self._sim.GetProperty().SetDiffuse(0.65)
         self.ren.AddActor(self._sim)
         self.GetRenderWindow().Render()
 
@@ -463,8 +535,8 @@ class Viewer(QVTKRenderWindowInteractor):
             self._tool = vtkActor()
             self._tool.SetMapper(mapper)
             self._tool.SetPosition(tip[0], tip[1], tip[2])
-            self._tool.GetProperty().SetColor(0.85, 0.87, 0.90)
-            self._tool.GetProperty().SetOpacity(0.85)
+            self._tool.GetProperty().SetColor(*_rgb(TOOL))
+            self._tool.GetProperty().SetOpacity(0.47)
             self.ren.AddActor(self._tool)
         self.GetRenderWindow().Render()
 
