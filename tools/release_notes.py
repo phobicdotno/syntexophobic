@@ -20,9 +20,10 @@ INSTALL = """
   first start says it cannot check it: open System Settings → Privacy & Security and click
   *Open Anyway* (or run `xattr -dr com.apple.quarantine /Applications/Syntexophobic.app`).
   Updates from the update bar need none of this.
-- Windows (x64): download `Syntexophobic-{v}-windows-x64.zip`, unpack it and run
-  `Syntexophobic\\Syntexophobic.exe`. If SmartScreen stops it (the program is not signed),
-  click *More info* → *Run anyway*.
+- Windows (x64): download `Syntexophobic-{v}-windows-x64.msi` and run it; it installs for
+  you alone, no administrator needed, with a Start menu entry. Or download
+  `Syntexophobic-{v}-windows-x64.zip`, unpack it and run `Syntexophobic\\Syntexophobic.exe`.
+  If SmartScreen stops either (the program is not signed), click *More info* → *Run anyway*.
 """
 
 
