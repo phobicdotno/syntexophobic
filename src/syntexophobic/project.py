@@ -72,17 +72,20 @@ class Project:
             if f"/{cccp.FINAL}/" not in lines:
                 exclude.write_text("\n".join([*lines, f"/{cccp.FINAL}/"]) + "\n")
         out.mkdir()
-        written = []
+        written, corner = [], None
         try:
             export.export_shape(self.shape, out / "part.stl")
             written.append("part.stl")
+            b = geometry.bounding_box(self.shape)
+            corner = (b.xmin - cccp.FINAL_MARGIN, b.ymin - cccp.FINAL_MARGIN)
         except Exception as e:  # a model that does not build still saves; it just has no final part
             from .faults import log
             log.warning("no final part for %s: %s", self.folder, e)
         if self.job.model.endswith(".toml"):
             from .model import Part
             try:
-                if export.sketches_svg(Part.load(self.folder / self.job.model).sketches, out / "drawing.svg"):
+                if export.sketches_svg(Part.load(self.folder / self.job.model).sketches, out / "drawing.svg",
+                                       corner=corner):
                     written.append("drawing.svg")
             except Exception as e:  # noqa: BLE001 - same as above
                 from .faults import log

@@ -312,15 +312,17 @@ def _svg(path, items, box, groups=None):
         '<g fill="none" stroke="#000" stroke-width="0.1">\n' + body + "\n</g>\n</svg>\n")
 
 
-def sketches_svg(sketches: dict, path: str | Path, margin: float = 2.0) -> bool:
+def sketches_svg(sketches: dict, path: str | Path, margin: float = 2.0, corner=None) -> bool:
     """Every sketch in one SVG, one named group each, in the sketches' own coordinates.
-    False (and no file) when there is nothing to draw."""
+    `corner` (x, y) pins the page's bottom-left corner there, so another file (the part's
+    STL) can be lined up with it. False (and no file) when there is nothing to draw."""
     groups = [(name, outlines(sk)) for name, sk in sorted(sketches.items())]
     groups = [(n, its) for n, its in groups if its]
     if not groups:
         return False
     x0, y0, x1, y1 = bounds([it for _, its in groups for it in its])
-    _svg(path, None, (x0 - margin, y0 - margin, x1 + margin, y1 + margin), groups)
+    x0, y0 = corner if corner else (x0 - margin, y0 - margin)
+    _svg(path, None, (x0, y0, x1 + margin, y1 + margin), groups)
     return True
 
 
