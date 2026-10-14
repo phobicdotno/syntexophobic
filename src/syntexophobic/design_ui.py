@@ -522,11 +522,15 @@ def _trace_dialog(view) -> None:
 
 
 def _export_dxf(view) -> None:
-    from PySide6.QtWidgets import QFileDialog
-    from . import dxf
-    path, _ = QFileDialog.getSaveFileName(view, "Save DXF", f"{view.sketch.name}.dxf", "DXF (*.dxf)")
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+    from . import export
+    path, _ = QFileDialog.getSaveFileName(view, "Export sketch", f"{view.sketch.name}.dxf", export.sketch_filter())
     if path:
-        dxf.export_dxf(view.sketch, path)
+        try:
+            export.export_sketch(view.sketch, path)
+        except export.ExportError as e:
+            QMessageBox.warning(view, "Export sketch", str(e))
+            return
         view.status.emit(f"Saved {path}")
 
 

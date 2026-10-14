@@ -182,6 +182,12 @@ figure from a picture.
 
 ![History as a subway map: main and two variants](docs/screenshots/history-subway.png)
 
+### Export
+
+- **File > Export model…**: STEP, IGES, BREP (exact solids) or STL, OBJ, PLY, glTF and 3MF
+  (meshes), by the file's extension.
+- **File > Export sketch…**: DXF, SVG, PDF, EPS or HPGL, 1:1 in millimetres.
+
 ### Project files (.cccp)
 
 A project is kept in one `.cccp` file: a zip of the project folder (`job.toml`, `model.toml`,

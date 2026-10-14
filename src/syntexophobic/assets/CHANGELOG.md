@@ -15,6 +15,12 @@ every release, read from this file.
   variants included. New projects and designs ask where to save their `.cccp`; Open reads
   `.cccp` files and old project folders; File > Save project as… turns a folder into one.
 
+**Export**
+- File > Export model… writes STEP, IGES and BREP solids, or STL, OBJ, PLY, glTF (.glb /
+  .gltf) and 3MF meshes, picked by the file's extension.
+- File > Export sketch… (and the sketch ribbon's export) writes DXF, SVG, PDF, EPS and HPGL
+  (.plt / .hpgl), 1:1 in millimetres, leaving construction lines out.
+
 ## v0.7.0 (build 11) — 2026-10-13
 
 **Design workspace**

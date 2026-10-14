@@ -218,6 +218,13 @@ def export_sketch_dxf(sketch: str, path: str = "") -> str:
 
 
 @server.tool()
+def export_sketch(sketch: str, path: str) -> str:
+    """Save a sketch as a flat drawing in mm; the extension picks the format:
+    .dxf, .svg, .pdf, .eps, or HPGL (.plt/.hpgl)."""
+    return _out(_call("export_sketch", sketch=sketch, path=path))
+
+
+@server.tool()
 def add_feature(type: str, fields: dict) -> str:
     """Add a feature at the end of the part. type: extrude | revolve | loft | sweep | hole |
     fillet | chamfer | shell | mirror. fields (as needed): name, sketch, distance (negative =
@@ -249,7 +256,8 @@ def build() -> str:
 
 @server.tool()
 def export_model(path: str) -> str:
-    """Save the designed part as STEP (.step/.stp) or STL (.stl)."""
+    """Save the designed part; the extension picks the format: STEP (.step/.stp), IGES (.iges/.igs),
+    BREP, or a mesh: STL, OBJ, PLY, glTF (.glb/.gltf), 3MF. All in millimetres."""
     return _out(_call("export_model", path=path))
 
 
