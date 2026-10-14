@@ -66,7 +66,7 @@ def discover(timeout: float = 0.8, port: int = PORT) -> list[Peer]:
         while True:
             try:
                 data, (addr, _) = s.recvfrom(4096)
-            except (socket.timeout, OSError):
+            except (TimeoutError, OSError):
                 break
             try:
                 d = json.loads(data.decode("utf-8"))
@@ -116,8 +116,8 @@ def pack_project(folder: str | Path) -> bytes:
 def _stl_bytes(shape, dx: float, dy: float, dz: float, deflection: float = 0.02) -> bytes:
     from OCP.BRepBuilderAPI import BRepBuilderAPI_Transform
     from OCP.BRepMesh import BRepMesh_IncrementalMesh
-    from OCP.StlAPI import StlAPI_Writer
     from OCP.gp import gp_Trsf, gp_Vec
+    from OCP.StlAPI import StlAPI_Writer
     t = gp_Trsf()
     t.SetTranslation(gp_Vec(dx, dy, dz))
     moved = BRepBuilderAPI_Transform(shape, t, True).Shape()
@@ -136,6 +136,7 @@ def _sketch_dxfs(project, dx: float, dy: float) -> list[tuple[str, bytes]]:
     if not project.job.model.endswith(".toml") or project.job.stock.up != "+Z":
         return []
     import ezdxf
+
     from .dxf import export_dxf
     from .model import Part
     out = []
@@ -201,7 +202,7 @@ def send(host: str, port: int, manifest: dict, files: list[tuple[str, bytes]],
                 if not chunk:
                     break
                 answer += chunk
-        except socket.timeout:
+        except TimeoutError:
             raise SendError("phobiCCCP did not answer (nobody accepted the project in time)") from None
         except OSError as e:
             raise SendError(f"The connection to {host}:{port} broke: {e.strerror or e}") from None
@@ -222,8 +223,18 @@ def send_project(project, target: str) -> str:
 def dialog(window):
     """File > Send to phobiCCCP…: pick a phobiCCCP found on the network, or type a host."""
     from PySide6.QtCore import QSettings
-    from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
-                                   QListWidgetItem, QPushButton, QVBoxLayout)
+    from PySide6.QtWidgets import (
+        QDialog,
+        QDialogButtonBox,
+        QHBoxLayout,
+        QLabel,
+        QLineEdit,
+        QListWidget,
+        QListWidgetItem,
+        QPushButton,
+        QVBoxLayout,
+    )
+
     from .app import Task
 
     dlg = QDialog(window)
