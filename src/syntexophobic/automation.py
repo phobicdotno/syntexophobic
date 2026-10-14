@@ -315,11 +315,17 @@ class Session:
         return self.add_feature("import", name=name or Path(path).stem, file=rel, operation=operation, body=body)
 
     def export_sketch_dxf(self, sketch: str, path: str = "") -> dict:
-        from . import dxf
-        part = self._part()
-        sk = self._sketch(part, sketch)
-        out = Path(path).expanduser() if path else self._need().output_dir / f"{sketch}.dxf"
-        dxf.export_dxf(sk, out)
+        return self.export_sketch(sketch, path or str(self._need().output_dir / f"{sketch}.dxf"))
+
+    def export_sketch(self, sketch: str, path: str) -> dict:
+        """A sketch as a flat drawing: .dxf .svg .pdf .eps .plt .hpgl (by extension)."""
+        from . import export
+        sk = self._sketch(self._part(), sketch)
+        out = Path(path).expanduser()
+        try:
+            export.export_sketch(sk, out)
+        except export.ExportError as e:
+            raise CommandError(str(e)) from e
         return {"saved": str(out)}
 
     def import_dxf(self, path: str, name: str = "", plane: str = "XY", offset: float = 0.0) -> dict:
@@ -373,9 +379,13 @@ class Session:
         return self._built(self._part())
 
     def export_model(self, path: str) -> dict:
+        from . import export
         part = self._part()
         path = str(Path(path).expanduser())
-        (part.export_stl if path.lower().endswith(".stl") else part.export_step)(path)
+        try:
+            export.export_shape(part.build(), path)
+        except export.ExportError as e:
+            raise CommandError(str(e)) from e
         return {"saved": path}
 
     # ---- CAM: job ---------------------------------------------------------------------------

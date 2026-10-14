@@ -6,6 +6,12 @@ every file of the project folder: job.toml, model.toml, sketches/, imports/ and 
 `.git` folder with every saved version and variant. Unzip it and you have an ordinary
 project folder that `git log` reads.
 
+`final/` holds the finished part for programs that only want the result (phobiCCCP opens
+a .cccp this way): `part.stl` (the part as it will be machined, mm, Z up),
+`drawing.svg` (every sketch, one group each, mm; its bottom-left corner is 10 mm left of and
+below the part, so placing the STL at (10, 10) on the page lines the two up) and `info.json`
+(name, size, the version it was made from). It is rewritten on every saved version and kept out of the history.
+
 The app works on an unpacked copy (in the cache folder) and packs it back into the .cccp
 on every saved version and when the project is closed, so the .cccp always carries the
 full history plus whatever was not saved as a version yet.
@@ -21,6 +27,8 @@ import zipfile
 from pathlib import Path
 
 SUFFIX = ".cccp"
+FINAL = "final"                 # the finished part, for programs that only want the result
+FINAL_MARGIN = 10.0             # mm from drawing.svg's bottom-left corner to the part's
 MIMETYPE = "application/x-syntexophobic-project"
 # generated output, never part of a project file
 SKIP = {".nc", ".gcode", ".tap"}

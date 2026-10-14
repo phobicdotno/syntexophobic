@@ -40,15 +40,65 @@ class Project:
         self.archive = Path(path).expanduser()
         if self.archive.suffix.lower() != cccp.SUFFIX:
             self.archive = self.archive.with_name(self.archive.name + cccp.SUFFIX)
-        self.history.on_save = self.pack
+        self.history.on_save = self._saved
         if pack:
-            self.pack()
+            self._saved()
         return self
 
     def pack(self) -> None:
         """Write the project, history and all, into its .cccp file (if it has one)."""
         if self.archive is not None:
             cccp.pack(self.folder, self.archive)
+
+    def _saved(self) -> None:
+        """A version was saved: refresh the final product, then the .cccp file."""
+        self.write_final()
+        self.pack()
+
+    def write_final(self) -> list[str]:
+        """The finished part for programs that only want the result, not the project
+        (phobiCCCP opens a .cccp this way): final/part.stl (the part as machined, mm),
+        final/drawing.svg (every sketch) and final/info.json. Written on every saved
+        version; kept out of the history. Returns the files written."""
+        import json
+        from . import export
+        out = self.folder / cccp.FINAL
+        cccp.remove(out)
+        git_info = self.folder / ".git" / "info"
+        if git_info.parent.exists():
+            git_info.mkdir(exist_ok=True)
+            exclude = git_info / "exclude"
+            lines = exclude.read_text().splitlines() if exclude.exists() else []
+            if f"/{cccp.FINAL}/" not in lines:
+                exclude.write_text("\n".join([*lines, f"/{cccp.FINAL}/"]) + "\n")
+        out.mkdir()
+        written, corner = [], None
+        try:
+            export.export_shape(self.shape, out / "part.stl")
+            written.append("part.stl")
+            b = geometry.bounding_box(self.shape)
+            corner = (b.xmin - cccp.FINAL_MARGIN, b.ymin - cccp.FINAL_MARGIN)
+        except Exception as e:  # a model that does not build still saves; it just has no final part
+            from .faults import log
+            log.warning("no final part for %s: %s", self.folder, e)
+        if self.job.model.endswith(".toml"):
+            from .model import Part
+            try:
+                if export.sketches_svg(Part.load(self.folder / self.job.model).sketches, out / "drawing.svg",
+                                       corner=corner):
+                    written.append("drawing.svg")
+            except Exception as e:  # noqa: BLE001 - same as above
+                from .faults import log
+                log.warning("no final drawing for %s: %s", self.folder, e)
+        info = {"format": cccp.MIMETYPE, "name": self.job.name, "units": "mm", "files": written}
+        if written and "part.stl" in written:
+            b = geometry.bounding_box(self.shape)
+            info["size"] = [round(b.xmax - b.xmin, 4), round(b.ymax - b.ymin, 4), round(b.zmax - b.zmin, 4)]
+        versions = self.history.log(1)
+        if versions:
+            info["version"] = {"hash": versions[0].hash, "date": versions[0].date, "note": versions[0].message}
+        (out / "info.json").write_text(json.dumps(info, indent=1) + "\n")
+        return written
 
     @property
     def output_dir(self) -> Path:

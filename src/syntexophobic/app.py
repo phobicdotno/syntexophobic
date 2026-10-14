@@ -338,8 +338,8 @@ class MainWindow(QMainWindow):
         self.a_simulate = act("Simulate", self.simulate, "simulate", "Ctrl+R", m_paths, toolbar=False)
         self.a_export = act("Export G-code…", self.export_gcode, "export", "Ctrl+E", m_file, toolbar=False)
         m_file.addSeparator()
-        for text, slot in (("Import DXF as sketch…", self.import_dxf), ("Export sketch as DXF…", self.export_dxf),
-                           ("Export model (STEP / STL)…", self.export_model),
+        for text, slot in (("Import DXF as sketch…", self.import_dxf), ("Export sketch…", self.export_dxf),
+                           ("Export model…", self.export_model),
                            ("Convert STL to STEP…", self.convert_stl)):
             m_file.addAction(text).triggered.connect(slot)
         m_file.addSeparator()
@@ -894,41 +894,45 @@ class MainWindow(QMainWindow):
                             f"{len(sk.circles)} circles, {len(sk.splines)} splines, {len(sk.profiles())} closed profiles.")
 
     def export_dxf(self):
-        from . import dxf
+        """A sketch as a flat drawing: DXF, SVG, PDF, EPS or HPGL, by the file's extension."""
+        from . import export
         if self.part is None or not self.part.sketches:
-            QMessageBox.information(self, "Export DXF", "There is no sketch to export.")
+            QMessageBox.information(self, "Export sketch", "There is no sketch to export.")
             return
         if self.sketch_page is not None:
             sk = self.sketch_view.sketch
         else:
-            name, ok = QInputDialog.getItem(self, "Export DXF", "Sketch", sorted(self.part.sketches), 0, False)
+            name, ok = QInputDialog.getItem(self, "Export sketch", "Sketch", sorted(self.part.sketches), 0, False)
             if not ok:
                 return
             sk = self.part.sketches[name]
-        path, _ = QFileDialog.getSaveFileName(self, "Save DXF", str(self.project.output_dir / f"{sk.name}.dxf"), "DXF (*.dxf)")
+        path, _ = QFileDialog.getSaveFileName(self, "Export sketch", str(self.project.output_dir / f"{sk.name}.dxf"),
+                                              export.sketch_filter())
         if path:
-            dxf.export_dxf(sk, path)
+            try:
+                export.export_sketch(sk, path)
+            except export.ExportError as e:
+                QMessageBox.warning(self, "Export sketch", str(e))
+                return
             self.status.setText(f"Saved {path}")
 
     def export_model(self):
         if self.project is None:
             return
+        from . import export
         path, _ = QFileDialog.getSaveFileName(self, "Export model", str(self.project.output_dir / f"{self.project.job.name}.step"),
-                                              "STEP (*.step *.stp);;STL (*.stl)")
+                                              export.model_filter())
         if not path:
             return
         from .model import ModelError
         try:
-            if self.part is not None:
-                (self.part.export_stl if path.lower().endswith(".stl") else self.part.export_step)(path)
-            else:
-                from OCP.STEPControl import STEPControl_AsIs, STEPControl_Writer
-                w = STEPControl_Writer()
-                w.Transfer(self.project.shape, STEPControl_AsIs)
-                w.Write(path)
-        except ModelError as e:
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+            export.export_shape(self.part.build() if self.part is not None else self.project.shape, path)
+        except (ModelError, export.ExportError) as e:
             QMessageBox.critical(self, "Export model", str(e))
             return
+        finally:
+            QApplication.restoreOverrideCursor()
         self.status.setText(f"Saved {path}")
 
     def _design_changed(self):
