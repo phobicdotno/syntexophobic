@@ -9,6 +9,7 @@ in the common flat vector formats. The format is picked from the file's extensio
 from __future__ import annotations
 
 import base64
+import html
 import json
 import math
 import struct
@@ -279,34 +280,48 @@ def export_sketch(sk, path: str | Path, margin: float = 2.0) -> None:
     {".svg": _svg, ".pdf": _pdf, ".eps": _eps, ".plt": _hpgl, ".hpgl": _hpgl}[ext](path, items, (x0, y0, x1, y1))
 
 
-def _svg(path, items, box):
+def _svg(path, items, box, groups=None):
+    """`groups`: [(name, items)] to write as named layers instead of one."""
     x0, y0, x1, y1 = box
     w, h = x1 - x0, y1 - y0
     X = lambda x: f"{x - x0:.4f}"                            # noqa: E731
     Y = lambda y: f"{y1 - y:.4f}"                            # SVG's Y runs down  # noqa: E731
-    parts = []
-    for it in items:
+
+    def svg(it):
         kind = it[0]
         if kind == "line":
             (ax, ay), (bx, by) = it[1], it[2]
-            parts.append(f'<line x1="{X(ax)}" y1="{Y(ay)}" x2="{X(bx)}" y2="{Y(by)}"/>')
-        elif kind == "circle":
+            return f'<line x1="{X(ax)}" y1="{Y(ay)}" x2="{X(bx)}" y2="{Y(by)}"/>'
+        if kind == "circle":
             (cx, cy), r = it[1], it[2]
-            parts.append(f'<circle cx="{X(cx)}" cy="{Y(cy)}" r="{r:.4f}"/>')
-        elif kind == "arc":
+            return f'<circle cx="{X(cx)}" cy="{Y(cy)}" r="{r:.4f}"/>'
+        if kind == "arc":
             (cx, cy), r, a0, a1 = it[1:]
             sx, sy, ex, ey = cx + r * math.cos(a0), cy + r * math.sin(a0), cx + r * math.cos(a1), cy + r * math.sin(a1)
             large = 1 if a1 - a0 > math.pi else 0
             # counter-clockwise with Y up is sweep-flag 0 once Y is flipped
-            parts.append(f'<path d="M{X(sx)} {Y(sy)} A{r:.4f} {r:.4f} 0 {large} 0 {X(ex)} {Y(ey)}"/>')
-        else:
-            pts, closed = it[1], it[2]
-            d = "M" + " L".join(f"{X(x)} {Y(y)}" for x, y in pts) + (" Z" if closed else "")
-            parts.append(f'<path d="{d}"/>')
+            return f'<path d="M{X(sx)} {Y(sy)} A{r:.4f} {r:.4f} 0 {large} 0 {X(ex)} {Y(ey)}"/>'
+        pts, closed = it[1], it[2]
+        return f'<path d="M{" L".join(f"{X(x)} {Y(y)}" for x, y in pts)}{" Z" if closed else ""}"/>'
+
+    body = "\n".join(f'<g id="{html.escape(name, quote=True)}">\n' + "\n".join(svg(it) for it in its) + "\n</g>"
+                     for name, its in (groups or [("drawing", items)]))
     Path(path).write_text(
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{w:.4f}mm" height="{h:.4f}mm" viewBox="0 0 {w:.4f} {h:.4f}">\n'
-        '<g fill="none" stroke="#000" stroke-width="0.1">\n' + "\n".join(parts) + "\n</g>\n</svg>\n")
+        '<g fill="none" stroke="#000" stroke-width="0.1">\n' + body + "\n</g>\n</svg>\n")
+
+
+def sketches_svg(sketches: dict, path: str | Path, margin: float = 2.0) -> bool:
+    """Every sketch in one SVG, one named group each, in the sketches' own coordinates.
+    False (and no file) when there is nothing to draw."""
+    groups = [(name, outlines(sk)) for name, sk in sorted(sketches.items())]
+    groups = [(n, its) for n, its in groups if its]
+    if not groups:
+        return False
+    x0, y0, x1, y1 = bounds([it for _, its in groups for it in its])
+    _svg(path, None, (x0 - margin, y0 - margin, x1 + margin, y1 + margin), groups)
+    return True
 
 
 PT = 72 / 25.4                                               # PostScript / PDF points per mm

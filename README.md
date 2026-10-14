@@ -197,7 +197,9 @@ variant travels with it. Its first entry is an uncompressed `mimetype`
 
 The window works on an unpacked copy in the cache folder and writes the `.cccp` back on every
 saved version, shortly after each edit and on close. Unzip one and you have an ordinary
-project folder. Old project folders still open (pick their `job.toml`), and
+project folder. Every saved version also writes the finished part into `final/`
+(`part.stl` as machined, `drawing.svg` with every sketch, `info.json`), kept out of the history:
+programs that only want the result, such as phobiCCCP, read just that. Old project folders still open (pick their `job.toml`), and
 **File > Save project as…** moves one into a `.cccp`.
 
 ### Toolpaths
