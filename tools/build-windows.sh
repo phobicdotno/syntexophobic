@@ -53,14 +53,12 @@ rm -f "$ZIP"
 (cd build/windows && 7z a -bd -tzip -mx=7 "../../$ZIP" Syntexophobic >/dev/null)
 echo "$ZIP ($(du -h "$ZIP" | cut -f1))"
 
-# the installer. Per-user files under %LOCALAPPDATA% are kept by file, not by registry key,
-# which three of Windows Installer's checks want for roaming profiles (ICE38, ICE64, ICE91).
+# the installer, of the same folder
 MSI="dist/Syntexophobic-$VERSION-windows-x64.msi"
 rm -f "$MSI"
 wix build -arch x64 -ext WixToolset.Util.wixext \
     -d Version="$VERSION" -d Icon="$(cygpath -w build/windows/syntexophobic.ico)" \
     -bindpath app="$(cygpath -w "$OUT")" \
-    -sice ICE38 -sice ICE64 -sice ICE91 \
     -o "$MSI" tools/windows/syntexophobic.wxs
 rm -f "${MSI%.msi}.wixpdb"
 echo "$MSI ($(du -h "$MSI" | cut -f1))"
