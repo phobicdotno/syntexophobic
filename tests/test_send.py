@@ -81,7 +81,7 @@ def test_parse_target():
         send.parse_target(" ")
 
 
-def test_send_a_design(design):
+def test_send_a_design(design, tmp_path):
     r = FakeReceiver()
     assert send.send_project(design, f"127.0.0.1:{r.port}") == "opened bracket.c2d"
     m = r.manifest
@@ -100,7 +100,8 @@ def test_send_a_design(design):
     assert hi[2] == pytest.approx(model["top"], abs=1e-3) and model["top"] < 0   # stock has top_offset
 
     # sketches moved the same way
-    doc = ezdxf.read(io.StringIO(r.files["logo.dxf"].decode()))
+    (tmp_path / "logo.dxf").write_bytes(r.files["logo.dxf"])     # CRLF on Windows: read it as a file
+    doc = ezdxf.readfile(str(tmp_path / "logo.dxf"))
     xs = [e.dxf.start.x for e in doc.modelspace().query("LINE")]
     assert min(xs) == pytest.approx(10 - st.xmin)
 
