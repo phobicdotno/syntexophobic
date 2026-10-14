@@ -903,7 +903,7 @@ class MainWindow(QMainWindow):
             if not ok:
                 return
             sk = self.part.sketches[name]
-        path, _ = QFileDialog.getSaveFileName(self, "Save DXF", str(self.project.folder / f"{sk.name}.dxf"), "DXF (*.dxf)")
+        path, _ = QFileDialog.getSaveFileName(self, "Save DXF", str(self.project.output_dir / f"{sk.name}.dxf"), "DXF (*.dxf)")
         if path:
             dxf.export_dxf(sk, path)
             self.status.setText(f"Saved {path}")
@@ -911,7 +911,7 @@ class MainWindow(QMainWindow):
     def export_model(self):
         if self.project is None:
             return
-        path, _ = QFileDialog.getSaveFileName(self, "Export model", str(self.project.folder / f"{self.project.job.name}.step"),
+        path, _ = QFileDialog.getSaveFileName(self, "Export model", str(self.project.output_dir / f"{self.project.job.name}.step"),
                                               "STEP (*.step *.stp);;STL (*.stl)")
         if not path:
             return
@@ -1435,7 +1435,7 @@ class MainWindow(QMainWindow):
         if not self.toolpaths:
             QMessageBox.information(self, "No toolpaths", "Generate toolpaths first.")
             return
-        default = str(self.project.folder / f"{self.project.job.name}.nc")
+        default = str(self.project.output_dir / f"{self.project.job.name}.nc")
         path, _ = QFileDialog.getSaveFileName(self, "Save G-code", default, "G-code (*.nc *.gcode *.tap)")
         if not path:
             return

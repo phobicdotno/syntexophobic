@@ -69,8 +69,7 @@ def main() -> int:
         from .project import Project
         p = Project.open(args.project)
         tps = p.toolpaths()
-        beside = p.archive.parent if p.archive else p.folder          # next to a .cccp, not in its unpacked copy
-        out = Path(args.output or beside / f"{p.job.name}.nc")
+        out = Path(args.output or p.output_dir / f"{p.job.name}.nc")
         out.write_text(p.gcode(tps))
         for tp in tps:
             print(f"{tp.op.name}: {len(tp.levels)} levels, {tp.minutes():.1f} min")

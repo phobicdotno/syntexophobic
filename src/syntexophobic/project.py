@@ -51,6 +51,12 @@ class Project:
             cccp.pack(self.folder, self.archive)
 
     @property
+    def output_dir(self) -> Path:
+        """Where G-code and exports go by default: next to the .cccp file (not into its
+        unpacked copy in the cache), or into the project folder."""
+        return self.archive.parent if self.archive else self.folder
+
+    @property
     def location(self) -> Path:
         """What the user opened: the .cccp file, or the project folder."""
         return self.archive or self.folder

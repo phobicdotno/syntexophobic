@@ -318,7 +318,7 @@ class Session:
         from . import dxf
         part = self._part()
         sk = self._sketch(part, sketch)
-        out = Path(path).expanduser() if path else self._need().folder / f"{sketch}.dxf"
+        out = Path(path).expanduser() if path else self._need().output_dir / f"{sketch}.dxf"
         dxf.export_dxf(sk, out)
         return {"saved": str(out)}
 
@@ -481,7 +481,7 @@ class Session:
         p = self._need()
         if not self.toolpaths:
             self.generate()
-        base = Path(path).expanduser() if path else p.folder / f"{p.job.name}.nc"
+        base = Path(path).expanduser() if path else p.output_dir / f"{p.job.name}.nc"
         sides = p.sides()
         saved = []
         for side in sides:
