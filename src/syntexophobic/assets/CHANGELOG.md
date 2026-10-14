@@ -29,6 +29,10 @@ every release, read from this file.
   on the plate), PrusaSlicer, Cura and 3D Builder files. Every printable object becomes a
   solid with real flat faces, where the plate puts it; New from STEP / STL / 3MF, the Insert
   feature and Convert to STEP all take them.
+- Holes and round bosses in STL and 3MF files come in as true cylinders, not rings of flat
+  strips: through and blind holes, counterbores and pins get one round face of the fitted
+  radius, ready to measure, fillet or chamfer. Part-round faces (fillets, holes cut by an
+  edge) stay faceted.
 
 ## v0.7.1 (build 12) — 2026-10-14
 

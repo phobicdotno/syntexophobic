@@ -111,6 +111,8 @@ git repository. The toolbar switches between the **Design** and **Manufacture** 
 To model a part, press **New design** (the pencil, Ctrl+Shift+N). To work on a STEP or STL
 part, open it as a project and press **Design on this part** in the Design workspace: the
 model becomes an Import feature you can add sketches, cuts, holes and fillets to.
+Meshes (STL, 3MF) come in as solids: triangles in one plane merge into one flat face, and
+faceted holes and round bosses become true cylinders.
 
 ### Design
 

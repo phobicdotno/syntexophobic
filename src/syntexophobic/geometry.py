@@ -84,14 +84,25 @@ def load_stl(path: str, merge_flat: bool = True) -> TopoDS_Shape:
 
 
 def _flat_faces(solid, triangles: int, merge_flat: bool = True):
-    """Triangles lying in one plane merged into one face (skipped on huge meshes: slow)."""
+    """Triangles lying in one plane merged into one face, then faceted holes and bosses
+    made truly round (roundfaces.py). Skipped on huge meshes: slow."""
     if merge_flat and triangles <= 200_000:
-        from OCP.ShapeUpgrade import ShapeUpgrade_UnifySameDomain
-        u = ShapeUpgrade_UnifySameDomain(solid, True, True, False)
-        u.Build()
-        if not u.Shape().IsNull():
-            solid = u.Shape()
+        solid = _unify(solid)
+        try:
+            from .roundfaces import round_faces
+            rounded, n = round_faces(solid)
+            if n:
+                solid = _unify(rounded)
+        except Exception:  # noqa: BLE001 - rounding is a bonus; a mesh that won't round still imports
+            pass
     return solid
+
+
+def _unify(solid):
+    from OCP.ShapeUpgrade import ShapeUpgrade_UnifySameDomain
+    u = ShapeUpgrade_UnifySameDomain(solid, True, True, False)
+    u.Build()
+    return solid if u.Shape().IsNull() else u.Shape()
 
 
 MESH_SUFFIXES = (".stl", ".3mf")
