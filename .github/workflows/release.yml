@@ -41,7 +41,7 @@ jobs:
       - name: appimagetool, git and the libraries the AppImage carries
         run: |
           sudo apt-get update -q
-          sudo apt-get install -yq git libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3 libglib2.0-0 libpulse0 \
+          sudo apt-get install -yq git xvfb libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3 libglib2.0-0 libpulse0 \
             libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-util1 \
             libxcb-xkb1 libxkbcommon-x11-0
           mkdir -p ~/.local/bin
@@ -51,8 +51,10 @@ jobs:
       - run: ./tools/build-appimage.sh
       - name: Try it
         timeout-minutes: 10
+        # on a virtual X display with Mesa's GL, as a desktop has: VTK crashes now and then
+        # drawing the translucent stock without any GL (Qt's offscreen platform)
         run: |
-          build/AppDir/usr/python/bin/python3 tools/smoke.py
+          QT_QPA_PLATFORM=xcb xvfb-run -a build/AppDir/usr/python/bin/python3 tools/smoke.py
           ./dist/*.AppImage --appimage-extract-and-run --version
       - uses: actions/upload-artifact@v5
         with:
