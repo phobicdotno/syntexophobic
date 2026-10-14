@@ -53,12 +53,14 @@ rm -f "$ZIP"
 (cd build/windows && 7z a -bd -tzip -mx=7 "../../$ZIP" Syntexophobic >/dev/null)
 echo "$ZIP ($(du -h "$ZIP" | cut -f1))"
 
-# the installer, of the same folder
+# the installer, of the same folder (an absolute path: WiX takes a relative one from the .wxs)
 MSI="dist/Syntexophobic-$VERSION-windows-x64.msi"
 rm -f "$MSI"
 wix build -arch x64 -ext WixToolset.Util.wixext \
     -d Version="$VERSION" -d Icon="$(cygpath -w build/windows/syntexophobic.ico)" \
-    -bindpath app="$(cygpath -w "$OUT")" \
+    -bindpath app="$(cygpath -wa "$OUT")" \
     -o "$MSI" tools/windows/syntexophobic.wxs
 rm -f "${MSI%.msi}.wixpdb"
+# WiX only warns when it finds nothing to install
+[ "$(stat -c %s "$MSI")" -gt 50000000 ] || { echo "$MSI holds no program" >&2; exit 1; }
 echo "$MSI ($(du -h "$MSI" | cut -f1))"
