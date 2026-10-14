@@ -2,7 +2,8 @@
 this one, what changed in it (the release notes are the CHANGELOG section of that
 version), and, when this is the AppImage, download the new one and point the
 ~/Applications link at it; when this is the macOS app, download the new app and put it
-in the running one's place.
+in the running one's place; when this is the installed Windows build, download the new
+installer and run it once the program has closed.
 
 The repository is private, so the check needs a GitHub login: SYNTEXOPHOBIC_GITHUB_TOKEN,
 GH_TOKEN or GITHUB_TOKEN, else `gh auth token`, else the token git already stores for
@@ -139,12 +140,13 @@ def fetch_releases(tok: str) -> list[dict]:
 def asset_suffix(system: str = "", machine: str = "") -> str:
     """How this platform's build ends: Syntexophobic-0.6.3-x86_64.AppImage on Linux,
     Syntexophobic-0.6.3-macOS-arm64.zip on a Mac (the app, zipped with ditto),
-    Syntexophobic-0.6.3-windows-x64.zip on Windows (a folder with Syntexophobic.exe)."""
+    Syntexophobic-0.7.2-windows-x64.msi on Windows (the installer; the release also has the
+    same build zipped, for unpacking by hand)."""
     system = system or sys.platform
     if system == "darwin":
         return f"-macOS-{machine or platform.machine()}.zip"
     if system == "win32":
-        return "-windows-x64.zip"
+        return "-windows-x64.msi"
     return ".AppImage"
 
 
@@ -197,9 +199,31 @@ def running_windows_build() -> Path | None:
     return Path(p) if p and Path(p).is_dir() else None
 
 
+def _installed_folder() -> str:
+    """Where the Windows installer put Syntexophobic (it writes this registry value)."""
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Syntexophobic") as key:
+            return str(winreg.QueryValueEx(key, "InstallFolder")[0])
+    except (ImportError, OSError):
+        return ""
+
+
+def installed_windows_build(installed: Callable[[], str] | None = None) -> Path | None:
+    """The Windows build's folder when the installer put it there (not unpacked from the zip):
+    only that copy is updated by running the new installer."""
+    folder = running_windows_build()
+    where = (installed or _installed_folder)()
+    if folder is None or not where:
+        return None
+    same = os.path.normcase(os.path.normpath(where)) == os.path.normcase(os.path.normpath(str(folder)))
+    return folder if same else None
+
+
 def running_build() -> Path | None:
-    """What an update replaces: the AppImage or the macOS app, None when run from source."""
-    return running_appimage() or running_app()
+    """What an update replaces: the AppImage, the macOS app or the installed Windows build's
+    folder; None when run from source or from the unpacked Windows zip."""
+    return running_appimage() or running_app() or installed_windows_build()
 
 
 def how_to_update() -> str:
@@ -330,9 +354,11 @@ def install(release: Release, current: Path, tok: str | None = None,
     """Puts the new AppImage next to the running one and moves the links that started the
     running one over to it. The old file stays, so pointing the link back undoes it.
     Downloads only what changed when the release has a block index, else (or when that
-    fails) the whole AppImage. For the macOS app, see install_app."""
+    fails) the whole AppImage. For the macOS app, see install_app; for Windows, install_msi."""
     if current.suffix == ".app":
         return install_app(release, current, tok, progress, fetch)
+    if release.asset.endswith(".msi"):
+        return install_msi(release, current, tok, progress, fetch)
     if not release.asset_url:
         raise UpdateError(f"release {release.tag} has no AppImage")
     tok = token() if tok is None else tok
@@ -351,6 +377,43 @@ def install(release: Release, current: Path, tok: str | None = None,
     for link in links:
         repoint(link, dest)
     return Installed(dest, links, links[0] if links else dest, got)
+
+
+def install_msi(release: Release, current: Path, tok: str | None = None,
+                progress: Callable[[float, str], None] | None = None,
+                fetch: Callable[..., None] = download, stage: Path | None = None) -> Installed:
+    """Windows: downloads the new installer. Restarting runs it (see run_installer): Windows
+    will not let it replace the files while this program runs."""
+    if not release.asset_url:
+        raise UpdateError(f"release {release.tag} has no Windows installer")
+    tok = token() if tok is None else tok
+    stage = Path(tempfile.gettempdir()) / "syntexophobic-update" if stage is None else stage
+    stage.mkdir(parents=True, exist_ok=True)
+    msi = stage / release.asset
+    fetch(release.asset_url, msi, tok, release.asset_size,
+          progress and (lambda f: progress(f, "Downloading")))
+    return Installed(msi, [], msi, release.asset_size)
+
+
+def installer_script(msi: Path, folder: Path, pid: int) -> str:
+    """The batch file that updates the Windows build: waits for this program (process pid) to
+    end, runs the installer with only its progress bar, then starts Syntexophobic again (the
+    old one if the install was cancelled)."""
+    return ("@echo off\r\n"
+            ":wait\r\n"
+            f'tasklist /fi "PID eq {pid}" /nh 2>nul | find "{pid}" >nul '
+            "&& (ping -n 2 127.0.0.1 >nul & goto wait)\r\n"
+            "ping -n 2 127.0.0.1 >nul\r\n"          # and Syntexophobic.exe, which waited for it
+            f'start "" /wait msiexec /i "{msi}" /passive /norestart\r\n'
+            f'start "" "{folder / "Syntexophobic.exe"}"\r\n')
+
+
+def run_installer(msi: Path, folder: Path, popen: Callable[..., object] = subprocess.Popen):
+    """Starts the update (installer_script) in the background, once this program has closed."""
+    bat = msi.with_suffix(".cmd")
+    bat.write_text(installer_script(msi, folder, os.getpid()), newline="")
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    popen(["cmd.exe", "/c", str(bat)], creationflags=flags, close_fds=True)
 
 
 def unzip(archive: Path, dest: Path):

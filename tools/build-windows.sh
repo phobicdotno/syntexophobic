@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # Builds dist/Syntexophobic-<version>-windows-x64.zip: a Syntexophobic folder with
-# Syntexophobic.exe, its own Python and every library, and git (MinGit). Run it on Windows in
-# Git Bash (the release workflow does, on GitHub's Windows runners). Needs uv, gcc and windres
-# (MinGW), 7-Zip, and the GitHub CLI for MinGit.
+# Syntexophobic.exe, its own Python and every library, and git (MinGit); and
+# dist/Syntexophobic-<version>-windows-x64.msi, the installer of that same folder
+# (tools/windows/syntexophobic.wxs). Run it on Windows in Git Bash (the release workflow does,
+# on GitHub's Windows runners). Needs uv, gcc and windres (MinGW), 7-Zip, the GitHub CLI for
+# MinGit, and WiX 5 with its util extension for the installer:
+#     dotnet tool install --global wix --version 5.0.2
+#     wix extension add --global WixToolset.Util.wixext/5.0.2
 set -euo pipefail
 cd "$(dirname "$0")/.."
 UV=${UV:-uv}
@@ -48,3 +52,15 @@ ZIP="dist/Syntexophobic-$VERSION-windows-x64.zip"
 rm -f "$ZIP"
 (cd build/windows && 7z a -bd -tzip -mx=7 "../../$ZIP" Syntexophobic >/dev/null)
 echo "$ZIP ($(du -h "$ZIP" | cut -f1))"
+
+# the installer. Per-user files under %LOCALAPPDATA% are kept by file, not by registry key,
+# which three of Windows Installer's checks want for roaming profiles (ICE38, ICE64, ICE91).
+MSI="dist/Syntexophobic-$VERSION-windows-x64.msi"
+rm -f "$MSI"
+wix build -arch x64 -ext WixToolset.Util.wixext \
+    -d Version="$VERSION" -d Icon="$(cygpath -w build/windows/syntexophobic.ico)" \
+    -bindpath app="$(cygpath -w "$OUT")" \
+    -sice ICE38 -sice ICE64 -sice ICE91 \
+    -o "$MSI" tools/windows/syntexophobic.wxs
+rm -f "${MSI%.msi}.wixpdb"
+echo "$MSI ($(du -h "$MSI" | cut -f1))"

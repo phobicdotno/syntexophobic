@@ -1,4 +1,5 @@
-# A version tag (v0.6.3) builds the Linux AppImage with its .blocks file, the macOS app and the Windows build,
+# A version tag (v0.6.3) builds the Linux AppImage with its .blocks file, the macOS app and the Windows build
+# (zip and installer),
 # tries each one, and publishes them as that version's GitHub release, its notes taken
 # from CHANGELOG.md. Pull requests that change the build only build and try them. Run by hand
 # (Actions → Release → Run workflow) with "publish" ticked, it releases the version in
@@ -11,6 +12,7 @@ on:
   pull_request:
     paths:
       - tools/build-*.sh
+      - tools/windows/**
       - tools/appimage_prune.py
       - tools/smoke.py
       - tools/release_notes.py
@@ -90,6 +92,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v7
+      - name: WiX, for the installer
+        run: |
+          dotnet tool install --global wix --version 5.0.2
+          wix extension add --global WixToolset.Util.wixext/5.0.2
       - run: ./tools/build-windows.sh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -105,10 +111,29 @@ jobs:
           grep -q Syntexophobic version.txt
           ./python/python.exe ../../../tools/smoke.py
           ./git/cmd/git.exe --version
+      - name: Install it, start it and uninstall it, as a user would
+        shell: pwsh
+        timeout-minutes: 10
+        run: |
+          $msi = (Get-Item dist/*.msi).FullName
+          $p = Start-Process msiexec -ArgumentList '/i', "`"$msi`"", '/qn', '/l*v', 'install.log' -Wait -PassThru
+          if ($p.ExitCode) { Get-Content install.log -Tail 60; throw "install failed: $($p.ExitCode)" }
+          $dir = "$env:LOCALAPPDATA\Programs\Syntexophobic"
+          $reg = (Get-ItemProperty HKCU:\Software\Syntexophobic).InstallFolder
+          if ($reg.TrimEnd('\') -ne $dir) { throw "InstallFolder is $reg" }
+          if (-not (Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Syntexophobic.lnk")) { throw "no Start menu entry" }
+          $v = & "$dir\Syntexophobic.exe" --version | Out-String
+          Write-Output $v
+          if ($v -notmatch 'Syntexophobic') { throw "it did not start" }
+          $p = Start-Process msiexec -ArgumentList '/x', "`"$msi`"", '/qn', '/l*v', 'uninstall.log' -Wait -PassThru
+          if ($p.ExitCode) { Get-Content uninstall.log -Tail 60; throw "uninstall failed: $($p.ExitCode)" }
+          if (Test-Path $dir) { Get-ChildItem -Recurse $dir | Select-Object -First 20; throw "uninstall left $dir" }
       - uses: actions/upload-artifact@v5
         with:
           name: windows
-          path: dist/*.zip
+          path: |
+            dist/*.zip
+            dist/*.msi
           if-no-files-found: error
           compression-level: 0
 

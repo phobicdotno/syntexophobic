@@ -22,6 +22,7 @@ def gh(tag, body="", draft=False, prerelease=False, asset=True):
     v = tag.lstrip("v")
     assets = [{"name": f"Syntexophobic-{v}-macOS-arm64.zip", "url": f"https://api/assets/{v}.zip", "size": 9},
               {"name": f"Syntexophobic-{v}-windows-x64.zip", "url": f"https://api/assets/{v}-win.zip", "size": 8},
+              {"name": f"Syntexophobic-{v}-windows-x64.msi", "url": f"https://api/assets/{v}.msi", "size": 7},
               {"name": f"Syntexophobic-{v}-x86_64.AppImage", "url": f"https://api/assets/{v}", "size": 4}] if asset else []
     return {"tag_name": tag, "name": f"Syntexophobic {v}", "body": body, "html_url": f"https://gh/{tag}",
             "draft": draft, "prerelease": prerelease, "assets": assets}
@@ -54,8 +55,57 @@ def test_each_platform_gets_its_own_build():
     assert mac.asset == "Syntexophobic-0.7.0-macOS-arm64.zip" and mac.asset_url.endswith(".zip")
     assert mac.asset_size == 9 and mac.blocks_url == ""
     assert update.releases(DATA, ASSET_SUFFIX("darwin", "x86_64"))[0].asset == ""   # no Intel build
-    assert ASSET_SUFFIX("win32") == "-windows-x64.zip"
-    assert update.releases(DATA, ASSET_SUFFIX("win32"))[0].asset == "Syntexophobic-0.7.0-windows-x64.zip"
+    assert ASSET_SUFFIX("win32") == "-windows-x64.msi"               # the installer, not the zip
+    win = update.releases(DATA, ASSET_SUFFIX("win32"))[0]
+    assert win.asset == "Syntexophobic-0.7.0-windows-x64.msi" and win.asset_url == "https://api/assets/0.7.0.msi"
+
+
+def test_only_the_installed_windows_build_updates_itself(tmp_path, monkeypatch):
+    folder = tmp_path / "Programs" / "Syntexophobic"
+    folder.mkdir(parents=True)
+    monkeypatch.delenv("SYNTEXOPHOBIC_WINDOWS_APP", raising=False)
+    assert update.installed_windows_build(lambda: str(folder)) is None          # not the Windows build
+    monkeypatch.setenv("SYNTEXOPHOBIC_WINDOWS_APP", str(folder))
+    assert update.installed_windows_build(lambda: str(folder) + os.sep) == folder
+    assert update.installed_windows_build(lambda: "") is None                  # unpacked from the zip
+    assert update.installed_windows_build(lambda: str(tmp_path / "elsewhere")) is None
+
+
+def test_install_on_windows_downloads_the_installer(tmp_path, monkeypatch):
+    monkeypatch.setattr(update.tempfile, "gettempdir", lambda: str(tmp_path))
+    folder = tmp_path / "Syntexophobic"
+    folder.mkdir()
+    got = []
+
+    def fetch(url, dest, tok, size, progress):
+        got.append((url, tok, size))
+        dest.write_text("msi")
+    release = update.releases(DATA, ASSET_SUFFIX("win32"))[0]
+    done = update.install(release, folder, tok="t", fetch=fetch)
+    msi = tmp_path / "syntexophobic-update" / "Syntexophobic-0.7.0-windows-x64.msi"
+    assert got == [("https://api/assets/0.7.0.msi", "t", 7)]
+    assert done.path == done.start == msi and msi.read_text() == "msi" and done.links == []
+    assert [p.name for p in folder.iterdir()] == []                # the running copy is left alone
+
+    with pytest.raises(update.UpdateError, match="no Windows installer"):
+        update.install_msi(update.Release("0.8.0", "v0.8.0", "", "", "", "x.msi"), folder, "t", fetch=fetch)
+
+
+def test_the_windows_update_runs_the_installer_once_the_program_has_closed(tmp_path):
+    msi = tmp_path / "Syntexophobic-0.7.0-windows-x64.msi"
+    folder = tmp_path / "Programs" / "Syntexophobic"
+    started = []
+    update.run_installer(msi, folder, popen=lambda cmd, **kw: started.append(cmd))
+    bat = msi.with_suffix(".cmd")
+    assert started == [["cmd.exe", "/c", str(bat)]]
+    text = bat.read_bytes().decode()
+    lines = text.split("\r\n")
+    assert lines[-1] == "" and all("\n" not in line for line in lines)   # CRLF, as cmd.exe reads it
+    pid = str(os.getpid())
+    assert any(f'"PID eq {pid}"' in line and "goto wait" in line for line in lines)
+    run = next(i for i, line in enumerate(lines) if "msiexec" in line)
+    assert lines[run] == f'start "" /wait msiexec /i "{msi}" /passive /norestart'
+    assert lines[run + 1] == f'start "" "{folder / "Syntexophobic.exe"}"'     # then starts it again
 
 
 def test_check_passes_the_token_and_reports_no_access(monkeypatch):
@@ -219,3 +269,51 @@ def test_update_bar(tmp_path, monkeypatch):
     bar.check(check=fake)                              # a later check keeps the restart prompt
     settle()
     assert "is installed" in bar.text.text()
+
+
+def test_update_bar_on_windows(tmp_path, monkeypatch):
+    from PySide6.QtCore import QSettings, QThreadPool
+    from PySide6.QtWidgets import QApplication
+    from syntexophobic import update_ui
+    app = QApplication.instance()
+    QSettings.setPath(QSettings.NativeFormat, QSettings.UserScope, str(tmp_path))
+    QSettings.setDefaultFormat(QSettings.NativeFormat)
+    app.setOrganizationName("syntexophobic-tests")
+    QSettings().remove(update_ui.SKIP_KEY)
+    pool = QThreadPool()
+
+    def settle():
+        pool.waitForDone()
+        for _ in range(5):
+            app.processEvents()
+
+    folder = tmp_path / "Syntexophobic"
+    folder.mkdir()
+    monkeypatch.setenv("SYNTEXOPHOBIC_WINDOWS_APP", str(folder))
+    up = update.Update("0.6.0", update.releases(DATA, ASSET_SUFFIX("win32")))
+    said = []
+    monkeypatch.setattr(update_ui.QMessageBox, "information", lambda parent, title, text: said.append(text))
+
+    # unpacked from the zip: points to the installer, and installs nothing
+    monkeypatch.setattr(update, "_installed_folder", lambda: "")
+    bar = update_ui.UpdateBar(pool=pool)
+    bar.show_update(up)
+    assert "Shows where to download Syntexophobic-0.7.0-windows-x64.msi" == bar.b_update.toolTip()
+    bar.install(install=lambda *a, **k: pytest.fail("installed the zip"), confirm=lambda *a: True)
+    assert len(said) == 1 and "Syntexophobic-0.7.0-windows-x64.msi" in said[0] and str(folder) in said[0]
+
+    # installed: downloads the installer, and restarting runs it after closing
+    monkeypatch.setattr(update, "_installed_folder", lambda: str(folder))
+    msi = tmp_path / "Syntexophobic-0.7.0-windows-x64.msi"
+    bar = update_ui.UpdateBar(pool=pool)
+    bar.show_update(up)
+    assert "install it when Syntexophobic restarts" in bar.b_update.toolTip()
+    seen = []
+    bar.install(install=lambda release, current, progress: seen.append(current) or update.Installed(msi, [], msi),
+                confirm=lambda *a: True)
+    settle()
+    assert seen == [folder] and "0.7.0 is downloaded" in bar.text.text() and "Restart to install it" in bar.text.text()
+    ran = []
+    monkeypatch.setattr(update, "run_installer", lambda m, f: ran.append((m, f)))
+    bar.restart()
+    assert ran == [(msi, folder)] and len(said) == 1
