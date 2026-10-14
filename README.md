@@ -66,7 +66,7 @@ uv tool upgrade syntexophobic                                      # later: upda
 
 ```sh
 uv run syntexophobic                         # open the window
-uv run syntexophobic part.step               # new project from a STEP (or STL) file and open it
+uv run syntexophobic part.step               # new project from a STEP, STL or 3MF file and open it
 uv run syntexophobic new part.step [x.cccp]  # create a project only (a .cccp file or a folder)
 uv run syntexophobic convert part.stl [out.step]  # STL mesh -> STEP solid
 uv run syntexophobic --version               # version and build (Help > About lists every release)

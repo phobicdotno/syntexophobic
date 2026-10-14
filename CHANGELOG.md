@@ -22,6 +22,13 @@ every release, read from this file.
   (.plt / .hpgl), 1:1 in millimetres, leaving construction lines out.
 - Every saved version also writes the finished part into the `.cccp` (`final/part.stl`,
   `final/drawing.svg`, `final/info.json`), so phobiCCCP can open it as the final product.
+- Exported meshes are watertight: faces share their corner vertices.
+
+**Import**
+- 3MF files open like STL: Bambu Studio projects (objects in their own model files, placed
+  on the plate), PrusaSlicer, Cura and 3D Builder files. Every printable object becomes a
+  solid with real flat faces, where the plate puts it; New from STEP / STL / 3MF, the Insert
+  feature and Convert to STEP all take them.
 
 ## v0.7.1 (build 12) — 2026-10-14
 

@@ -376,7 +376,7 @@ class Feature:
     width: float = 100.0         # relief: size in X (Y follows the picture's proportions)
     base: float = 3.0            # relief: solid thickness under the lowest point
     invert: bool = False         # relief: dark = high instead of light = high
-    file: str = ""               # import: a STEP or STL file in the project folder
+    file: str = ""               # import: a STEP, STL or 3MF file in the project folder
     hole: str = "simple"         # hole: simple | counterbore | countersink
     diameter: float = 5.0        # hole
     depth: float = 10.0          # hole (0 = through everything)
@@ -621,10 +621,10 @@ class Part:
         return _checked(solid_from_mesh(mesh, "relief"), "relief")
 
     def _import(self, f: Feature):
-        """A STEP or STL file as a body, where its own coordinates put it."""
+        """A STEP, STL or 3MF file as a body, where its own coordinates put it."""
         from .geometry import load_model
         if not f.file:
-            raise ModelError("Import: set file to a STEP or STL file in the project folder")
+            raise ModelError("Import: set file to a STEP, STL or 3MF file in the project folder")
         path = Path(f.file)
         if not path.is_absolute() and getattr(self, "folder", None):
             path = Path(self.folder) / path

@@ -85,7 +85,8 @@ def export_shape(shape, path: str | Path, deflection: float = 0.02) -> None:
 
 
 def mesh(shape, deflection: float = 0.02) -> tuple[list[tuple[float, float, float]], list[tuple[int, int, int]]]:
-    """Triangles of the shape's faces (outward winding), with shared corners within a face."""
+    """Triangles of the shape's faces (outward winding). Corners the faces share are one
+    vertex, so the mesh is closed (watertight) for slicers and other CAD programs."""
     from OCP.BRep import BRep_Tool
     from OCP.BRepMesh import BRepMesh_IncrementalMesh
     from OCP.TopAbs import TopAbs_FACE, TopAbs_REVERSED
@@ -93,7 +94,7 @@ def mesh(shape, deflection: float = 0.02) -> tuple[list[tuple[float, float, floa
     from OCP.TopLoc import TopLoc_Location
     from OCP.TopoDS import TopoDS
     BRepMesh_IncrementalMesh(shape, deflection, False, 0.2, True)
-    vertices, triangles = [], []
+    vertices, triangles, seen = [], [], {}
     exp = TopExp_Explorer(shape, TopAbs_FACE)
     while exp.More():
         face = TopoDS.Face(exp.Current())
@@ -103,15 +104,19 @@ def mesh(shape, deflection: float = 0.02) -> tuple[list[tuple[float, float, floa
         if tri is None:
             continue
         trsf = loc.Transformation()
-        base = len(vertices)
+        ids = []
         for i in range(1, tri.NbNodes() + 1):
             p = tri.Node(i).Transformed(trsf)
-            vertices.append((p.X(), p.Y(), p.Z()))
+            key = (round(p.X(), 6), round(p.Y(), 6), round(p.Z(), 6))
+            if key not in seen:
+                seen[key] = len(vertices)
+                vertices.append((p.X(), p.Y(), p.Z()))
+            ids.append(seen[key])
         flip = face.Orientation() == TopAbs_REVERSED
         for i in range(1, tri.NbTriangles() + 1):
-            a, b, c = tri.Triangle(i).Get()
-            triangles.append((base + a - 1, base + c - 1, base + b - 1) if flip else
-                             (base + a - 1, base + b - 1, base + c - 1))
+            a, b, c = (ids[k - 1] for k in tri.Triangle(i).Get())
+            if a != b != c != a:
+                triangles.append((a, c, b) if flip else (a, b, c))
     return vertices, triangles
 
 

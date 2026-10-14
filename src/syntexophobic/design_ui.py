@@ -462,7 +462,7 @@ class DesignPanel(QWidget):
         import shutil
         from PySide6.QtWidgets import QFileDialog
         path, _ = QFileDialog.getOpenFileName(self, "Part to import", str(Path.home()),
-                                              "Models (*.step *.stp *.stl *.STEP *.STP *.STL)")
+                                              "Models (*.step *.stp *.stl *.3mf *.STEP *.STP *.STL *.3MF)")
         if not path:
             return
         folder = Path(getattr(self.part, "folder", "."))

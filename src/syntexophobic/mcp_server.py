@@ -91,14 +91,14 @@ def status() -> str:
 
 @server.tool()
 def open_project(path: str) -> str:
-    """Open a .cccp project file, a project folder (with job.toml), or a STEP or STL file
+    """Open a .cccp project file, a project folder (with job.toml), or a STEP, STL or 3MF file
     (creates a <name>-cam project)."""
     return _out(_call("open_project", path=path))
 
 
 @server.tool()
 def convert_stl(stl: str, step: str = "", merge_flat: bool = True) -> str:
-    """Convert an STL mesh to a STEP solid (default: next to it with .step). Flat areas become
+    """Convert an STL or 3MF mesh to a STEP solid (default: next to it with .step). Flat areas become
     single faces unless merge_flat is false."""
     return _out(_call("convert_stl", stl=stl, step=step, merge_flat=merge_flat))
 
@@ -206,7 +206,7 @@ def add_relief(image: str, width: float = 100.0, depth: float = 5.0, base: float
 
 @server.tool()
 def import_model(path: str, name: str = "", operation: str = "new", body: str = "") -> str:
-    """Bring a STEP or STL part into the design as a body, at its own coordinates. operation:
+    """Bring a STEP, STL or 3MF part into the design as a body, at its own coordinates. operation:
     new (a separate body), join, cut or intersect with `body` (default: the last one)."""
     return _out(_call("import_model", path=path, name=name, operation=operation, body=body))
 

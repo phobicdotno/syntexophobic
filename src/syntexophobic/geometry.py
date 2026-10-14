@@ -80,8 +80,12 @@ def load_stl(path: str, merge_flat: bool = True) -> TopoDS_Shape:
     mesh = RWStl.ReadFile_s(str(path), Message_ProgressRange())
     if mesh is None or mesh.NbTriangles() == 0:
         raise ValueError(f"Could not read STL file: {path}")
-    solid = solid_from_mesh(mesh, str(path))
-    if merge_flat and mesh.NbTriangles() <= 200_000:
+    return _flat_faces(solid_from_mesh(mesh, str(path)), mesh.NbTriangles(), merge_flat)
+
+
+def _flat_faces(solid, triangles: int, merge_flat: bool = True):
+    """Triangles lying in one plane merged into one face (skipped on huge meshes: slow)."""
+    if merge_flat and triangles <= 200_000:
         from OCP.ShapeUpgrade import ShapeUpgrade_UnifySameDomain
         u = ShapeUpgrade_UnifySameDomain(solid, True, True, False)
         u.Build()
@@ -90,9 +94,70 @@ def load_stl(path: str, merge_flat: bool = True) -> TopoDS_Shape:
     return solid
 
 
+MESH_SUFFIXES = (".stl", ".3mf")
+
+
+def load_3mf(path: str, merge_flat: bool = True) -> TopoDS_Shape:
+    """A 3MF file (Bambu Studio, PrusaSlicer, Cura, Windows 3D Builder) as solids: one per
+    object placed on the build plate, where the file puts it, in millimetres. Flat areas
+    become single faces, as for STL. Several objects come back as one compound."""
+    from OCP.BRep import BRep_Builder
+    from OCP.Poly import Poly_Triangle, Poly_Triangulation
+    from OCP.TopoDS import TopoDS_Compound
+    from OCP.gp import gp_Pnt
+    from .mesh3mf import read_3mf
+    objects = read_3mf(path)
+    if not objects:
+        raise ValueError(f"No printable objects in {path}")
+    solids = []
+    for name, vertices, triangles in objects:
+        for part in _connected(triangles):          # an object of several parts: a solid each
+            used = sorted({i for t in part for i in t})
+            index = {old: new for new, old in enumerate(used, 1)}
+            mesh = Poly_Triangulation(len(used), len(part), False)
+            for old, new in index.items():
+                mesh.SetNode(new, gp_Pnt(*vertices[old]))
+            for i, (a, b, c) in enumerate(part, 1):
+                mesh.SetTriangle(i, Poly_Triangle(index[a], index[b], index[c]))
+            solids.append(_flat_faces(solid_from_mesh(mesh, f"{path}: {name}"), len(part), merge_flat))
+    if len(solids) == 1:
+        return solids[0]
+    compound, builder = TopoDS_Compound(), BRep_Builder()
+    builder.MakeCompound(compound)
+    for s in solids:
+        builder.Add(compound, s)
+    return compound
+
+
+def _connected(triangles: list[tuple[int, int, int]]) -> list[list[tuple[int, int, int]]]:
+    """Triangles grouped into pieces that share corners."""
+    parent: dict[int, int] = {}
+
+    def find(i):
+        while parent.setdefault(i, i) != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    for a, b, c in triangles:
+        ra = find(a)
+        for v in (b, c):
+            rv = find(v)
+            if rv != ra:
+                parent[rv] = ra
+    groups: dict[int, list] = {}
+    for t in triangles:
+        groups.setdefault(find(t[0]), []).append(t)
+    return list(groups.values())
+
+
+def load_mesh(path: str, merge_flat: bool = True) -> TopoDS_Shape:
+    return load_3mf(path, merge_flat) if str(path).lower().endswith(".3mf") else load_stl(path, merge_flat)
+
+
 def load_model(path: str) -> TopoDS_Shape:
-    """STEP or STL, by extension."""
-    return load_stl(path) if str(path).lower().endswith(".stl") else load_step(path)
+    """STEP, STL or 3MF, by extension."""
+    return load_mesh(path) if str(path).lower().endswith(MESH_SUFFIXES) else load_step(path)
 
 
 def quiet() -> None:
@@ -104,8 +169,9 @@ def quiet() -> None:
 
 
 def stl_to_step(src: str, dst: str, merge_flat: bool = True) -> TopoDS_Shape:
+    """An STL or 3MF mesh as a STEP solid."""
     from OCP.STEPControl import STEPControl_AsIs, STEPControl_Writer
-    solid = load_stl(src, merge_flat)
+    solid = load_mesh(src, merge_flat)
     quiet()
     w = STEPControl_Writer()
     w.Transfer(solid, STEPControl_AsIs)
