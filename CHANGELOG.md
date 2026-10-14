@@ -3,6 +3,18 @@
 Each release has a version and a build number; Help → About shows a one-line summary of
 every release, read from this file.
 
+## Unreleased
+
+**History**
+- A Subway tab in the History panel: each variant is a coloured line, each saved version a
+  station. Hover a station to see its note and what it changed (files and changed lines);
+  click it to pick that version.
+
+**Project files**
+- Projects are kept in a single `.cccp` file holding the project and its whole git history,
+  variants included. New projects and designs ask where to save their `.cccp`; Open reads
+  `.cccp` files and old project folders; File > Save project as… turns a folder into one.
+
 ## v0.7.1 (build 12) — 2026-10-14
 
 **Send to phobiCCCP**

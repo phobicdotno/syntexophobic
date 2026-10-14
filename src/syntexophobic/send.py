@@ -21,12 +21,10 @@ history included, as a .cccp zip).
 
 from __future__ import annotations
 
-import io
 import json
 import re
 import socket
 import tempfile
-import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -107,14 +105,9 @@ def _safe(name: str) -> str:
 
 
 def pack_project(folder: str | Path) -> bytes:
-    """The project folder, .git included, as a .cccp zip (paths relative to the folder)."""
-    folder = Path(folder)
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        for f in sorted(folder.rglob("*")):
-            if f.is_file() and "__pycache__" not in f.parts and f.suffix not in (".nc", ".gcode", ".tap"):
-                z.write(f, f.relative_to(folder).as_posix())
-    return buf.getvalue()
+    """The project folder, .git included, as a .cccp file (see cccp.py)."""
+    from . import cccp
+    return cccp.pack_bytes(folder)
 
 
 def _stl_bytes(shape, dx: float, dy: float, dz: float, deflection: float = 0.02) -> bytes:

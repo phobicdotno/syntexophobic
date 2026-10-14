@@ -67,7 +67,7 @@ uv tool upgrade syntexophobic                                      # later: upda
 ```sh
 uv run syntexophobic                         # open the window
 uv run syntexophobic part.step               # new project from a STEP (or STL) file and open it
-uv run syntexophobic new part.step [dir]     # create a project folder only
+uv run syntexophobic new part.step [x.cccp]  # create a project only (a .cccp file or a folder)
 uv run syntexophobic convert part.stl [out.step]  # STL mesh -> STEP solid
 uv run syntexophobic --version               # version and build (Help > About lists every release)
 uv run syntexophobic gcode <project>         # write G-code without the window
@@ -176,7 +176,23 @@ figure from a picture.
 - **Save version** makes a git commit with your note.
 - **Variants** are git branches, for trying another tool or strategy without losing the original.
 - Picking a version shows what differs in the job now; **Restore** brings it back as unsaved changes.
+- The **Subway** tab draws every variant as a coloured line and every version as a station;
+  hover a station to see what that version changed.
 - `git log` in the project folder shows the same history.
+
+![History as a subway map: main and two variants](docs/screenshots/history-subway.png)
+
+### Project files (.cccp)
+
+A project is kept in one `.cccp` file: a zip of the project folder (`job.toml`, `model.toml`,
+`sketches/`, imported models) together with its `.git` folder, so every saved version and
+variant travels with it. Its first entry is an uncompressed `mimetype`
+(`application/x-syntexophobic-project`), as in OpenDocument files.
+
+The window works on an unpacked copy in the cache folder and writes the `.cccp` back on every
+saved version, shortly after each edit and on close. Unzip one and you have an ordinary
+project folder. Old project folders still open (pick their `job.toml`), and
+**File > Save project as…** moves one into a `.cccp`.
 
 ### Toolpaths
 

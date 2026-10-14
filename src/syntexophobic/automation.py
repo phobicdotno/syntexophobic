@@ -116,7 +116,7 @@ class Session:
         p = Path(path).expanduser()
         if p.suffix.lower() in (".step", ".stp", ".stl"):
             return self.new_from_step(str(p))
-        self.project = Project(p)
+        self.project = Project.open(p)
         return self.status()
 
     def new_design(self, folder: str, name: str) -> dict:
@@ -143,6 +143,8 @@ class Session:
         if p is None:
             return {"project": None, "hint": "open_project, new_design or new_from_step"}
         out = {"project": str(p.folder), "model": p.job.model, "job": _clean(p.job)}
+        if p.archive:
+            out["file"] = str(p.archive)
         if p.job.model.endswith(".toml"):
             part = Part.load(p.folder / p.job.model)
             out["design"] = {"parameters": part.parameters, "sketches": sorted(part.sketches),
@@ -316,7 +318,7 @@ class Session:
         from . import dxf
         part = self._part()
         sk = self._sketch(part, sketch)
-        out = Path(path).expanduser() if path else self._need().folder / f"{sketch}.dxf"
+        out = Path(path).expanduser() if path else self._need().output_dir / f"{sketch}.dxf"
         dxf.export_dxf(sk, out)
         return {"saved": str(out)}
 
@@ -479,7 +481,7 @@ class Session:
         p = self._need()
         if not self.toolpaths:
             self.generate()
-        base = Path(path).expanduser() if path else p.folder / f"{p.job.name}.nc"
+        base = Path(path).expanduser() if path else p.output_dir / f"{p.job.name}.nc"
         sides = p.sides()
         saved = []
         for side in sides:
