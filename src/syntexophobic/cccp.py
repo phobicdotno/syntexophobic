@@ -55,20 +55,33 @@ def pack(folder: str | Path, path: str | Path) -> Path:
     folder, path = Path(folder), Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".part")
-    with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
+    _write(folder, tmp)
+    os.replace(tmp, path)
+    return path
+
+
+def pack_bytes(folder: str | Path) -> bytes:
+    """The project folder as the bytes of a .cccp file (for sending it somewhere)."""
+    import io
+    buf = io.BytesIO()
+    _write(Path(folder), buf)
+    return buf.getvalue()
+
+
+def _write(folder: Path, target) -> None:
+    with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr(zipfile.ZipInfo("mimetype"), MIMETYPE, compress_type=zipfile.ZIP_STORED)
         for root, dirs, files in os.walk(folder):
             dirs.sort()
             rel_root = Path(root).relative_to(folder)
             if rel_root != Path("."):
                 z.writestr(rel_root.as_posix() + "/", "")      # empty folders matter to git
+            dirs[:] = [d for d in dirs if d != "__pycache__"]
             for name in sorted(files):
                 p = Path(root) / name
                 if p.suffix.lower() in SKIP or p.is_symlink():
                     continue
                 z.write(p, (rel_root / name).as_posix())
-    os.replace(tmp, path)
-    return path
 
 
 def unpack(path: str | Path, folder: str | Path | None = None) -> Path:

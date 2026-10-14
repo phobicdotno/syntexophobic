@@ -343,6 +343,8 @@ class MainWindow(QMainWindow):
                            ("Convert STL to STEP…", self.convert_stl)):
             m_file.addAction(text).triggered.connect(slot)
         m_file.addSeparator()
+        m_file.addAction("Send to phobiCCCP…").triggered.connect(self.send_to_phobicccp)
+        m_file.addSeparator()
         quit_ = m_file.addAction("Quit")
         quit_.setShortcut(QKeySequence("Ctrl+Q"))
         quit_.triggered.connect(self.close)
@@ -1457,6 +1459,13 @@ class MainWindow(QMainWindow):
             saved.append(out.name)
         self.status.setText("Saved " + " and ".join(saved) + ": run the top file, flip the part over its X axis, "
                             "then run the bottom file.")
+
+    def send_to_phobicccp(self):
+        if self.project is None:
+            QMessageBox.information(self, "No project", "Open a project first.")
+            return
+        from . import send
+        send.dialog(self).exec()
 
     # ---- history ---------------------------------------------------------------------
 
