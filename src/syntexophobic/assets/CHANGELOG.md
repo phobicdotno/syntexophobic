@@ -5,6 +5,13 @@ every release, read from this file.
 
 ## Unreleased
 
+**Windows installer**
+- Windows now gets an installer, `Syntexophobic-<version>-windows-x64.msi`, next to the zip.
+  It installs for the current user without administrator rights, with a Start menu entry,
+  the program's icon and an uninstall entry under Settings → Apps.
+- In the installed copy, *Update* downloads the new installer and runs it when Syntexophobic
+  restarts. The unpacked zip's update bar points to the installer.
+
 **History**
 - A Subway tab in the History panel: each variant is a coloured line, each saved version a
   station. Hover a station to see its note and what it changed (files and changed lines);

@@ -29,10 +29,15 @@ start says macOS cannot check it: System Settings → Privacy & Security → *Op
 `/Applications/Syntexophobic.app/Contents/MacOS/Syntexophobic install-mcp`. Build it on a Mac
 with `./tools/build-macos.sh`.
 
-**On Windows** (x64): download `Syntexophobic-<version>-windows-x64.zip`, unpack it and run
-`Syntexophobic\Syntexophobic.exe` (SmartScreen: *More info* → *Run anyway*). It carries its
-own Python and git. For Claude Code: `Syntexophobic.exe install-mcp`. Build it on Windows in
-Git Bash with `./tools/build-windows.sh`. The update bar says where to download a new version.
+**On Windows** (x64): download `Syntexophobic-<version>-windows-x64.msi` and run it. It installs
+for you alone, in `%LOCALAPPDATA%\Programs\Syntexophobic`, so it needs no administrator, and adds
+a Start menu entry and an uninstall entry under Settings → Apps. It is not signed, so SmartScreen
+asks first (*More info* → *Run anyway*), and a managed work PC may refuse it. Or download
+`Syntexophobic-<version>-windows-x64.zip`, unpack it and run `Syntexophobic\Syntexophobic.exe`.
+Either carries its own Python and git. For Claude Code: `Syntexophobic.exe install-mcp`. Build
+both on Windows in Git Bash with `./tools/build-windows.sh` (needs WiX 5 for the installer). In
+the installed copy, *Update* in the update bar downloads the new installer and runs it when
+Syntexophobic restarts; the unpacked zip says where to download it.
 
 **Releases** are built by GitHub Actions: pushing a version tag (`git tag v0.6.3 && git push
 origin v0.6.3`, after the version in `pyproject.toml` and a `## v0.6.3` section in

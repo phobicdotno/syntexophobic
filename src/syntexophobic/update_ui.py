@@ -1,5 +1,5 @@
 """The "Update available" bar above the 3D view: the new version, what changed in it, and
-an Update button that installs it (the AppImage or the macOS app) or shows the command
+an Update button that installs it (the AppImage, the macOS app or the Windows installer) or shows the command
 that does."""
 
 from __future__ import annotations
@@ -234,9 +234,11 @@ class UpdateBar(QFrame):
 
     def _update_tip(self) -> str:
         app = update.running_build()
-        if update.running_windows_build():
+        if app is None and update.running_windows_build():
             return f"Shows where to download {self.pending.latest.asset or 'the new version'}"
         if app and self.pending.latest.asset_url:
+            if self.pending.latest.asset.endswith(".msi"):
+                return f"Download {self.pending.latest.asset} and install it when Syntexophobic restarts"
             if app.suffix == ".app":
                 return f"Download {self.pending.latest.asset} and put it in place of {app.name}"
             return f"Download {self.pending.latest.asset} next to {app.name} and start it from now on"
@@ -256,11 +258,16 @@ class UpdateBar(QFrame):
     def install(self, install=update.install, confirm=confirm_install):
         up = self.pending
         app = update.running_build()
-        if (folder := update.running_windows_build()) is not None:
-            QMessageBox.information(
-                self.window(), "Update Syntexophobic",
-                f"Download {up.latest.asset or 'the Windows build'} from {up.latest.page}, close "
-                f"Syntexophobic and unpack it in place of {folder}.")
+        if app is None and (folder := update.running_windows_build()) is not None:
+            if up.latest.asset.endswith(".msi"):          # unpacked from the zip: move to the installer
+                how = (f"Download {up.latest.asset} from {up.latest.page} and run it: it installs "
+                       "Syntexophobic for you alone (no administrator needed), with a Start menu "
+                       "entry, and updates itself from then on. Then delete "
+                       f"{folder}, the unpacked copy you are running now.")
+            else:
+                how = (f"Download {up.latest.asset or 'the Windows build'} from {up.latest.page}, "
+                       f"close Syntexophobic and unpack it in place of {folder}.")
+            QMessageBox.information(self.window(), "Update Syntexophobic", how)
             return
         if app is None or not up.latest.asset_url:
             cmd = update.how_to_update()
@@ -295,8 +302,11 @@ class UpdateBar(QFrame):
         where = (f"{home(done.links[0])} now starts it" if done.links
                  else f"{home(done.path)} is the new version" if done.path.suffix == ".app"
                  else f"saved as {home(done.path)}")
-        self.text.setText(f"<b>Syntexophobic {html.escape(self.pending.latest.version)} is installed</b>: "
-                          f"{html.escape(where)}. Restart to use it.")
+        v = html.escape(self.pending.latest.version)
+        if done.path.suffix == ".msi":         # Windows: installed when this has closed
+            self.text.setText(f"<b>Syntexophobic {v} is downloaded</b>. Restart to install it.")
+        else:
+            self.text.setText(f"<b>Syntexophobic {v} is installed</b>: {html.escape(where)}. Restart to use it.")
         self.b_update.hide()
         self.b_skip.hide()
         self.b_restart.show()
@@ -304,8 +314,9 @@ class UpdateBar(QFrame):
         fetched = (f" Downloaded {done.downloaded / 1e6:.1f} MB of {size / 1e6:.0f} MB (only what changed)."
                    if size and 0 < done.downloaded < size else "")
         if self._dlg is not None:
-            self._dlg.finished(f"Syntexophobic {self.pending.latest.version} is installed. "
-                               "Restart to use it.")
+            self._dlg.finished(f"Syntexophobic {self.pending.latest.version} is downloaded. Restart to install it."
+                               if done.path.suffix == ".msi" else
+                               f"Syntexophobic {self.pending.latest.version} is installed. Restart to use it.")
         self.changed.emit(f"Installed Syntexophobic {self.pending.latest.version}.{fetched}")
 
     def _install_failed(self, err: str):
@@ -322,6 +333,11 @@ class UpdateBar(QFrame):
         if not self.installed:
             return
         start = self.installed.start
+        if start.suffix == ".msi":             # Windows: the installer runs once this has closed
+            folder = update.running_build()
+            if self.window().close():
+                update.run_installer(start, folder)
+            return
         # a macOS app starts through `open`; -n: a new instance, as this one is still running
         started = (QProcess.startDetached("open", ["-n", str(start)]) if start.suffix == ".app"
                    else QProcess.startDetached(str(start), []))

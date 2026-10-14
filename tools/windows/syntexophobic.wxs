@@ -1,0 +1,52 @@
+<!-- The Windows installer (WiX 5), built by build-windows.sh from the same folder as the zip:
+     installs Syntexophobic for the current user only, in %LOCALAPPDATA%\Programs\Syntexophobic,
+     so it needs no administrator. A Start menu entry, the program's icon, and an entry under
+     Settings > Apps to uninstall it. A newer version's installer replaces the installed one
+     (MajorUpgrade, by the UpgradeCode, which must never change).
+
+     The updater finds an installed copy by HKCU\Software\Syntexophobic\InstallFolder.
+     Uninstalling also removes what the program wrote into its folder (Python's __pycache__). -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+  <Package Name="Syntexophobic" Manufacturer="phobic" Version="$(Version)"
+           UpgradeCode="4A56E564-CF48-4FCB-8182-A8B5D389BA4E" Scope="perUser" Language="1033">
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Syntexophobic is already installed." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <Icon Id="syntexophobic.ico" SourceFile="$(Icon)" />
+    <Property Id="ARPPRODUCTICON" Value="syntexophobic.ico" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/phobicdotno/syntexophobic" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+
+    <!-- where the installed copy is, for removing its leftovers on uninstall -->
+    <Property Id="APPFOLDER">
+      <RegistrySearch Root="HKCU" Key="Software\Syntexophobic" Name="InstallFolder" Type="raw" />
+    </Property>
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="UserPrograms" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="Syntexophobic" />
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+
+    <ComponentGroup Id="Program" Directory="INSTALLFOLDER">
+      <Files Include="!(bindpath.app)\**" />
+    </ComponentGroup>
+
+    <Component Id="StartMenu" Directory="ProgramMenuFolder">
+      <Shortcut Id="StartMenuShortcut" Name="Syntexophobic" Description="CAD with git-style history"
+                Target="[INSTALLFOLDER]Syntexophobic.exe" WorkingDirectory="INSTALLFOLDER"
+                Icon="syntexophobic.ico" />
+      <RegistryValue Root="HKCU" Key="Software\Syntexophobic" Name="InstallFolder" Type="string"
+                     Value="[INSTALLFOLDER]" KeyPath="yes" />
+      <util:RemoveFolderEx On="uninstall" Property="APPFOLDER" />
+    </Component>
+
+    <Feature Id="Main">
+      <ComponentGroupRef Id="Program" />
+      <ComponentRef Id="StartMenu" />
+    </Feature>
+  </Package>
+</Wix>
