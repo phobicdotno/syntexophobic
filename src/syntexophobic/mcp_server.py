@@ -70,8 +70,9 @@ def _run(cmd: str, args: dict):
             _headless.open_project(last)
     result = A.run(_headless, cmd, args)
     if _headless.project is not None:
+        _headless.project.pack()                    # a .cccp always holds the latest edit
         A.STATE.mkdir(parents=True, exist_ok=True)
-        _STATE.write_text(json.dumps({"project": str(_headless.project.folder)}))
+        _STATE.write_text(json.dumps({"project": str(_headless.project.location)}))
     return result
 
 
@@ -90,7 +91,8 @@ def status() -> str:
 
 @server.tool()
 def open_project(path: str) -> str:
-    """Open a project folder (with job.toml), or a STEP or STL file (creates a <name>-cam project)."""
+    """Open a .cccp project file, a project folder (with job.toml), or a STEP or STL file
+    (creates a <name>-cam project)."""
     return _out(_call("open_project", path=path))
 
 
@@ -103,7 +105,8 @@ def convert_stl(stl: str, step: str = "", merge_flat: bool = True) -> str:
 
 @server.tool()
 def new_design(folder: str, name: str) -> str:
-    """Start a new project with an empty designed part in `folder`."""
+    """Start a new project with an empty designed part in `folder` (a folder, or a path
+    ending in .cccp to keep the whole project, history included, in that one file)."""
     return _out(_call("new_design", folder=folder, name=name))
 
 

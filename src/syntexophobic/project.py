@@ -1,29 +1,66 @@
-"""Opening, creating and running a project folder (job.toml + model + git history)."""
+"""Opening, creating and running a project folder (job.toml + model + git history),
+on its own or kept in a .cccp project file (see cccp.py)."""
 
 from __future__ import annotations
 
 import shutil
 from pathlib import Path
 
-from . import cam, gcode, geometry
+from . import cam, cccp, gcode, geometry
 from . import job as jobfile
 from .history import History
 
 
 class Project:
-    def __init__(self, folder: str | Path):
+    def __init__(self, folder: str | Path, archive: str | Path | None = None):
         self.folder = Path(folder)
         self.job = jobfile.load(self.folder / jobfile.JOB_FILE)
         self.history = History(self.folder)
+        self.archive: Path | None = None
+        if archive:
+            self.keep_in(archive, pack=False)
         self._shape = None
         self._shape_up = None
         self._geometry_cache: dict = {}
         self._setup = None
 
     @classmethod
+    def open(cls, path: str | Path) -> "Project":
+        """A .cccp file (unpacked to its work folder), a project folder, or its job.toml."""
+        path = Path(path).expanduser()
+        if cccp.is_cccp(path):
+            return cls(cccp.unpack(path), archive=path)
+        if path.name == jobfile.JOB_FILE:
+            path = path.parent
+        return cls(path)
+
+    def keep_in(self, path: str | Path, pack: bool = True) -> "Project":
+        """From now on keep this project in the .cccp file at `path`: it is written now, and
+        again on every saved version (and whenever the app calls pack())."""
+        self.archive = Path(path).expanduser()
+        if self.archive.suffix.lower() != cccp.SUFFIX:
+            self.archive = self.archive.with_name(self.archive.name + cccp.SUFFIX)
+        self.history.on_save = self.pack
+        if pack:
+            self.pack()
+        return self
+
+    def pack(self) -> None:
+        """Write the project, history and all, into its .cccp file (if it has one)."""
+        if self.archive is not None:
+            cccp.pack(self.folder, self.archive)
+
+    @property
+    def location(self) -> Path:
+        """What the user opened: the .cccp file, or the project folder."""
+        return self.archive or self.folder
+
+    @classmethod
     def create(cls, folder: str | Path, model: str | Path) -> "Project":
-        """New project folder from a STEP or STL file: copies the model, writes a default job, first commit."""
-        folder, model = Path(folder), Path(model)
+        """New project from a STEP or STL file: copies the model, writes a default job, first commit.
+        `folder` is a project folder, or a .cccp file to keep the project in."""
+        folder, archive = _target(folder)
+        model = Path(model)
         folder.mkdir(parents=True, exist_ok=True)
         if model.resolve().parent != folder.resolve():
             shutil.copy2(model, folder / model.name)
@@ -31,13 +68,14 @@ class Project:
         h = History(folder)
         h.init()
         h.save(f"New project from {model.name}")
-        return cls(folder)
+        return cls(folder)._kept(archive)
 
     @classmethod
     def create_design(cls, folder: str | Path, name: str) -> "Project":
-        """New project with an empty designed part (model.toml) instead of a STEP file."""
+        """New project with an empty designed part (model.toml) instead of a STEP file.
+        `folder` is a project folder, or a .cccp file to keep the project in."""
         from .model import Part
-        folder = Path(folder)
+        folder, archive = _target(folder)
         folder.mkdir(parents=True, exist_ok=True)
         Part(name).save(folder)
         (folder / "sketches" / ".keep").touch()
@@ -45,7 +83,10 @@ class Project:
         h = History(folder)
         h.init()
         h.save(f"New design {name}")
-        return cls(folder)
+        return cls(folder)._kept(archive)
+
+    def _kept(self, archive: Path | None) -> "Project":
+        return self.keep_in(archive) if archive else self
 
     def to_design(self) -> None:
         """Turn a STEP / STL project into a design: the model becomes the first feature
@@ -148,6 +189,16 @@ class Project:
         tps = toolpaths if toolpaths is not None else self.toolpaths()
         tps = [t for t in tps if getattr(t, "side", "top") == side]
         return gcode.grbl(self.job, tps, self.setup().stock, side=side)
+
+
+def _target(folder: str | Path) -> tuple[Path, Path | None]:
+    """(folder to work in, .cccp file or None) for a new project at `folder`."""
+    folder = Path(folder).expanduser()
+    if not cccp.is_cccp(folder):
+        return folder, None
+    work = cccp.work_folder(folder)
+    cccp.remove(work)
+    return work, folder
 
 
 class Undo:

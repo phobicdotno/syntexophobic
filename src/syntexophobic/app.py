@@ -14,11 +14,12 @@ from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDockWidget, QDoubleSpinBox, QFileDialog,
     QFormLayout, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
     QListWidgetItem, QMainWindow, QMessageBox, QPlainTextEdit, QPushButton, QScrollArea, QSpinBox,
-    QSlider, QSplitter, QStackedWidget, QToolBar, QVBoxLayout, QWidget,
+    QSlider, QSplitter, QStackedWidget, QTabWidget, QToolBar, QVBoxLayout, QWidget,
 )
 
 from . import desktop, geometry
 from .job import Operation, Tool
+from .cccp import SUFFIX as CCCP
 from .project import Project
 
 CHOICES = {
@@ -252,6 +253,10 @@ class MainWindow(QMainWindow):
         self._build_toolbar()
         self._build_job_dock()
         self._build_history_dock()
+        self._pack_soon = QTimer(self)
+        self._pack_soon.setSingleShot(True)
+        self._pack_soon.setInterval(2000)
+        self._pack_soon.timeout.connect(self._pack)
         self._build_design_dock()
         self._build_ribbon()
         self._build_assistant_dock()
@@ -327,6 +332,7 @@ class MainWindow(QMainWindow):
         self.a_new_design = act("New design…", self.new_design, "design", "Ctrl+Shift+N", m_file)
         act("New from STEP / STL…", self.new_project, "new", "Ctrl+N", m_file)
         act("Open project…", self.open_project, "open", "Ctrl+O", m_file)
+        self.a_save_as = act("Save project as…", self.save_project_as, "export", "Ctrl+Shift+S", m_file, toolbar=False)
         tb.addSeparator()
         self.a_generate = act("Generate toolpaths", self.generate, "generate", "Ctrl+G", m_paths, toolbar=False)
         self.a_simulate = act("Simulate", self.simulate, "simulate", "Ctrl+R", m_paths, toolbar=False)
@@ -611,7 +617,20 @@ class MainWindow(QMainWindow):
         split = QSplitter(Qt.Vertical)
         self.l_versions = QListWidget()
         self.l_versions.currentRowChanged.connect(self._show_diff)
-        split.addWidget(self.l_versions)
+        from .history_ui import SubwayMap
+        self.subway = SubwayMap()
+        self.subway.describe = lambda ref: self.project.history.changes(ref)
+        self.subway.picked.connect(self._pick_version)
+        subway_scroll = QScrollArea()
+        subway_scroll.setWidget(self.subway)
+        subway_scroll.setWidgetResizable(True)
+        self.history_tabs = QTabWidget()
+        self.history_tabs.setDocumentMode(True)
+        self.history_tabs.addTab(self.l_versions, "List")
+        self.history_tabs.addTab(subway_scroll, "Subway")
+        self.history_tabs.setTabToolTip(1, "Every variant as a line, every saved version a station. "
+                                           "Hover a station to see what it changed.")
+        split.addWidget(self.history_tabs)
         self.t_diff = QPlainTextEdit()
         self.t_diff.setReadOnly(True)
         self.t_diff.setFont(QFont("monospace", 9))
@@ -637,7 +656,7 @@ class MainWindow(QMainWindow):
         self.viewer.show_toolpaths(paths, self.c_rapids.isChecked())
 
     def _enable(self, on: bool):
-        for w in (self.a_generate, self.a_simulate, self.a_export, self.job_dock, self.history_dock,
+        for w in (self.a_generate, self.a_simulate, self.a_export, self.a_save_as, self.job_dock, self.history_dock,
                   self.design_panel):
             w.setEnabled(on)
 
@@ -805,16 +824,12 @@ class MainWindow(QMainWindow):
 
     def new_design(self):
         from .model import Part
-        folder = QFileDialog.getExistingDirectory(self, "Folder for the new design (pick or create an empty one)",
-                                                  str(Path.home()))
-        if not folder:
-            return
         name, ok = QInputDialog.getText(self, "New design", "Part name:", text="part")
         if not ok or not name.strip():
             return
-        target = Path(folder)
-        if any(target.iterdir()):
-            target = target / name.strip()
+        target = self._ask_project_file(str(Path.home() / f"{name.strip()}{CCCP}"))
+        if not target:
+            return
         try:
             project = Project.create_design(target, name.strip())
         except Exception as e:
@@ -979,13 +994,9 @@ class MainWindow(QMainWindow):
         step, _ = QFileDialog.getOpenFileName(self, "Model to machine", str(Path.home()), "Models (*.step *.stp *.stl *.STEP *.STP *.STL)")
         if not step:
             return
-        default = str(Path(step).with_suffix("")) + "-cam"
-        folder = QFileDialog.getExistingDirectory(self, "Folder for the new project (pick or create an empty one)", str(Path(default).parent))
-        if not folder:
+        target = self._ask_project_file(str(Path(step).with_suffix("")) + f"-cam{CCCP}")
+        if not target:
             return
-        target = Path(folder)
-        if any(target.iterdir()):
-            target = target / (Path(step).stem + "-cam")
         try:
             QApplication.setOverrideCursor(Qt.WaitCursor)
             project = Project.create(target, step)
@@ -1014,10 +1025,19 @@ class MainWindow(QMainWindow):
             QApplication.restoreOverrideCursor()
         self.statusBar().showMessage(f"Saved {dst}", 8000)
 
+    def _ask_project_file(self, default: str) -> Path | None:
+        """Where to keep a new project: a .cccp file holding it and its whole history."""
+        path, _ = QFileDialog.getSaveFileName(self, "Save the new project as", default, f"Syntexophobic project (*{CCCP})")
+        if not path:
+            return None
+        return Path(path) if path.lower().endswith(CCCP) else Path(path + CCCP)
+
     def open_project(self):
-        folder = QFileDialog.getExistingDirectory(self, "Project folder (contains job.toml)", str(Path.home()))
-        if folder:
-            self.load_path(folder)
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Open project", str(Path.home()),
+            f"Syntexophobic projects (*{CCCP} job.toml);;Project file (*{CCCP});;Project folder's job.toml (job.toml)")
+        if path:
+            self.load_path(path)
 
     def load_path(self, path: str):
         p = Path(path)
@@ -1025,9 +1045,44 @@ class MainWindow(QMainWindow):
             if p.suffix.lower() in (".step", ".stp", ".stl"):
                 self.load(Project.create(p.with_name(p.stem + "-cam"), p))
             else:
-                self.load(Project(p))
+                self.load(Project.open(p))
         except Exception as e:
             QMessageBox.critical(self, "Could not open", str(e))
+
+    def save_project_as(self):
+        """Keep the open project (a folder, or another .cccp) in a new .cccp file from now on."""
+        if self.project is None:
+            return
+        default = self.project.archive or self.project.folder.with_name(self.project.folder.name + CCCP)
+        path, _ = QFileDialog.getSaveFileName(self, "Save project as", str(default), f"Syntexophobic project (*{CCCP})")
+        if not path:
+            return
+        try:
+            self.project.keep_in(path)
+        except OSError as e:
+            QMessageBox.critical(self, "Could not save", str(e))
+            return
+        self._show_title()
+        self.status.setText(f"Saved {self.project.archive.name}: the project and its whole history in one file.")
+
+    def _show_title(self):
+        where = f" ({self.project.archive.name})" if self.project.archive else ""
+        self.setWindowTitle(f"Syntexophobic — {self.project.job.name}{where}")
+
+    def _pack(self):
+        """Write the open project back into its .cccp file (no-op for a plain folder)."""
+        if self.project is None:
+            return
+        try:
+            self.project.pack()
+        except OSError as e:
+            from . import faults
+            faults.log.warning("could not write %s: %s", self.project.archive, e)
+            self.status.setText(f"Could not write {self.project.archive}: {e}")
+
+    def closeEvent(self, e):
+        self._pack()
+        super().closeEvent(e)
 
     # ---- remote control (MCP / Claude Code) ------------------------------------------------
 
@@ -1146,6 +1201,8 @@ class MainWindow(QMainWindow):
     def load(self, project: Project):
         from .project import Undo
         self.finish_sketch(save=False)
+        if self.project is not None and self.project is not project:
+            self._pack()
         self.project = project
         if hasattr(self, "session"):
             self.session.project = project
@@ -1159,7 +1216,7 @@ class MainWindow(QMainWindow):
         else:
             self.part = None
         self._show_design_start()
-        self.setWindowTitle(f"Syntexophobic — {project.job.name}")
+        self._show_title()
         self._fill_job()
         self._refresh_model()
         self._refresh_history()
@@ -1414,6 +1471,8 @@ class MainWindow(QMainWindow):
             item.setToolTip(v.hash)
             self.l_versions.addItem(item)
         self.l_versions.blockSignals(False)
+        self.subway.set_stations(h.subway())
+        self.subway.select("")
         self.t_diff.clear()
         from . import history
         if not history.available():
@@ -1423,6 +1482,7 @@ class MainWindow(QMainWindow):
         self._refresh_history_status()
 
     def _refresh_history_status(self):
+        self._pack_soon.start()             # edits reach the .cccp file shortly after they are made
         dirty = self.project.history.has_changes()
         self.b_save.setText("Save version •" if dirty else "Save version")
 
@@ -1439,8 +1499,16 @@ class MainWindow(QMainWindow):
         self._refresh_history()
         self.status.setText(f"Saved version: {msg}")
 
+    def _pick_version(self, ref: str):
+        """A station clicked on the subway map: pick the same version in the list."""
+        for row, v in enumerate(self.versions):
+            if v.hash == ref:
+                self.l_versions.setCurrentRow(row)
+                return
+
     def _show_diff(self, row):
         if 0 <= row < len(self.versions):
+            self.subway.select(self.versions[row].hash)
             d = self.project.history.diff(self.versions[row].hash)
             self.t_diff.setPlainText(d or "The job is the same as in this version.")
 

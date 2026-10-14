@@ -10,11 +10,11 @@ def main() -> int:
     ap = argparse.ArgumentParser(prog="syntexophobic", description=__doc__)
     sub = ap.add_subparsers(dest="cmd")
     g = sub.add_parser("gcode", help="generate G-code for a project without opening the window")
-    g.add_argument("project", help="project folder (contains job.toml)")
+    g.add_argument("project", help="project file (.cccp) or folder (contains job.toml)")
     g.add_argument("-o", "--output", help="output file (default: <name>.nc in the project)")
-    n = sub.add_parser("new", help="create a project folder from a STEP or STL file")
+    n = sub.add_parser("new", help="create a project from a STEP or STL file")
     n.add_argument("step")
-    n.add_argument("folder", nargs="?")
+    n.add_argument("folder", nargs="?", help="project folder, or a .cccp file to keep it in")
     sm = sub.add_parser("simulate", help="simulate the toolpaths and check for gouges (exit 1 if any)")
     sm.add_argument("project")
     sm.add_argument("--res", type=float, default=0.25, help="grid size in mm (default 0.25)")
@@ -26,7 +26,7 @@ def main() -> int:
     sub.add_parser("mcp", help="MCP server on stdio, for Claude Code (drives the open window, or works headless)")
     sub.add_parser("install-mcp", help="register the MCP server with Claude Code (user scope)")
     sub.add_parser("backends", help="list compute backends and the devices they would use")
-    ap.add_argument("path", nargs="?", help="project folder or STEP file to open")
+    ap.add_argument("path", nargs="?", help="project file (.cccp), project folder or STEP file to open")
     ap.add_argument("--backend", help="compute backend: auto (default), numpy, cupy")
     ap.add_argument("--version", action="store_true", help="print the version and exit")
     argv = sys.argv[1:]
@@ -67,9 +67,10 @@ def main() -> int:
     if args.cmd == "gcode":
         from pathlib import Path
         from .project import Project
-        p = Project(args.project)
+        p = Project.open(args.project)
         tps = p.toolpaths()
-        out = Path(args.output or p.folder / f"{p.job.name}.nc")
+        beside = p.archive.parent if p.archive else p.folder          # next to a .cccp, not in its unpacked copy
+        out = Path(args.output or beside / f"{p.job.name}.nc")
         out.write_text(p.gcode(tps))
         for tp in tps:
             print(f"{tp.op.name}: {len(tp.levels)} levels, {tp.minutes():.1f} min")
@@ -78,7 +79,7 @@ def main() -> int:
     if args.cmd == "simulate":
         from .project import Project
         from . import gcode, simulate
-        p = Project(args.project)
+        p = Project.open(args.project)
         if args.gcode:
             from pathlib import Path
             tps = gcode.read(Path(args.gcode).read_text(), p.job, p.setup().stock)
@@ -110,7 +111,7 @@ def main() -> int:
         from .project import Project
         step = Path(args.step)
         p = Project.create(args.folder or step.with_name(step.stem + "-cam"), step)
-        print(f"created {p.folder}")
+        print(f"created {p.location}")
         return 0
 
     from .app import run

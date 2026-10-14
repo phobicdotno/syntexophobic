@@ -116,7 +116,7 @@ class Session:
         p = Path(path).expanduser()
         if p.suffix.lower() in (".step", ".stp", ".stl"):
             return self.new_from_step(str(p))
-        self.project = Project(p)
+        self.project = Project.open(p)
         return self.status()
 
     def new_design(self, folder: str, name: str) -> dict:
@@ -143,6 +143,8 @@ class Session:
         if p is None:
             return {"project": None, "hint": "open_project, new_design or new_from_step"}
         out = {"project": str(p.folder), "model": p.job.model, "job": _clean(p.job)}
+        if p.archive:
+            out["file"] = str(p.archive)
         if p.job.model.endswith(".toml"):
             part = Part.load(p.folder / p.job.model)
             out["design"] = {"parameters": part.parameters, "sketches": sorted(part.sketches),
