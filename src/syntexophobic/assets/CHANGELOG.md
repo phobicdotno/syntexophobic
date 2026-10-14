@@ -3,6 +3,15 @@
 Each release has a version and a build number; Help → About shows a one-line summary of
 every release, read from this file.
 
+## v0.7.1 (build 12) — 2026-10-14
+
+**Send to phobiCCCP**
+- File → *Send to phobiCCCP…* hands the open project to phobiCCCP for machining: the part
+  as a 3D model, the XY sketches as vectors, the stock size and the whole project with its
+  history (.cccp). phobiCCCPs on the local network are found by themselves; over Tailscale,
+  type the computer's name or address. phobiCCCP asks before it opens anything.
+- `syntexophobic send <project> [host[:port]]` does the same from the command line.
+
 ## v0.7.0 (build 11) — 2026-10-13
 
 **Design workspace**

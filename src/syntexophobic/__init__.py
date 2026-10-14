@@ -23,6 +23,9 @@ def main() -> int:
     cv.add_argument("stl")
     cv.add_argument("step", nargs="?", help="output (default: the STL's name with .step)")
     cv.add_argument("--keep-triangles", action="store_true", help="do not merge flat triangles into faces")
+    se = sub.add_parser("send", help="send a project to phobiCCCP on this network or Tailscale")
+    se.add_argument("project")
+    se.add_argument("target", nargs="?", help="host[:port] where phobiCCCP runs (default: the one found nearby)")
     sub.add_parser("mcp", help="MCP server on stdio, for Claude Code (drives the open window, or works headless)")
     sub.add_parser("install-mcp", help="register the MCP server with Claude Code (user scope)")
     sub.add_parser("backends", help="list compute backends and the devices they would use")
@@ -98,6 +101,23 @@ def main() -> int:
         if not bad:
             print("no gouges, no rapids into stock")
         return 1 if bad else 0
+    if args.cmd == "send":
+        from . import send
+        from .project import Project
+        target = args.target
+        if not target:
+            peers = send.discover()
+            if len(peers) != 1:
+                print("found " + (", ".join(f"{p.name} ({p.target})" for p in peers) or "no phobiCCCP")
+                      + "; name one: syntexophobic send <project> <host[:port]>")
+                return 1
+            target = peers[0].target
+        try:
+            print(f"phobiCCCP at {target}: {send.send_project(Project(args.project), target)}")
+        except send.SendError as e:
+            print(e)
+            return 1
+        return 0
     if args.cmd == "convert":
         from pathlib import Path
         from . import geometry

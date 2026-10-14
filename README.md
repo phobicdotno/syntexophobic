@@ -237,6 +237,16 @@ The `carbide` post follows Carbide Create's own `shapeoko.post`, including the C
 `STOCK/BLOCK` and `TOOL/MILL` comments. Work zero is the stock's front-left top corner by
 default (`zero = "model"` uses the CAD origin).
 
+### Send to phobiCCCP
+
+CAM beyond this lives in [phobiCCCP](https://github.com/phobicdotno/phobiCCCP). File →
+*Send to phobiCCCP…* (or `syntexophobic send <project> [host[:port]]`) sends the open project
+to a phobiCCCP running on this computer, the local network (found by itself) or over Tailscale
+(type its Tailscale name or address): the part as an STL placed on the stock, every XY sketch
+as a DXF and the whole project folder with its history as a `.cccp` file. phobiCCCP asks
+before it opens it as a new design, with the part as its 3D model. The link uses port 47652
+(TCP, and UDP for finding phobiCCCP); the protocol is described in `send.py`.
+
 ### Compute backends
 
 Slicing and simulation run through a pluggable backend with a numpy-compatible API:
