@@ -138,31 +138,55 @@ jobs:
         timeout-minutes: 10
         run: |
           Add-Type -AssemblyName System.Windows.Forms, System.Drawing
-          Add-Type -Namespace W -Name U -MemberDefinition @'
-            [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindow(string c, string t);
-            [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindowEx(IntPtr p, IntPtr a, string c, string t);
+          Add-Type -TypeDefinition @'
+          using System; using System.Text; using System.Collections.Generic; using System.Runtime.InteropServices;
+          public static class Win {
+            delegate bool Each(IntPtr h, IntPtr l);
+            [DllImport("user32.dll")] static extern bool EnumWindows(Each f, IntPtr l);
+            [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr p, Each f, IntPtr l);
+            [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+            [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+            [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetClassName(IntPtr h, StringBuilder s, int n);
             [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
             [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
             public struct RECT { public int L, T, R, B; }
+            static string Text(IntPtr h) { var s = new StringBuilder(512); GetWindowText(h, s, 512); return s.ToString(); }
+            static string Class(IntPtr h) { var s = new StringBuilder(256); GetClassName(h, s, 256); return s.ToString(); }
+            static List<IntPtr> Tops() { var a = new List<IntPtr>(); EnumWindows((h, l) => { if (IsWindowVisible(h)) a.Add(h); return true; }, IntPtr.Zero); return a; }
+            static List<IntPtr> Kids(IntPtr p) { var a = new List<IntPtr>(); EnumChildWindows(p, (h, l) => { a.Add(h); return true; }, IntPtr.Zero); return a; }
+            // the visible window titled so, with a visible control showing that text
+            public static IntPtr Page(string title, string control) {
+              foreach (var t in Tops()) if (Text(t) == title)
+                foreach (var k in Kids(t)) if (IsWindowVisible(k) && Text(k) == control) return t;
+              return IntPtr.Zero;
+            }
+            public static string Dump() {
+              var o = new StringBuilder();
+              foreach (var t in Tops()) { var x = Text(t); if (x.Length == 0) continue;
+                o.AppendLine("[" + Class(t) + "] " + x);
+                foreach (var k in Kids(t)) o.AppendLine("    " + Class(k) + ": " + Text(k)); }
+              return o.ToString();
+            }
+          }
           '@
           New-Item -ItemType Directory -Force pages | Out-Null
           function Wait-Page($button) {           # the installer's window, once it shows that button
             for ($i = 0; $i -lt 240; $i++) {
-              $h = [W.U]::FindWindow($null, 'Syntexophobic Setup')
-              if ($h -ne [IntPtr]::Zero -and [W.U]::FindWindowEx($h, [IntPtr]::Zero, 'Button', $button) -ne [IntPtr]::Zero) {
-                Start-Sleep 2; return $h
-              }
+              $h = [Win]::Page('Syntexophobic Setup', $button)
+              if ($h -ne [IntPtr]::Zero) { Start-Sleep 2; return $h }
               Start-Sleep -Milliseconds 500
             }
-            throw 'the installer page did not show'
+            Write-Output ([Win]::Dump())
+            if (Test-Path install-ui.log) { Get-Content install-ui.log -Tail 40 }
+            throw "the installer page with $button did not show"
           }
           function Shoot($h, $name) {
-            $r = New-Object W.U+RECT; [W.U]::GetWindowRect($h, [ref]$r) | Out-Null
+            $r = New-Object Win+RECT; [Win]::GetWindowRect($h, [ref]$r) | Out-Null
             $bmp = New-Object System.Drawing.Bitmap ($r.R - $r.L), ($r.B - $r.T)
             [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($r.L, $r.T, 0, 0, $bmp.Size)
-            $bmp.Save("pages/$name.png")
+            $bmp.Save("$PWD/pages/$name.png")
           }
-          function Press($h) { [W.U]::SetForegroundWindow($h) | Out-Null; Start-Sleep 1; [System.Windows.Forms.SendKeys]::SendWait('{ENTER}') }
+          function Press($h) { [Win]::SetForegroundWindow($h) | Out-Null; Start-Sleep 1; [System.Windows.Forms.SendKeys]::SendWait('{ENTER}') }
           $msi = (Get-Item dist/*.msi).FullName
           $p = Start-Process msiexec -ArgumentList '/i', "`"$msi`"", '/l*v', 'install-ui.log' -PassThru
           $h = Wait-Page '&Install'
@@ -176,6 +200,11 @@ jobs:
           if (-not (Test-Path "$env:LOCALAPPDATA\Programs\Syntexophobic\Syntexophobic.exe")) { throw 'nothing installed' }
           $p = Start-Process msiexec -ArgumentList '/x', "`"$msi`"", '/qn' -Wait -PassThru
           if ($p.ExitCode) { throw "uninstall failed: $($p.ExitCode)" }
+          foreach ($f in Get-ChildItem pages/*.png) {    # also in the log, for whoever cannot download artifacts
+            Write-Output "::group::$($f.Name) as base64"
+            [Convert]::ToBase64String([IO.File]::ReadAllBytes($f.FullName)) -split '(.{4000})' | Where-Object { $_ } | ForEach-Object { "b64 $_" }
+            Write-Output '::endgroup::'
+          }
       - uses: actions/upload-artifact@v5
         if: always() && github.event_name == 'pull_request'
         with:
