@@ -3,7 +3,7 @@
 Each release has a version and a build number; Help → About shows a one-line summary of
 every release, read from this file.
 
-## Unreleased
+## v0.8.1 (build 14) — 2026-10-15
 
 **Error reports**
 - Every error while Syntexophobic is in use now goes back to the project's GitHub issues
