@@ -45,7 +45,8 @@ def _call(cmd: str, **args):
         raise
     except A.CommandError as e:
         raise ToolError(str(e) or f"{cmd} failed") from e
-    except Exception as e:
+    except Exception as e:  # not a refusal: a bug, logged and so reported (errors.py)
+        faults.log.error("mcp %s(%s) failed", cmd, json.dumps(args, default=str)[:300], exc_info=True)
         raise ToolError(f"{type(e).__name__}: {e}" if str(e) else type(e).__name__) from e
 
 
@@ -425,5 +426,7 @@ def screenshot() -> Image:
 
 
 def main() -> None:
+    from . import errors
     faults.setup_logging()
+    errors.install(qt=False, crashes=False)
     server.run("stdio")

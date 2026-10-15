@@ -3,6 +3,26 @@
 Each release has a version and a build number; Help → About shows a one-line summary of
 every release, read from this file.
 
+## Unreleased
+
+**Error reports**
+- Every error while Syntexophobic is in use now goes back to the project's GitHub issues
+  for analysis, not only the Assistant's faults: exceptions nothing caught (in the window
+  or a background thread), errors the program logs, the error and warning dialogs you see,
+  Qt's own critical errors, and a crash of the last run (found at the next start). Each
+  issue (labels `fault-report`, `app-error`) has the version and build, OS, the message,
+  the traceback, where in the program it happened, the open project and the log of what
+  led up to it, which now includes the menu and toolbar actions you used.
+- Repeats don't flood the issues: the same error goes to its open issue as a comment, is
+  sent once per run, at most once a day after that (with how many times it happened in
+  between), and no more than 20 reports go out per run. Help → *Send error reports
+  automatically* turns it off; it never sends from CI.
+
+**Testing**
+- Error reports: where an exception came from, once per run and once a day with the count,
+  the per-run limit, off switch and CI, a failed send retried next run, one issue then
+  comments, logged errors vs. warnings, error dialogs, a crash found at the next start.
+
 ## v0.8.0 (build 13) — 2026-10-14
 
 **Windows installer**

@@ -287,6 +287,10 @@ class MainWindow(QMainWindow):
         self.addToolBar(tb)
         self.toolbar = tb
         bar = self.menuBar()
+        # what the user did, for the log an error report ends with
+        from .faults import log
+        bar.triggered.connect(lambda a: log.info("menu: %s", a.text().replace("&", "")))
+        tb.actionTriggered.connect(lambda a: log.info("toolbar: %s", a.toolTip() or a.text()))
         m_file, m_edit = bar.addMenu("&File"), bar.addMenu("&Edit")
         m_paths, m_view = bar.addMenu("&Toolpaths"), bar.addMenu("&View")
         m_help = bar.addMenu("&Help")
@@ -295,6 +299,12 @@ class MainWindow(QMainWindow):
         self.a_auto_update.setCheckable(True)
         self.a_auto_update.setChecked(QSettings().value("update/auto", True, type=bool))
         self.a_auto_update.toggled.connect(lambda on: QSettings().setValue("update/auto", on))
+        self.a_error_reports = m_help.addAction("Send error reports automatically")
+        self.a_error_reports.setCheckable(True)
+        self.a_error_reports.setToolTip("Every error goes to the project's GitHub issues for analysis, "
+                                        "with the version, OS and what led up to it")
+        self.a_error_reports.setChecked(QSettings().value("errors/report", True, type=bool))
+        self.a_error_reports.toggled.connect(lambda on: QSettings().setValue("errors/report", on))
         m_help.addSeparator()
         m_help.addAction("&About Syntexophobic", lambda: __import__("syntexophobic.about", fromlist=["x"]).dialog(self).exec())
         self.a_undo = m_edit.addAction("Undo")
@@ -1650,10 +1660,12 @@ def run(path: str | None = None) -> int:
     app.setWindowIcon(QIcon(str(desktop.SVG)))
     desktop.integrate()                            # before the window, so the shell matches it at once
     _dark_palette(app)
-    from . import faults
+    from . import errors, faults
     faults.setup_logging()
     faults.log.info("Syntexophobic %s started", faults.environment().get("Version"))
+    reporter = errors.install(enabled=lambda: QSettings().value("errors/report", True, type=bool))
     win = MainWindow()
+    reporter.project = lambda: str(win.project.folder) if win.project is not None else ""
     win.show()
     if path:
         win.load_path(path)

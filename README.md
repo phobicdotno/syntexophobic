@@ -108,6 +108,13 @@ request, every tool call and its result, Claude's answer, a screenshot and the l
 added to the open issue. It uses your GitHub login (`gh auth login`, `GH_TOKEN`, or the token
 git keeps); without one nothing is sent. `SYNTEXOPHOBIC_NO_FAULT_REPORTS=1` turns it off.
 
+**Error reports:** every other error while you use the program goes there too: exceptions,
+logged errors, error and warning dialogs, Qt errors and a crash of the last run, each with
+the version, OS, traceback, open project and the log of what you did before it (label
+`app-error`). A repeat is a comment on its open issue, sent once per run and at most once a
+day after that, with the count in between; at most 20 reports per run. Help → *Send error
+reports automatically* turns it off.
+
 ## How it works
 
 A **project** is a folder with the model (a designed part or a STEP file), `job.toml` and a
