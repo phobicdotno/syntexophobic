@@ -100,6 +100,7 @@ jobs:
         run: |
           dotnet tool install --global wix --version 5.0.2
           wix extension add --global WixToolset.Util.wixext/5.0.2
+          wix extension add --global WixToolset.UI.wixext/5.0.2
       - run: ./tools/build-windows.sh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -132,6 +133,57 @@ jobs:
           $p = Start-Process msiexec -ArgumentList '/x', "`"$msi`"", '/qn', '/l*v', 'uninstall.log' -Wait -PassThru
           if ($p.ExitCode) { Get-Content uninstall.log -Tail 60; throw "uninstall failed: $($p.ExitCode)" }
           if (Test-Path $dir) { Get-ChildItem -Recurse $dir | Select-Object -First 20; throw "uninstall left $dir" }
+      - name: Install it by hand, through its pages, and photograph them
+        shell: pwsh
+        timeout-minutes: 10
+        run: |
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          Add-Type -Namespace W -Name U -MemberDefinition @'
+            [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindow(string c, string t);
+            [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindowEx(IntPtr p, IntPtr a, string c, string t);
+            [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+            [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
+            public struct RECT { public int L, T, R, B; }
+          '@
+          New-Item -ItemType Directory -Force pages | Out-Null
+          function Wait-Page($button) {           # the installer's window, once it shows that button
+            for ($i = 0; $i -lt 240; $i++) {
+              $h = [W.U]::FindWindow($null, 'Syntexophobic Setup')
+              if ($h -ne [IntPtr]::Zero -and [W.U]::FindWindowEx($h, [IntPtr]::Zero, 'Button', $button) -ne [IntPtr]::Zero) {
+                Start-Sleep 2; return $h
+              }
+              Start-Sleep -Milliseconds 500
+            }
+            throw 'the installer page did not show'
+          }
+          function Shoot($h, $name) {
+            $r = New-Object W.U+RECT; [W.U]::GetWindowRect($h, [ref]$r) | Out-Null
+            $bmp = New-Object System.Drawing.Bitmap ($r.R - $r.L), ($r.B - $r.T)
+            [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($r.L, $r.T, 0, 0, $bmp.Size)
+            $bmp.Save("pages/$name.png")
+          }
+          function Press($h) { [W.U]::SetForegroundWindow($h) | Out-Null; Start-Sleep 1; [System.Windows.Forms.SendKeys]::SendWait('{ENTER}') }
+          $msi = (Get-Item dist/*.msi).FullName
+          $p = Start-Process msiexec -ArgumentList '/i', "`"$msi`"", '/l*v', 'install-ui.log' -PassThru
+          $h = Wait-Page '&Install'
+          Shoot $h '1-splash'
+          Press $h                                   # Install
+          $h = Wait-Page 'OK'
+          Shoot $h '2-done'
+          Press $h                                   # OK
+          if (-not $p.WaitForExit(60000)) { throw 'the installer did not close on OK' }
+          if ($p.ExitCode) { Get-Content install-ui.log -Tail 60; throw "install failed: $($p.ExitCode)" }
+          if (-not (Test-Path "$env:LOCALAPPDATA\Programs\Syntexophobic\Syntexophobic.exe")) { throw 'nothing installed' }
+          $p = Start-Process msiexec -ArgumentList '/x', "`"$msi`"", '/qn' -Wait -PassThru
+          if ($p.ExitCode) { throw "uninstall failed: $($p.ExitCode)" }
+      - uses: actions/upload-artifact@v5
+        if: always() && github.event_name == 'pull_request'
+        with:
+          name: installer-pages
+          path: |
+            pages/*.png
+            install-ui.log
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v5
         with:
           name: windows

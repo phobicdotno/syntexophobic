@@ -3,6 +3,14 @@
 Each release has a version and a build number; Help → About shows a one-line summary of
 every release, read from this file.
 
+## Unreleased
+
+**Windows installer**
+- Opening the installer by hand now shows a splash page with the Syntexophobic icon and name
+  and an Install button, then its progress, and ends with "Syntexophobic was installed
+  successfully" and OK. Run again on the same version, it offers Remove. Updates from inside
+  the program still install with only a progress bar.
+
 ## v0.8.0 (build 13) — 2026-10-14
 
 **Windows installer**
