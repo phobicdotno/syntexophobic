@@ -20,6 +20,16 @@ def test_newest_entry_is_this_version_and_the_packaged_copy_matches():
         "copy CHANGELOG.md to src/syntexophobic/assets/ (the installed program reads that copy)"
 
 
+def test_graphics_line():
+    amd = ("OpenGL vendor string:  ATI Technologies Inc.\nOpenGL renderer string:  AMD Radeon(TM) 860M Graphics\n"
+           "OpenGL version string:  4.6.0 Compatibility Profile Context 24.10\nOpenGL extensions:\n  GL_ARB_x\n")
+    assert about.graphics(amd) == "AMD Radeon(TM) 860M Graphics (OpenGL 4.6.0)"
+    soft = about.graphics("OpenGL renderer string:  llvmpipe (LLVM 20.1.2, 256 bits)\n"
+                          "OpenGL version string:  4.5 (Core Profile) Mesa 25.2.8\n")
+    assert soft.startswith("llvmpipe (LLVM 20.1.2, 256 bits) (OpenGL 4.5)") and "software" in soft
+    assert about.graphics("Display ID not set") == ""
+
+
 def test_about_dialog_opens():
     import os
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
