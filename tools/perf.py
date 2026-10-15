@@ -75,6 +75,8 @@ view = win.sketch_view
 timed("redraw the sketch", lambda: (view.solve_and_draw(), app.processEvents()), 10)
 win.finish_sketch(save=False)
 
-for name, s in rows:
-    print(f"{s * 1000:9.1f} ms  {name}")
+lines = [f"{s * 1000:9.1f} ms  {name}" for name, s in rows]
+print("\n".join(lines))
+if os.environ.get("GITHUB_ACTIONS"):          # an annotation, so the numbers show on the run's page
+    print(f"::notice title=Timings on {sys.platform}::" + "%0A".join(lines))
 win.close()
