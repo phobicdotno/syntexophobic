@@ -8,11 +8,12 @@ every release, read from this file.
 **Faster on Windows**
 - The History panel asks git two questions instead of nine. Every git command is a new
   program start, which on Windows (more so with a company virus scanner) costs far more than
-  on Linux: refreshing the panel went from about 370 ms to a few ms on a Windows test machine.
+  on Linux: refreshing the panel went from about 370 ms to 75 ms on a Windows test machine.
 - Checking whether there are unsaved changes ("Save version •") no longer holds up the
   window after every edit: it runs in the background once the edits settle.
 - The 3D view draws once per change instead of once per step of it: opening a project drew
-  eight frames, an edit three. Loading a design is about four times quicker.
+  eight frames, an edit three. On the Windows test machine loading a design went from
+  1.5 s to 0.7 s and an edit from 290 ms to 130 ms.
 
 **Graphics card in About**
 - Help → About names the graphics card the 3D view draws with, for example
