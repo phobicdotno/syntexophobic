@@ -8,7 +8,7 @@ import numpy as np
 
 import vtkmodules.vtkInteractionStyle  # noqa: F401  (registers interactor styles)
 import vtkmodules.vtkRenderingOpenGL2  # noqa: F401  (registers the OpenGL backend)
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QTimer, Signal
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 from vtkmodules.vtkCommonCore import vtkPoints
 from vtkmodules.vtkCommonDataModel import vtkCellArray, vtkPolyData
@@ -148,6 +148,7 @@ class Viewer(QVTKRenderWindowInteractor):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._render_pending = False
         self.ren = vtkRenderer()
         self.ren.SetBackground(*_rgb(VIEW_BG))
         self.GetRenderWindow().AddRenderer(self.ren)
@@ -339,7 +340,7 @@ class Viewer(QVTKRenderWindowInteractor):
         if polylines:
             self._highlight = self._lines_actor(polylines, _rgb(AMBER), 4.0)
             self.ren.AddActor(self._highlight)
-        self.GetRenderWindow().Render()
+        self.render_soon()
 
     def clear_highlight(self) -> None:
         for name in ("_highlight", "_measure"):
@@ -352,7 +353,7 @@ class Viewer(QVTKRenderWindowInteractor):
         """A line between two measured points (drawn on top of the selection)."""
         self._measure = self._lines_actor([[p, q]], _rgb(BLUE), 3.0)
         self.ren.AddActor(self._measure)
-        self.GetRenderWindow().Render()
+        self.render_soon()
 
     def clear_model(self) -> None:
         for name in ("_model", "_stock", "_stock_fill", "_edges", "_highlight"):
@@ -361,7 +362,7 @@ class Viewer(QVTKRenderWindowInteractor):
                 self.ren.RemoveActor(actor)
                 setattr(self, name, None)
         self._stock_box = None
-        self.GetRenderWindow().Render()
+        self.render_soon()
 
     def show_stock(self, box: geometry.Box) -> None:
         for actor in (self._stock, self._stock_fill):
@@ -404,7 +405,7 @@ class Viewer(QVTKRenderWindowInteractor):
                 if actor:
                     self._paths.append(actor)
                     self.ren.AddActor(actor)
-        self.GetRenderWindow().Render()
+        self.render_soon()
 
     def _polyline_actor(self, tp, kind: str, span=(0.0, 0.0)):
         from vtkmodules.vtkCommonCore import vtkUnsignedCharArray
@@ -495,7 +496,7 @@ class Viewer(QVTKRenderWindowInteractor):
         self._sim.GetProperty().SetAmbient(0.35)        # phobiCCCP's 0.35 + 0.65 * light shading
         self._sim.GetProperty().SetDiffuse(0.65)
         self.ren.AddActor(self._sim)
-        self.GetRenderWindow().Render()
+        self.render_soon()
 
     def clear_simulation(self) -> None:
         if self._sim:
@@ -538,7 +539,7 @@ class Viewer(QVTKRenderWindowInteractor):
             self._tool.GetProperty().SetColor(*_rgb(TOOL))
             self._tool.GetProperty().SetOpacity(0.47)
             self.ren.AddActor(self._tool)
-        self.GetRenderWindow().Render()
+        self.render_soon()
 
     def set_model_visible(self, on: bool) -> None:
         self._model_visible = on
@@ -559,7 +560,7 @@ class Viewer(QVTKRenderWindowInteractor):
                 prop.SetRepresentationToSurface()
         if self._edges:
             self._edges.SetVisibility(self._model_visible and self._style == "edges")
-        self.GetRenderWindow().Render()
+        self.render_soon()
 
     # ---- camera ---------------------------------------------------------------------
 
@@ -570,7 +571,7 @@ class Viewer(QVTKRenderWindowInteractor):
         cam.SetViewUp(*up)
         self.ren.ResetCamera()
         self._fitted = self.ren.ComputeVisiblePropBounds()
-        self.GetRenderWindow().Render()
+        self.render_soon()
 
     def view_iso(self) -> None:
         self._set_view((1, -1.4, 1.1), (0, 0, 1))
@@ -597,7 +598,7 @@ class Viewer(QVTKRenderWindowInteractor):
         """Fit everything in view (the toolbar Fit and the nav home)."""
         self.ren.ResetCamera()
         self._fitted = self.ren.ComputeVisiblePropBounds()
-        self.GetRenderWindow().Render()
+        self.render_soon()
 
     # ---- 3Dconnexion ------------------------------------------------------------------
 
@@ -627,14 +628,14 @@ class Viewer(QVTKRenderWindowInteractor):
         if m.z:
             cam.Dolly(1.0 + max(-0.5, min(0.5, -m.z * dt * 0.004)))
         self.ren.ResetCameraClippingRange()
-        self.GetRenderWindow().Render()
+        self.render_soon()
 
     def spacemouse_button(self, number: int, pressed: bool) -> None:
         if not pressed:
             return
         if number == 0:
             self.ren.ResetCamera()
-            self.GetRenderWindow().Render()
+            self.render_soon()
         elif number == 1:
             self.view_iso()
 
@@ -660,7 +661,18 @@ class Viewer(QVTKRenderWindowInteractor):
             plane.SetNormal(*normal)
             for a in actors:
                 a.GetMapper().AddClippingPlane(plane)
-        self.GetRenderWindow().Render()
+        self.render_soon()
 
     def refresh(self) -> None:
+        self.render_soon()
+
+    def render_soon(self) -> None:
+        """Draw once the current change is done: loading a project or an edit changes the
+        model, stock, section and toolpaths one after another, and each drew a frame of its own."""
+        if not self._render_pending:
+            self._render_pending = True
+            QTimer.singleShot(0, self, self._render_now)      # dropped if the view is gone
+
+    def _render_now(self) -> None:
+        self._render_pending = False
         self.GetRenderWindow().Render()

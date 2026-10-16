@@ -6,9 +6,10 @@ repository, so `git log` and any git tool see the same history as the app.
 
 from __future__ import annotations
 
+import functools
 import shutil
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .job import JOB_FILE
@@ -42,9 +43,20 @@ FALLBACK_NAME = "Syntexophobic"
 FALLBACK_EMAIL = "syntexophobic@localhost"
 
 
+@functools.cache
 def available() -> bool:
-    """Whether git is installed. Without it projects still open and save, just with no history."""
+    """Whether git is installed. Without it projects still open and save, just with no history.
+    Asked once: on Windows a PATH search is a few dozen file lookups."""
     return shutil.which("git") is not None
+
+
+@dataclass
+class Overview:
+    """Everything the History panel shows, from two git commands."""
+    current: str = ""                 # the variant (branch) you are on
+    branches: list[str] = field(default_factory=list)
+    versions: list[Version] = field(default_factory=list)     # newest first, as on the subway map
+    stations: list[Station] = field(default_factory=list)
 
 
 class History:
@@ -64,12 +76,12 @@ class History:
     def _identity_args(self) -> list[str]:
         """`-c user.name=… -c user.email=…` for whatever git has no value for, else nothing."""
         if self._identity is None:
-            self._identity = []
-            for key, value in (("user.name", FALLBACK_NAME), ("user.email", FALLBACK_EMAIL)):
-                r = subprocess.run(["git", "config", key], cwd=self.folder if self.folder.exists() else None,
-                                   capture_output=True, text=True)
-                if not r.stdout.strip():
-                    self._identity += ["-c", f"{key}={value}"]
+            r = subprocess.run(["git", "config", "--get-regexp", r"^user\.(name|email)$"],
+                               cwd=self.folder if self.folder.exists() else None, capture_output=True, text=True)
+            have = {line.split(" ", 1)[0].lower() for line in r.stdout.splitlines()
+                    if len(line.split(" ", 1)) == 2 and line.split(" ", 1)[1].strip()}
+            self._identity = [arg for key, value in (("user.name", FALLBACK_NAME), ("user.email", FALLBACK_EMAIL))
+                              if key not in have for arg in ("-c", f"{key}={value}")]
         return self._identity
 
     def init(self) -> None:
@@ -103,18 +115,34 @@ class History:
     def subway(self, limit: int = 200) -> list[Station]:
         """Every version of every variant, newest first, laid out as a subway map: each
         variant is a line in its own lane, and branching or merging versions are where lines meet."""
-        if not available() or not self._git("rev-parse", "--verify", "-q", "HEAD", check=False):
-            return []
+        return self.overview(limit).stations
+
+    def overview(self, limit: int = 200) -> Overview:
+        """The variants, the versions and the subway map in two git commands (every git
+        command is a new process, and on Windows each one costs tens of milliseconds)."""
+        if not available():
+            return Overview()
+        current, names = "", []
+        for line in self._git("branch", "--format=%(HEAD)%(refname:short)").splitlines():
+            name = line[1:].strip()
+            names.append(name)
+            if line.startswith("*"):
+                current = name
+        if not current:                      # a new repository with no version yet
+            current = self._git("branch", "--show-current", check=False).strip()
         out = self._git("log", "--all", "--topo-order", f"-n{limit}", "--date=format:%Y-%m-%d %H:%M",
-                        "--pretty=format:%H%x1f%h%x1f%ad%x1f%s%x1f%D%x1f%P")
+                        "--pretty=format:%H%x1f%h%x1f%ad%x1f%s%x1f%D%x1f%P", check=False)
         rows = []
         for line in out.splitlines():
-            if line:
+            if line.count("\x1f") == 5:
                 *fields, parents = line.split("\x1f")
                 rows.append((Version(*fields), parents.split()))
-        current, names = self.branches()
-        head = self._git("rev-parse", "HEAD").strip()
-        return layout(rows, sorted(names, key=lambda n: n not in ("main", "master")), head)
+        head = next((v.hash for v, _ in rows
+                     if any(r.strip() == "HEAD" or r.strip().startswith("HEAD ->") for r in v.refs.split(","))), "")
+        if not rows:
+            return Overview(current, names)
+        stations = layout(rows, sorted(names, key=lambda n: n not in ("main", "master")), head)
+        return Overview(current, names, [v for v, _ in rows], stations)
 
     def changes(self, ref: str, max_lines: int = 30) -> str:
         """What a version changed, as text: the files touched, then the changed lines of the
@@ -135,7 +163,8 @@ class History:
     def has_changes(self) -> bool:
         if not available():
             return False
-        return bool(self._git("status", "--porcelain", check=False))
+        # no index lock, so it can run beside a save on another thread
+        return bool(self._git("--no-optional-locks", "status", "--porcelain", check=False))
 
     def restore(self, ref: str) -> None:
         """Bring the job and model back as they were in `ref`, as uncommitted changes."""

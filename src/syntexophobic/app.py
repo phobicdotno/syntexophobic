@@ -257,6 +257,10 @@ class MainWindow(QMainWindow):
         self._pack_soon.setSingleShot(True)
         self._pack_soon.setInterval(2000)
         self._pack_soon.timeout.connect(self._pack)
+        self._status_soon = QTimer(self)            # "Save version •" once edits settle
+        self._status_soon.setSingleShot(True)
+        self._status_soon.setInterval(300)
+        self._status_soon.timeout.connect(self._check_dirty)
         self._build_design_dock()
         self._build_ribbon()
         self._build_assistant_dock()
@@ -1480,21 +1484,20 @@ class MainWindow(QMainWindow):
     # ---- history ---------------------------------------------------------------------
 
     def _refresh_history(self):
-        h = self.project.history
-        current, names = h.branches()
+        o = self.project.history.overview()
         self.c_branch.clear()
-        self.c_branch.addItems(names)
-        self.c_branch.setCurrentText(current)
+        self.c_branch.addItems(o.branches)
+        self.c_branch.setCurrentText(o.current)
         self.l_versions.blockSignals(True)
         self.l_versions.clear()
-        self.versions = h.log()
+        self.versions = o.versions
         for v in self.versions:
             refs = f"  [{v.refs.replace('HEAD -> ', '')}]" if v.refs else ""
             item = QListWidgetItem(f"{v.short}  {v.date}  {v.message}{refs}")
             item.setToolTip(v.hash)
             self.l_versions.addItem(item)
         self.l_versions.blockSignals(False)
-        self.subway.set_stations(h.subway())
+        self.subway.set_stations(o.stations)
         self.subway.select("")
         self.t_diff.clear()
         from . import history
@@ -1506,8 +1509,18 @@ class MainWindow(QMainWindow):
 
     def _refresh_history_status(self):
         self._pack_soon.start()             # edits reach the .cccp file shortly after they are made
-        dirty = self.project.history.has_changes()
-        self.b_save.setText("Save version •" if dirty else "Save version")
+        self._status_soon.start()
+
+    def _check_dirty(self):
+        """`git status` off the UI thread: on Windows starting git costs tens of milliseconds,
+        more with a virus scanner, and this ran after every edit."""
+        if self.project is None:
+            return
+        project = self.project
+        task = Task(project.history.has_changes)
+        task.signals.done.connect(lambda dirty: project is self.project
+                                  and self.b_save.setText("Save version •" if dirty else "Save version"))
+        self.pool.start(task)
 
     def save_version(self):
         msg = self.e_message.text().strip()

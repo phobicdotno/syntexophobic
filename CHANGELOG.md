@@ -3,6 +3,22 @@
 Each release has a version and a build number; Help → About shows a one-line summary of
 every release, read from this file.
 
+## v0.8.3 (build 16) — 2026-10-16
+
+**Faster on Windows**
+- The History panel asks git two questions instead of nine. Every git command is a new
+  program start, which on Windows (more so with a company virus scanner) costs far more than
+  on Linux: refreshing the panel went from about 370 ms to a few ms on a Windows test machine.
+- Checking whether there are unsaved changes ("Save version •") no longer holds up the
+  window after every edit: it runs in the background once the edits settle.
+- The 3D view draws once per change instead of once per step of it: opening a project drew
+  eight frames, an edit three. Loading a design is about four times quicker.
+
+**Graphics card in About**
+- Help → About names the graphics card the 3D view draws with, for example
+  "AMD Radeon(TM) 860M Graphics (OpenGL 4.6)". When the view is drawn in software on the
+  processor instead (no working graphics driver, a remote desktop), it says so.
+
 ## v0.8.1 (build 14) — 2026-10-15
 
 **Error reports**
