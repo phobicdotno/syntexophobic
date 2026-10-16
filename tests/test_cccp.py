@@ -124,6 +124,28 @@ def test_changes_names_files_and_lines(tmp_path):
     assert subprocess.run(["git", "status", "--porcelain"], cwd=p.folder, capture_output=True, text=True).stdout == ""
 
 
+@pytest.mark.skipif(not history.available(), reason="needs git")
+def test_overview_matches_the_separate_queries(tmp_path, monkeypatch):
+    p = Project.create_design(tmp_path / "o", "o")
+    _edit(p, "o2")
+    p.history.save("Second")
+    p.history.new_branch("thin")
+    _edit(p, "o3")
+    p.history.save("Thinner")
+    calls = []
+    real = history.subprocess.run
+    monkeypatch.setattr(history.subprocess, "run", lambda cmd, **kw: calls.append(cmd) or real(cmd, **kw))
+    o = p.history.overview()
+    assert len(calls) == 2                                       # git starts twice, not nine times
+    assert (o.current, o.branches) == p.history.branches() == ("thin", ["main", "thin"])
+    assert [v.message for v in o.versions] == ["Thinner", "Second", "New design o"]
+    assert o.stations[0].version.message == "Thinner" and o.stations[0].lane == 0     # on thin, drawn left-most
+    empty = history.History(tmp_path / "empty")
+    (tmp_path / "empty").mkdir()
+    empty.init()
+    assert empty.overview().versions == [] and empty.overview().current == "main"
+
+
 def test_subway_tab(tmp_path):
     from PySide6.QtWidgets import QApplication
     from syntexophobic.app import MainWindow

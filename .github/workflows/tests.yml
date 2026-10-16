@@ -32,5 +32,5 @@ jobs:
       # GPU and VTK's first render never returns there, so the window tests run on Linux and Windows.
       - run: uv run pytest -q ${{ runner.os == 'macOS' && '--ignore=tests/test_window.py' || '' }}
       - name: Timings (what a user waits for)
-        if: runner.os != 'macOS'
+        if: runner.os == 'Windows'   # Linux: run it under xvfb locally
         run: uv run python tools/perf.py
