@@ -77,8 +77,9 @@ def test_parse_target():
     assert send.parse_target("shop-pc.tail1234.ts.net:5000") == ("shop-pc.tail1234.ts.net", 5000)
     assert send.parse_target("100.101.102.103") == ("100.101.102.103", send.PORT)
     assert send.parse_target("[fd7a:115c::1]:47000") == ("fd7a:115c::1", 47000)
-    with pytest.raises(send.SendError):
-        send.parse_target(" ")
+    for bad in (" ", "shop-pc:70000", "shop-pc:0", "[::1]:99999"):
+        with pytest.raises(send.SendError):
+            send.parse_target(bad)
 
 
 def test_send_a_design(design, tmp_path):

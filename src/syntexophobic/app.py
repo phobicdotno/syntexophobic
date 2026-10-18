@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QSlider, QSplitter, QStackedWidget, QTabWidget, QToolBar, QVBoxLayout, QWidget,
 )
 
-from . import desktop, geometry
+from . import cccp, desktop, geometry
 from .job import Operation, Tool
 from .cccp import SUFFIX as CCCP
 from .project import Project
@@ -1061,6 +1061,10 @@ class MainWindow(QMainWindow):
 
     def load_path(self, path: str):
         p = Path(path)
+        open_now = self.project and self.project.archive
+        if open_now and cccp.is_cccp(p) and open_now.expanduser().resolve() == p.expanduser().resolve():
+            self._pack()                  # already open: unpacking it again would lose unpacked edits
+            return
         try:
             if p.suffix.lower() in (".step", ".stp", ".stl", ".3mf"):
                 self.load(Project.create(p.with_name(p.stem + "-cam"), p))
@@ -1095,7 +1099,7 @@ class MainWindow(QMainWindow):
             return
         try:
             self.project.pack()
-        except OSError as e:
+        except (OSError, ValueError) as e:            # ValueError: zipfile refusing a file
             from . import faults
             faults.log.warning("could not write %s: %s", self.project.archive, e)
             self.status.setText(f"Could not write {self.project.archive}: {e}")

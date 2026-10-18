@@ -113,7 +113,7 @@ def main() -> int:
                 return 1
             target = peers[0].target
         try:
-            print(f"phobiCCCP at {target}: {send.send_project(Project(args.project), target)}")
+            print(f"phobiCCCP at {target}: {send.send_project(Project.open(args.project), target)}")
         except send.SendError as e:
             print(e)
             return 1

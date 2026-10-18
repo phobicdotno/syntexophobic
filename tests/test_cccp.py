@@ -190,3 +190,26 @@ def test_final_drawing_has_every_sketch(tmp_path):
     with zipfile.ZipFile(tmp_path / "d.cccp") as z:
         svg = z.read("final/drawing.svg").decode()
     assert '<g id="base">' in svg and svg.count("<line") == 4
+
+
+def test_a_file_from_before_1980_still_packs(tmp_path):
+    import os
+    p = Project.create_design(tmp_path / "old.cccp", "old")
+    old = p.folder / "notes.txt"
+    old.write_text("from a tar")
+    os.utime(old, (0, 0))                                   # 1970
+    p.pack()
+    assert "notes.txt" in zipfile.ZipFile(tmp_path / "old.cccp").namelist()
+    assert not (tmp_path / "old.cccp.part").exists()
+
+
+def test_final_version_is_the_one_the_files_are_at(tmp_path):
+    import json
+    p = Project.create_design(tmp_path / "v.cccp", "v")
+    first = p.history.log()[0].hash
+    _edit(p, "newer")
+    p.history.save("Newer")
+    subprocess.run(["git", "checkout", "-q", "-b", "older", first], cwd=p.folder, check=True)
+    p.reload()
+    p.write_final()
+    assert json.loads((p.folder / "final" / "info.json").read_text())["version"]["hash"] == first
