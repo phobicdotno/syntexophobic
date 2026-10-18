@@ -12,13 +12,14 @@ in the project's git history, like job.toml.
 
 from __future__ import annotations
 
-import json
 import math
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
+
+from .job import toml_str
 
 # ---- entities ------------------------------------------------------------------------
 
@@ -813,7 +814,7 @@ class Sketch:
             if isinstance(v, bool):
                 return "true" if v else "false"
             if isinstance(v, str):
-                return json.dumps(v)                      # a valid TOML basic string
+                return toml_str(v)
             if isinstance(v, list):
                 return "[" + ", ".join(val(x) for x in v) + "]"
             return repr(v)
@@ -858,11 +859,11 @@ class Sketch:
         return sk
 
     def save(self, path: str | Path) -> None:
-        Path(path).write_text(self.dumps())
+        Path(path).write_text(self.dumps(), encoding="utf-8")
 
     @classmethod
     def load(cls, path: str | Path) -> "Sketch":
-        return cls.loads(Path(path).read_text())
+        return cls.loads(Path(path).read_text(encoding="utf-8"))
 
 
 def _intersect(p1, p2, p3, p4, segment: bool = False):

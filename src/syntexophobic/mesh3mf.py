@@ -96,13 +96,13 @@ def read_3mf(path) -> list[tuple[str, list[tuple[float, float, float]], list[tup
                 raise Format3mfError(f"object {oid} missing from {file}")
             mesh = obj.find(f"{CORE}mesh")
             if mesh is not None:
-                base = len(verts)
+                base, first = len(verts), len(tris)
                 for v in mesh.find(f"{CORE}vertices").iter(f"{CORE}vertex"):
                     x, y, zz = _apply(m, float(v.get("x")), float(v.get("y")), float(v.get("z")))
                     verts.append((x * scale, y * scale, zz * scale))
                 for t in mesh.find(f"{CORE}triangles").iter(f"{CORE}triangle"):
                     tris.append((base + int(t.get("v1")), base + int(t.get("v2")), base + int(t.get("v3"))))
-                count[0] += len(tris)
+                count[0] += len(tris) - first           # tris holds earlier meshes too
                 if count[0] > MAX_TRIANGLES:
                     raise Format3mfError(f"{path} has more than {MAX_TRIANGLES} triangles")
             comps = obj.find(f"{CORE}components")

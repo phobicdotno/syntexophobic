@@ -356,12 +356,14 @@ class Viewer(QVTKRenderWindowInteractor):
         self.render_soon()
 
     def clear_model(self) -> None:
-        for name in ("_model", "_stock", "_stock_fill", "_edges", "_highlight"):
+        self.clear_highlight()                          # and the measure line
+        for name in ("_model", "_stock", "_stock_fill", "_edges"):
             actor = getattr(self, name)
             if actor:
                 self.ren.RemoveActor(actor)
                 setattr(self, name, None)
         self._stock_box = None
+        self.shape, self._edge_polylines = None, []     # nothing left to pick
         self.render_soon()
 
     def show_stock(self, box: geometry.Box) -> None:

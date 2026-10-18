@@ -582,7 +582,11 @@ class Part:
             # start a little above the face so the cut never leaves a skin
             lift = gp_Vec(*(0.01 * c for c in n))
             start = top.Translated(lift)
-            body = BRepPrimAPI_MakeCylinder(gp_Ax2(start, down), r, depth + 0.01).Shape()
+            if f.depth > 0:
+                body = BRepPrimAPI_MakeCylinder(gp_Ax2(start, down), r, depth + 0.01).Shape()
+            else:                                       # through: both sides of the sketch plane
+                body = BRepPrimAPI_MakeCylinder(gp_Ax2(top.Translated(gp_Vec(*(depth * c for c in n))), down),
+                                                r, 2 * depth).Shape()
             if f.hole == "counterbore":
                 head = BRepPrimAPI_MakeCylinder(gp_Ax2(start, down), f.head_diameter / 2, f.head_depth + 0.01).Shape()
                 body = BRepAlgoAPI_Fuse(body, head).Shape()
@@ -693,20 +697,21 @@ class Part:
         folder = Path(folder)
         (folder / "sketches").mkdir(parents=True, exist_ok=True)
         defaults = asdict(Feature(type=""))
-        out = ["[part]", f'name = "{self.name}"', ""]
+        from .job import toml_str
+        out = ["[part]", f"name = {toml_str(self.name)}", ""]
         if self.parameters:
             out.append("[parameters]")
-            out += [f'{k} = "{v}"' for k, v in self.parameters.items()]
+            out += [f"{k} = {toml_str(str(v))}" for k, v in self.parameters.items()]
             out.append("")
         for f in self.features:
             out.append("[[features]]")
             for k, v in asdict(f).items():
                 if k == "type" or v != defaults[k]:     # only what differs: short, readable diffs
                     # (numeric fields may hold an expression string such as "width / 2")
-                    out.append(f"{k} = " + ('"' + v + '"' if isinstance(v, str) else
+                    out.append(f"{k} = " + (toml_str(v) if isinstance(v, str) else
                                              ("true" if v else "false") if isinstance(v, bool) else repr(v)))
             out.append("")
-        (folder / filename).write_text("\n".join(out))
+        (folder / filename).write_text("\n".join(out), encoding="utf-8")
         for name, sk in self.sketches.items():
             sk.name = name
             sk.save(folder / "sketches" / f"{name}.toml")
@@ -720,7 +725,7 @@ class Part:
 
     @classmethod
     def _load(cls, path: Path) -> "Part":
-        d = tomllib.loads(path.read_text())
+        d = tomllib.loads(path.read_text(encoding="utf-8"))
         part = cls(name=d.get("part", {}).get("name", "Part"),
                    features=[Feature(**f) for f in d.get("features", [])],
                    parameters={k: str(v) for k, v in d.get("parameters", {}).items()})

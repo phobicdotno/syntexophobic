@@ -453,7 +453,7 @@ class DesignPanel(QWidget):
         if not ok:
             return
         f = Feature("relief", name=f"Relief {sum(1 for x in self.part.features if x.type == 'relief') + 1}",
-                    image=str(dest.relative_to(folder)), width=width, depth=depth,
+                    image=dest.relative_to(folder).as_posix(), width=width, depth=depth,
                     operation="new" if not self.part.features else "join")
         self.part.features.append(f)
         self._fill(len(self.part.features) - 1)
@@ -472,7 +472,7 @@ class DesignPanel(QWidget):
         dest.parent.mkdir(exist_ok=True)
         if Path(path).resolve() != dest.resolve():
             shutil.copy2(path, dest)
-        f = Feature("import", name=Path(path).stem, file=str(dest.relative_to(folder)),
+        f = Feature("import", name=Path(path).stem, file=dest.relative_to(folder).as_posix(),
                     operation="new" if not self.part.features else "join")
         self.part.features.append(f)
         self._fill(len(self.part.features) - 1)
