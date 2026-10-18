@@ -327,12 +327,14 @@ class DesignPanel(QWidget):
 
         def add_row(name="", expr=""):
             r = table.rowCount()
+            table.blockSignals(True)                      # refresh() needs the whole row
             table.insertRow(r)
             table.setItem(r, 0, QTableWidgetItem(name))
             table.setItem(r, 1, QTableWidgetItem(expr))
             item = QTableWidgetItem("")
             item.setFlags(item.flags() & ~item.flags().ItemIsEditable)
             table.setItem(r, 2, item)
+            table.blockSignals(False)
 
         def rows():
             out = {}
