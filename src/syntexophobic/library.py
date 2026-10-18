@@ -34,7 +34,7 @@ def load() -> list[Tool]:
     p = path()
     if not p.exists():
         save(STARTER)
-    data = tomllib.loads(p.read_text())
+    data = tomllib.loads(p.read_text(encoding="utf-8"))
     known = set(asdict(Tool()).keys())
     return [Tool(**{k: v for k, v in t.items() if k in known}) for t in data.get("tools", [])]
 
@@ -47,7 +47,7 @@ def save(tools: list[Tool]) -> None:
         out.append("[[tools]]")
         out += [f"{k} = {_value(v)}" for k, v in asdict(t).items() if k != "id"]
         out.append("")
-    p.write_text("\n".join(out))
+    p.write_text("\n".join(out), encoding="utf-8")
 
 
 def same(a: Tool, b: Tool) -> bool:

@@ -68,7 +68,8 @@ class History:
     def _git(self, *args: str, check: bool = True) -> str:
         if not available():
             raise RuntimeError("Version history needs git. Install it with: sudo apt install git")
-        r = subprocess.run(["git", *self._identity_args(), *args], cwd=self.folder, capture_output=True, text=True)
+        r = subprocess.run(["git", *self._identity_args(), *args], cwd=self.folder, capture_output=True,
+                           text=True, encoding="utf-8", errors="replace")   # git speaks UTF-8, not cp1252
         if check and r.returncode != 0:
             raise RuntimeError(r.stderr.strip() or f"git {' '.join(args)} failed")
         return r.stdout
@@ -77,7 +78,8 @@ class History:
         """`-c user.name=… -c user.email=…` for whatever git has no value for, else nothing."""
         if self._identity is None:
             r = subprocess.run(["git", "config", "--get-regexp", r"^user\.(name|email)$"],
-                               cwd=self.folder if self.folder.exists() else None, capture_output=True, text=True)
+                               cwd=self.folder if self.folder.exists() else None, capture_output=True, text=True,
+                               encoding="utf-8", errors="replace")
             have = {line.split(" ", 1)[0].lower() for line in r.stdout.splitlines()
                     if len(line.split(" ", 1)) == 2 and line.split(" ", 1)[1].strip()}
             self._identity = [arg for key, value in (("user.name", FALLBACK_NAME), ("user.email", FALLBACK_EMAIL))
@@ -103,12 +105,13 @@ class History:
             self.on_save()
         return self._git("rev-parse", "--short", "HEAD").strip()
 
-    def log(self, limit: int = 200) -> list[Version]:
+    def log(self, limit: int = 200, every_variant: bool = True) -> list[Version]:
+        """Newest first: of every variant, or only of the one the files are at."""
         if not available():
             return []
         if not self._git("rev-parse", "--verify", "-q", "HEAD", check=False):
             return []
-        out = self._git("log", "--all", f"-n{limit}", "--date=format:%Y-%m-%d %H:%M",
+        out = self._git("log", "--all" if every_variant else "HEAD", f"-n{limit}", "--date=format:%Y-%m-%d %H:%M",
                         "--pretty=format:%H%x1f%h%x1f%ad%x1f%s%x1f%D")
         return [Version(*line.split("\x1f")) for line in out.splitlines() if line]
 

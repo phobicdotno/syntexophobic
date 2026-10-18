@@ -71,9 +71,16 @@ class Session:
 
     def __init__(self, project: Project | None = None):
         self.project = project
-        self.toolpaths = []
-        self.last_simulation = None
         self.window = None                 # set by the GUI: for screenshots and live refresh
+
+    @property
+    def project(self) -> Project | None:
+        return self._project
+
+    @project.setter
+    def project(self, p: Project | None) -> None:
+        self._project = p                  # toolpaths belong to the project they were made for
+        self.toolpaths, self.last_simulation = [], None
 
     # ---- helpers -----------------------------------------------------------------------
 
@@ -91,6 +98,7 @@ class Session:
     def _save_part(self, part: Part) -> None:
         part.save(self._need().folder)
         self._need().reload()
+        self.toolpaths, self.last_simulation = [], None   # made for the old model
 
     def _sketch(self, part: Part, name: str) -> Sketch:
         if name not in part.sketches:
@@ -282,9 +290,9 @@ class Session:
         src = Path(path).expanduser()
         if not src.exists():
             raise CommandError(f"No file at {src}")
-        folder = self._need().folder
-        if folder in src.resolve().parents:            # with / on Windows too, so the project moves
-            return src.resolve().relative_to(folder).as_posix()
+        folder, src = self._need().folder.resolve(), src.resolve()
+        if folder in src.parents:                       # with / on Windows too, so the project moves
+            return src.relative_to(folder).as_posix()
         dest = folder / sub / src.name
         dest.parent.mkdir(exist_ok=True)
         shutil.copy2(src, dest)
@@ -356,6 +364,8 @@ class Session:
 
     def remove_feature(self, index: int) -> dict:
         part = self._part()
+        if not 0 <= index < len(part.features):
+            raise CommandError(f"No feature {index}; there are {len(part.features)}")
         part.features.pop(index)
         return self._built(part)
 
@@ -396,7 +406,7 @@ class Session:
         change(job)
         save_job(job, p.folder / "job.toml")
         p.reload()
-        self.toolpaths = []
+        self.toolpaths, self.last_simulation = [], None
         return {"job": _clean(p.job)}
 
     def set_stock(self, **values) -> dict:
@@ -456,11 +466,17 @@ class Session:
         return self._job_change(change)
 
     def remove_operation(self, index: int) -> dict:
-        return self._job_change(lambda j: j.operations.pop(index))
+        def change(j):
+            if not 0 <= index < len(j.operations):
+                raise CommandError(f"No operation {index}; there are {len(j.operations)}")
+            j.operations.pop(index)
+        return self._job_change(change)
 
     def suggest_feeds(self, index: int) -> dict:
         from . import feeds
         def change(j):
+            if not 0 <= index < len(j.operations):
+                raise CommandError(f"No operation {index}; there are {len(j.operations)}")
             feeds.apply(j, j.operations[index])
         return self._job_change(change)
 
@@ -517,6 +533,7 @@ class Session:
         p = self._need()
         p.history.restore(ref)
         p.reload()
+        self.toolpaths, self.last_simulation = [], None
         return self.status()
 
     def new_variant(self, name: str) -> dict:

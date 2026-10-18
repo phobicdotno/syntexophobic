@@ -56,15 +56,23 @@ def import_dxf(path: str | Path, name: str = "imported", plane: str = "XY", offs
 
     for e in doc.modelspace():
         kind = e.dxftype()
+        # circles, arcs and 2D polylines are in object coordinates; mirrored ones (extrusion
+        # 0,0,-1, common from other CAD programs) have x flipped and run clockwise in the world
+        flip = kind in ("CIRCLE", "ARC", "LWPOLYLINE", "POLYLINE") and e.dxf.get("extrusion", (0, 0, 1))[2] < 0
         if kind == "LINE":
             a, b = P(e.dxf.start), P(e.dxf.end)
             if a != b:
                 sk.line(a, b)
         elif kind == "CIRCLE":
             c = e.dxf.center
+            if flip:
+                c = (-c[0], c[1])
             sk.circle(sk.point(c[0] * scale, c[1] * scale, construction=True), e.dxf.radius * scale)
         elif kind == "ARC":
-            arc_from(e.dxf.center, e.dxf.radius, math.radians(e.dxf.start_angle), math.radians(e.dxf.end_angle))
+            c, a0, a1 = e.dxf.center, math.radians(e.dxf.start_angle), math.radians(e.dxf.end_angle)
+            if flip:
+                c, a0, a1 = (-c[0], c[1]), math.pi - a1, math.pi - a0
+            arc_from(c, e.dxf.radius, a0, a1)
         elif kind in ("LWPOLYLINE", "POLYLINE"):
             if kind == "LWPOLYLINE":
                 verts = [(x, y, b) for x, y, _s, _e, b in e.get_points("xyseb")]
@@ -72,6 +80,8 @@ def import_dxf(path: str | Path, name: str = "imported", plane: str = "XY", offs
             else:
                 verts = [(v.dxf.location[0], v.dxf.location[1], v.dxf.bulge) for v in e.vertices]
                 closed = e.is_closed
+            if flip:
+                verts = [(-x, y, -b) for x, y, b in verts]
             n = len(verts)
             for i in range(n if closed else n - 1):
                 x0, y0, bulge = verts[i]

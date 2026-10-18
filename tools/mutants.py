@@ -59,7 +59,7 @@ MUTANTS = [
     ("engrave open lines not reversed between passes", "cam.py",
      "            if not closed:\n                path = path[::-1]", "            if False:\n                path = path[::-1]"),
     ("new project fails without a git identity", "history.py",
-     "                if not r.stdout.strip():", "                if False:"),
+     "                              if key not in have for arg in", "                              if False for arg in"),
 ]
 
 

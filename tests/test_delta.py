@@ -90,3 +90,12 @@ def test_release_lists_its_block_index():
     d = {"tag_name": "v1.0.0", "assets": [{"name": "S-1.0.0.AppImage", "url": "a", "size": 3},
                                           {"name": "S-1.0.0.AppImage.blocks", "url": "b", "size": 1}]}
     assert update.releases([d], ".AppImage")[0].blocks_url == "b"
+
+
+def test_a_broken_index_is_a_value_error(tmp_path):
+    f = tmp_path / "f.bin"
+    f.write_bytes(os.urandom(100_000))
+    raw = delta.index(f, 4096).to_bytes()
+    for broken in (raw[:-10], raw[:4] + raw[4:].replace(b'"blocks"', b'"blockz"')):
+        with pytest.raises(ValueError):
+            delta.Index.from_bytes(broken)

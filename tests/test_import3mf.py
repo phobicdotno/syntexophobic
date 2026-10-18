@@ -103,3 +103,16 @@ def test_object_of_several_parts_is_a_solid_each(tmp_path):
                    f'</resources><build><item objectid="2"/></build></model>')
     shape = geometry.load_model(str(tmp_path / "parts.3mf"))
     assert _count(shape, TopAbs_SOLID) == 2 and BRepCheck_Analyzer(shape).IsValid()
+
+
+def test_triangle_limit_counts_each_component_once(tmp_path, monkeypatch):
+    from syntexophobic import mesh3mf
+    v, t = export.mesh(BRepPrimAPI_MakeBox(10, 10, 10).Shape())
+    comps = "".join(f'<component objectid="1" transform="1 0 0 0 1 0 0 0 1 {20 * i} 0 0"/>' for i in range(4))
+    with zipfile.ZipFile(tmp_path / "four.3mf", "w") as z:
+        z.writestr("3D/3dmodel.model",
+                   f'<model xmlns="{CORE}"><resources><object id="1">{_mesh_xml(v, t)}</object>'
+                   f'<object id="2"><components>{comps}</components></object>'
+                   f'</resources><build><item objectid="2"/></build></model>')
+    monkeypatch.setattr(mesh3mf, "MAX_TRIANGLES", 4 * len(t))
+    read_3mf(tmp_path / "four.3mf")                   # exactly at the limit: no error

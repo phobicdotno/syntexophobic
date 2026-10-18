@@ -3,7 +3,7 @@
 import argparse
 import sys
 
-__version__ = "0.8.3"
+__version__ = "0.8.4"
 
 
 def main() -> int:
@@ -113,7 +113,7 @@ def main() -> int:
                 return 1
             target = peers[0].target
         try:
-            print(f"phobiCCCP at {target}: {send.send_project(Project(args.project), target)}")
+            print(f"phobiCCCP at {target}: {send.send_project(Project.open(args.project), target)}")
         except send.SendError as e:
             print(e)
             return 1

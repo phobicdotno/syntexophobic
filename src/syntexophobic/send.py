@@ -72,7 +72,10 @@ def discover(timeout: float = 0.8, port: int = PORT) -> list[Peer]:
                 continue
             if not isinstance(d, dict) or d.get("app") != "phobiCCCP":
                 continue
-            p = Peer(addr, int(d.get("port", port)), str(d.get("host") or addr), str(d.get("version", "")))
+            try:
+                p = Peer(addr, int(d.get("port", port)), str(d.get("host") or addr), str(d.get("version", "")))
+            except (TypeError, ValueError):
+                continue                   # a garbled answer: keep the good ones
             # this computer answers both on loopback and on its network address: list it
             # once, by the address other computers know it by
             key = (p.name, p.port)
@@ -90,13 +93,17 @@ def parse_target(text: str) -> tuple[str, int]:
         raise SendError("No computer given")
     m = re.fullmatch(r"\[([^\]]+)\](?::(\d+))?", t)
     if m:
-        return m.group(1), int(m.group(2) or PORT)
+        return m.group(1), _port(m.group(2) or str(PORT))
     if t.count(":") == 1:
         host, port = t.split(":")
-        if not port.isdigit():
-            raise SendError(f"Not a port number: {port!r}")
-        return host, int(port)
+        return host, _port(port)
     return t, PORT                          # a name, an IPv4 or a bare IPv6 address
+
+
+def _port(text: str) -> int:
+    if not text.isdigit() or not 0 < int(text) < 65536:   # getaddrinfo wraps 70000 round to 4464
+        raise SendError(f"Not a port number: {text!r}")
+    return int(text)
 
 
 def _safe(name: str) -> str:

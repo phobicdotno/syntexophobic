@@ -3,6 +3,32 @@
 Each release has a version and a build number; Help → About shows a one-line summary of
 every release, read from this file.
 
+## v0.8.4 (build 17) — 2026-10-18
+
+**Bug fixes from a review of the whole program** (about 40, each with a test)
+- Sketches: Trim no longer crashes (and loses the line) when only one side of the click
+  is crossed, and only cuts where an arc really is. Dragging a point no longer deletes a
+  constraint after one was removed. Delete removes a selected spline; Fillet keeps a
+  spline that ends on the corner. Expressions such as sqrt(-1) give a clear message.
+- Files: an import path on Windows (imports\bracket.step), a quote in a name or a line
+  break in a tool name no longer breaks model.toml, sketches, job.toml or tools.toml.
+  These files are UTF-8 everywhere (Windows read and wrote them as cp1252). Mirrored arcs
+  and polylines in DXF files from other CAD programs land the right way round.
+- Project files: a file dated before 1980 no longer stops every save to the .cccp.
+  Opening the project that is already open keeps its latest edits. Restoring a version
+  or switching variant also restores the design in the window, so the next edit no longer
+  writes the old one back. final/info.json names the version the files are at.
+- Through holes cut through the part also from a sketch on its own face. A 3MF of many
+  parts is no longer refused as too big. OBJ and 3MF exports keep 9 digits.
+- Claude: simulate and export never use toolpaths made for another project or an older
+  model or job. A second window no longer cuts Claude off from the first. The Assistant
+  panel recovers when claude cannot start.
+- Updates: the Windows update works for user names with letters like ø, and a broken
+  download index falls back to the full download. On a Mac, a failed copy of the old app
+  no longer deletes it.
+- `syntexophobic send x.cccp` works; one garbled answer no longer hides every phobiCCCP
+  found. The same error on Windows is filed as one issue, not one per user folder.
+
 ## v0.8.3 (build 16) — 2026-10-16
 
 **Faster on Windows**

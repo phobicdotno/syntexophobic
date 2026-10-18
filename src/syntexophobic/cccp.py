@@ -55,8 +55,12 @@ def pack(folder: str | Path, path: str | Path) -> Path:
     folder, path = Path(folder), Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".part")
-    _write(folder, tmp)
-    os.replace(tmp, path)
+    try:
+        _write(folder, tmp)
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
     return path
 
 
@@ -69,7 +73,9 @@ def pack_bytes(folder: str | Path) -> bytes:
 
 
 def _write(folder: Path, target) -> None:
-    with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as z:
+    # strict_timestamps off: a file dated before 1980 (copied from a tar, say) is stored as
+    # 1980 instead of failing every pack from then on
+    with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED, strict_timestamps=False) as z:
         z.writestr(zipfile.ZipInfo("mimetype"), MIMETYPE, compress_type=zipfile.ZIP_STORED)
         for root, dirs, files in os.walk(folder):
             dirs.sort()

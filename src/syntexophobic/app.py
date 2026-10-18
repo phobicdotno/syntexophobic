@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QSlider, QSplitter, QStackedWidget, QTabWidget, QToolBar, QVBoxLayout, QWidget,
 )
 
-from . import desktop, geometry
+from . import cccp, desktop, geometry
 from .job import Operation, Tool
 from .cccp import SUFFIX as CCCP
 from .project import Project
@@ -410,6 +410,7 @@ class MainWindow(QMainWindow):
         self.play_action = tb.addWidget(self.play_slider)
         self.play_action.setVisible(False)
         self.sim_result = None
+        self._computing_for = None         # the project toolpaths or a simulation are computing for
         self.section_axis = None
         a_assist = m_view.addAction("Assistant (Claude)")
         a_assist.setShortcut(QKeySequence("Ctrl+K"))
@@ -882,6 +883,7 @@ class MainWindow(QMainWindow):
         self._refresh_model()
         self._refresh_history_status()
         self.toolpaths = []
+        self._forget_claude_toolpaths()
         self.status.setText("Redone." if redo else "Undone.")
 
     def import_dxf(self):
@@ -959,6 +961,8 @@ class MainWindow(QMainWindow):
 
     def _rebuild_part(self):
         from .model import ModelError
+        if self.part is None:             # another project (a STEP one) opened meanwhile
+            return
         try:
             shape = self.part.build()
         except ModelError as e:
@@ -970,6 +974,7 @@ class MainWindow(QMainWindow):
         self.viewer.set_section(self.section_axis, self.section_slider.value() / 1000)
         self.viewer.refresh()
         self.toolpaths = []
+        self._forget_claude_toolpaths()
         b = geometry.bounding_box(shape)
         self.status.setText(f"Part {b.xmax - b.xmin:.1f} × {b.ymax - b.ymin:.1f} × {b.zmax - b.zmin:.1f} mm")
 
@@ -988,7 +993,7 @@ class MainWindow(QMainWindow):
         page = QWidget()
         col = QVBoxLayout(page)
         col.setContentsMargins(0, 0, 0, 0)
-        col.addWidget(sketch_toolbar(view, self.finish_sketch))
+        col.addWidget(sketch_toolbar(view, lambda *_: self.finish_sketch()))   # not the action's checked=False
         col.addWidget(view)
         self.stack.addWidget(page)
         self.stack.setCurrentWidget(page)
@@ -1061,6 +1066,10 @@ class MainWindow(QMainWindow):
 
     def load_path(self, path: str):
         p = Path(path)
+        open_now = self.project and self.project.archive
+        if open_now and cccp.is_cccp(p) and open_now.expanduser().resolve() == p.expanduser().resolve():
+            self._pack()                  # already open: unpacking it again would lose unpacked edits
+            return
         try:
             if p.suffix.lower() in (".step", ".stp", ".stl", ".3mf"):
                 self.load(Project.create(p.with_name(p.stem + "-cam"), p))
@@ -1095,7 +1104,7 @@ class MainWindow(QMainWindow):
             return
         try:
             self.project.pack()
-        except OSError as e:
+        except (OSError, ValueError) as e:            # ValueError: zipfile refusing a file
             from . import faults
             faults.log.warning("could not write %s: %s", self.project.archive, e)
             self.status.setText(f"Could not write {self.project.archive}: {e}")
@@ -1113,7 +1122,13 @@ class MainWindow(QMainWindow):
         self.session = automation.Session()
         self.session.window = self
         automation.STATE.mkdir(parents=True, exist_ok=True)
-        QLocalServer.removeServer(automation.control_name())
+        from PySide6.QtNetwork import QLocalSocket
+        probe = QLocalSocket()
+        probe.connectToServer(automation.control_name())
+        if probe.waitForConnected(300):   # another window answers Claude: leave it its socket
+            probe.disconnectFromServer()
+            return
+        QLocalServer.removeServer(automation.control_name())   # a stale one from a crash
         self.control = QLocalServer(self)
         self.control.setSocketOptions(QLocalServer.UserAccessOption)      # only this user
         if self.control.listen(automation.control_name()):
@@ -1156,7 +1171,7 @@ class MainWindow(QMainWindow):
             self.assistant.library_changed()
         if cmd == "library_list" or (cmd == "library_add" and self.project is None):
             return
-        if cmd in ("status", "get_sketch", "history", "diff", "screenshot", "view"):
+        if cmd in ("status", "get_sketch", "history", "diff", "screenshot", "view") or s.project is None:
             return
         if s.project is not self.project:
             self.load(s.project)
@@ -1221,14 +1236,18 @@ class MainWindow(QMainWindow):
     def load(self, project: Project):
         from .project import Undo
         self.finish_sketch(save=False)
+        self._rebuild_timer.stop()                    # a rebuild of the old part
         if self.project is not None and self.project is not project:
             self._pack()
         self.project = project
         if hasattr(self, "session"):
             self.session.project = project
-            self.session.toolpaths = []
+            self._forget_claude_toolpaths()
         self.undo = Undo(project.folder)
         self.toolpaths = []
+        self.sim_result, self._measure_picks = None, []
+        self.play_action.setVisible(False)
+        self.viewer.clear_simulation()
         if project.job.model.endswith(".toml"):
             from .model import Part
             self.part = Part.load(project.folder / project.job.model)
@@ -1311,9 +1330,14 @@ class MainWindow(QMainWindow):
             self.viewer.show_stock(p.setup().stock)
             self.viewer.refresh()
         self._mark_stale()
+        self._forget_claude_toolpaths()               # Claude must not export the old ones
         if p.setup().warning:
             self.status.setText(p.setup().warning + " Check the stock size.")
         self._refresh_history_status()
+
+    def _forget_claude_toolpaths(self):
+        if hasattr(self, "session"):
+            self.session.toolpaths, self.session.last_simulation = [], None
 
     def _mark_stale(self):
         if self.toolpaths:
@@ -1387,6 +1411,7 @@ class MainWindow(QMainWindow):
     def generate(self):
         self.a_generate.setEnabled(False)
         self.status.setText("Computing toolpaths… (slicing the model level by level)")
+        self._computing_for = self.project
         task = Task(self.project.toolpaths)
         task.signals.done.connect(self._generated)
         task.signals.failed.connect(self._failed)
@@ -1394,6 +1419,8 @@ class MainWindow(QMainWindow):
 
     def _generated(self, toolpaths):
         self.a_generate.setEnabled(True)
+        if self._computing_for is not self.project:  # another project was opened meanwhile
+            return
         self.toolpaths = toolpaths
         if hasattr(self, "session"):
             self.session.toolpaths = toolpaths
@@ -1421,6 +1448,7 @@ class MainWindow(QMainWindow):
         self.a_simulate.setEnabled(False)
         self.status.setText("Simulating material removal…")
         setup, tps = self.project.setup(), self.toolpaths
+        self._computing_for = self.project
         task = Task(lambda: sim.simulate(setup, tps, snapshots=40))
         task.signals.done.connect(self._simulated)
         task.signals.failed.connect(self._failed)
@@ -1428,6 +1456,8 @@ class MainWindow(QMainWindow):
 
     def _simulated(self, result):
         self.a_simulate.setEnabled(True)
+        if self._computing_for is not self.project:
+            return
         self.c_model.setChecked(False)
         self.c_paths.setChecked(False)
         self.viewer.show_simulation(result)
@@ -1554,9 +1584,7 @@ class MainWindow(QMainWindow):
             return
         v = self.versions[row]
         self.project.history.restore(v.hash)
-        self.project.reload()
-        self._fill_job()
-        self._refresh_model()
+        self._files_replaced()
         self._refresh_history_status()
         self.status.setText(f"Restored {v.short} “{v.message}”. Save a version to keep it.")
 
@@ -1578,10 +1606,21 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Could not switch", str(e))
             self._refresh_history()
             return
+        self._files_replaced()
+        self._refresh_history()
+
+    def _files_replaced(self):
+        """After git changed the project's files: the job, the design and undo follow them."""
         self.project.reload()
+        if self.part is not None:
+            from .model import Part
+            self.part = Part.load(self.project.folder / self.project.job.model)
+            self.design_panel.set_part(self.part)
+        self.undo.record()
+        self.toolpaths = []
+        self._forget_claude_toolpaths()
         self._fill_job()
         self._refresh_model()
-        self._refresh_history()
 
 
 def _dark_palette(app: QApplication):

@@ -137,9 +137,9 @@ def _stl(path, v, tris):
 
 
 def _obj(path, v, tris):
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         f.write("# Syntexophobic, millimetres\no part\n")
-        f.writelines(f"v {x:.6g} {y:.6g} {z:.6g}\n" for x, y, z in v)
+        f.writelines(f"v {x:.9g} {y:.9g} {z:.9g}\n" for x, y, z in v)
         f.writelines(f"f {a + 1} {b + 1} {c + 1}\n" for a, b, c in tris)
 
 
@@ -194,7 +194,7 @@ def _gltf(path, v, tris):
 
 
 def _3mf(path, v, tris):
-    verts = "".join(f'<vertex x="{x:.6g}" y="{y:.6g}" z="{z:.6g}"/>' for x, y, z in v)
+    verts = "".join(f'<vertex x="{x:.9g}" y="{y:.9g}" z="{z:.9g}"/>' for x, y, z in v)
     faces = "".join(f'<triangle v1="{a}" v2="{b}" v3="{c}"/>' for a, b, c in tris)
     model = ('<?xml version="1.0" encoding="UTF-8"?>\n'
              '<model unit="millimeter" xml:lang="en-US" '
@@ -314,7 +314,7 @@ def _svg(path, items, box, groups=None):
     Path(path).write_text(
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{w:.4f}mm" height="{h:.4f}mm" viewBox="0 0 {w:.4f} {h:.4f}">\n'
-        '<g fill="none" stroke="#000" stroke-width="0.1">\n' + body + "\n</g>\n</svg>\n")
+        '<g fill="none" stroke="#000" stroke-width="0.1">\n' + body + "\n</g>\n</svg>\n", encoding="utf-8")
 
 
 def sketches_svg(sketches: dict, path: str | Path, margin: float = 2.0, corner=None) -> bool:

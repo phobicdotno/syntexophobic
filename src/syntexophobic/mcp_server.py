@@ -52,7 +52,7 @@ def _call(cmd: str, **args):
 
 def _run(cmd: str, args: dict):
     try:
-        return _run(cmd, args)
+        return _dispatch(cmd, args)
     except Exception as e:
         faults.log.warning("mcp %s(%s) failed: %s: %s", cmd, json.dumps(args, default=str)[:300], type(e).__name__, e)
         if not str(e).strip():                 # never hand Claude an empty error
@@ -60,16 +60,29 @@ def _run(cmd: str, args: dict):
         raise
 
 
-def _run(cmd: str, args: dict):
+_seen: dict | None = None                    # the headless project's files after the last command
+
+
+def _files_now() -> dict | None:
+    from .project import Undo
+    return Undo(_headless.project.folder).snapshot() if _headless.project is not None else None
+
+
+def _dispatch(cmd: str, args: dict):
+    global _seen
     try:
         return A.send(cmd, args)
     except ConnectionError:
         pass
+    if _headless.project is not None and _files_now() != _seen:
+        _headless.project.reload()                  # the window (or anything) changed the files
+        _headless.toolpaths, _headless.last_simulation = [], None
     if _headless.project is None and cmd not in ("open_project", "new_design", "new_from_step") and _STATE.exists():
         last = json.loads(_STATE.read_text()).get("project")
         if last and Path(last).exists():
             _headless.open_project(last)
     result = A.run(_headless, cmd, args)
+    _seen = _files_now()
     if _headless.project is not None:
         _headless.project.pack()                    # a .cccp always holds the latest edit
         A.STATE.mkdir(parents=True, exist_ok=True)

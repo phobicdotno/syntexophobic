@@ -69,14 +69,19 @@ class Index:
     @classmethod
     def from_bytes(cls, raw: bytes) -> Index:
         n = int.from_bytes(raw[:4], "little")
-        head = json.loads(raw[4:4 + n])
-        if head.get("format") != MAGIC:
-            raise ValueError(f"not a block index ({head.get('format')})")
-        body = zlib.decompress(raw[4 + n:])
-        count = head["blocks"]
-        weak = np.frombuffer(body[:8 * count], "<u8").astype(np.uint64)
-        strong = [body[8 * count + 16 * i: 8 * count + 16 * (i + 1)] for i in range(count)]
-        return cls(head["size"], head["sha256"], head["block"], weak, strong)
+        try:
+            head = json.loads(raw[4:4 + n])
+            if head.get("format") != MAGIC:
+                raise ValueError(f"not a block index ({head.get('format')})")
+            body = zlib.decompress(raw[4 + n:])
+            count = head["blocks"]
+            if len(body) != 24 * count:
+                raise ValueError("block index is cut short")
+            weak = np.frombuffer(body[:8 * count], "<u8").astype(np.uint64)
+            strong = [body[8 * count + 16 * i: 8 * count + 16 * (i + 1)] for i in range(count)]
+            return cls(head["size"], head["sha256"], head["block"], weak, strong)
+        except (zlib.error, KeyError, TypeError, AttributeError) as e:   # the caller falls back on ValueError
+            raise ValueError(f"broken block index: {e}") from e
 
 
 def index(path: Path, block: int = BLOCK) -> Index:
