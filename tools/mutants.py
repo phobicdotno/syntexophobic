@@ -48,6 +48,13 @@ MUTANTS = [
      "    region = _boolean(_offset(setup.stock_rect(), 0.9 * r), _offset(forbidden, r + op.leave),",
      "    region = _boolean(setup.stock_rect(), _offset(forbidden, r + op.leave),"),
     ("first tool change skipped (no M6 T1)", "gcode.py", '            if post["tool_change"] == "M6":', '            if post["tool_change"] == "M6" and current_tool is not None:'),
+    ("wall passes start just above the last level anywhere", "cam.py",
+     "                    else top + 0.5\n", "                    else clearance\n"),
+    ("adaptive keep-out from its cutting levels only", "cam.py",
+     "        forbidden = setup.shadow(z)\n", "        forbidden = _boolean(forbidden, setup.slice_region(z), pyclipper.CT_UNION)\n"),
+    ("rough keep-out from its cutting levels only", "cam.py",
+     "        forbidden = setup.shadow(z)                  # the part at and above this level",
+     "        forbidden = _boolean(forbidden, setup.slice_region(z), pyclipper.CT_UNION)"),
     ("engraving counted as gouges", "simulate.py",
      '        if tp.op.type in ("vcarve", "engrave") and tp.op.source:', '        if tp.op.type == "vcarve" and tp.op.source:'),
     ("engrave lines not joined end to end", "cam.py", "    tol = 1e-4\n    near =", "    tol = -1.0\n    near ="),
@@ -72,7 +79,9 @@ def run(name, filename, old, new):
         return name, "PATTERN NOT FOUND (update this mutant)"
     path.write_text(text.replace(old, new, 1))
     env = dict(os.environ, PYTHONPATH=str(tmp / "src"), NUMBA_CACHE_DIR=str(tmp / "numba"))
-    r = subprocess.run([sys.executable, "-m", "pytest", "-x", "-q", "-p", "no:cacheprovider", str(ROOT / "tests")],
+    # the window tests open real windows on the desktop; they check no machining
+    r = subprocess.run([sys.executable, "-m", "pytest", "-x", "-q", "-p", "no:cacheprovider", str(ROOT / "tests"),
+                        "--ignore", str(ROOT / "tests" / "test_window.py")],
                        cwd=tmp, env=env, capture_output=True, text=True)
     shutil.rmtree(tmp, ignore_errors=True)
     return name, "caught" if r.returncode != 0 else "SURVIVED"

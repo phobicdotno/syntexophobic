@@ -729,3 +729,74 @@ def test_engrave_depth_counts_from_the_part_surface(pocket_part, tmp_path):
     assert cell(21, 14) == pytest.approx(floor - 0.5, abs=0.02)        # into the pocket floor
     assert cell(6, 5) == pytest.approx(part_top - 1.0, abs=0.02)        # V-carve floor below the part top
     assert res.gouge_cells == 0 and res.rapid_hits == []
+
+
+def test_profile_alone_never_rapids_into_the_layer_above_the_part(tmp_path):
+    """A profile cut-out on its own leaves the material above the part; where the outline
+    grows further down (rounded and chamfered edges), a pass must not drop fast to just
+    above the previous level, which there is still uncut stock."""
+    from pathlib import Path
+    from syntexophobic import simulate
+    from syntexophobic.job import Operation
+    demo = Path(__file__).resolve().parent.parent / "examples" / "demo-plate.step"
+    p = Project.create(tmp_path / "prof", demo)
+    p.job.stock.top_offset = 1.0
+    p.job.operations = [Operation(type="profile", tool=1, stepdown=3, leave=0, tabs=3)]
+    p.save_job()
+    res = simulate.simulate(p.setup(), p.toolpaths(), res=0.25)
+    assert res.rapid_hits == [], res.rapid_hits[:3]
+    assert res.gouge_cells == 0
+
+
+def test_holes_are_found_in_a_model_read_from_stl(tmp_path):
+    """An STL has no cylinder faces, only facets: its round holes are found in slices, with
+    the same positions, sizes and depths as the STEP's, so drilling works on it too."""
+    from OCP.BRepMesh import BRepMesh_IncrementalMesh
+    from OCP.StlAPI import StlAPI_Writer
+    from syntexophobic.job import Operation, Tool
+    shape = geometry.load_step(DEMO)
+    BRepMesh_IncrementalMesh(shape, 0.01, False, 0.1, True)
+    w = StlAPI_Writer()
+    assert w.Write(shape, str(tmp_path / "demo.stl"))
+    holes = geometry.find_holes(geometry.load_stl(str(tmp_path / "demo.stl")))
+    want = sorted([(8, 8, 5.2, 20), (92, 8, 5.2, 20), (8, 62, 5.2, 20), (92, 62, 5.2, 20), (38, 35, 5.0, 17), (62, 35, 5.0, 17)])
+    got = sorted((round(h.x, 2), round(h.y, 2), h.diameter, h.top) for h in holes)
+    assert len(got) == 6 and all(h.bottom == pytest.approx(0, abs=1e-6) for h in holes)
+    for g, w_ in zip(got, want):
+        assert g == pytest.approx(w_, abs=0.01)
+    p = Project.create(tmp_path / "stl", tmp_path / "demo.stl")
+    p.job.tools = [Tool(1, "5 mm drill", 5.0)]
+    p.job.operations = [Operation(type="drill", tool=1, stepdown=3)]
+    p.save_job()
+    plunges = [m for m in p.toolpaths()[0].moves if m.kind == "feed" and m.x is None and m.z is not None and m.z < 0.5]
+    assert len(plunges) == 6                         # every hole drilled to the bottom
+
+
+
+def test_a_thin_top_between_cutting_levels_is_not_cut_through(tmp_path):
+    """An upside-down cup (a hollow box open underneath, like an enclosure) with a 1.5 mm top
+    that no cutting level slices: the space under the top must not count as open from above,
+    or roughing, adaptive and ball-end finishing all go through the top into it."""
+    from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
+    from OCP.STEPControl import STEPControl_AsIs, STEPControl_Writer
+    from OCP.gp import gp_Pnt
+    from syntexophobic import simulate
+    from syntexophobic.job import Operation, Tool
+    cup = BRepAlgoAPI_Cut(BRepPrimAPI_MakeBox(gp_Pnt(0, 0, 0), 40, 30, 30).Shape(),
+                          BRepPrimAPI_MakeBox(gp_Pnt(4, 4, -1), 32, 22, 29.5).Shape()).Shape()   # top 28.5..30
+    w = STEPControl_Writer()
+    w.Transfer(cup, STEPControl_AsIs)
+    w.Write(str(tmp_path / "cup.step"))
+    for name, ops in (("rough", [Operation(type="rough", tool=1, stepdown=6, bottom=20)]),
+                      ("adaptive", [Operation(type="adaptive", tool=1, stepdown=6, stepover=0.2, bottom=20)]),
+                      ("ball", [Operation(type="finish", tool=2, stepdown=6, leave=0, bottom=20)])):
+        p = Project.create(tmp_path / name, tmp_path / "cup.step")
+        p.job.tools = [Tool(1, "6 mm flat", 6.0), Tool(2, "6 mm ball", 6.0, 2, "ball")]
+        p.job.operations = ops
+        p.save_job()
+        res = simulate.simulate(p.setup(), p.toolpaths(), res=0.25)
+        assert res.gouge_cells == 0, (name, res.gouge_cells, res.gouge_depth)
+        xs, ys = res.grid.centres()
+        top = res.stock[int(round((15 - ys[0]) / 0.25)), int(round((20 - xs[0]) / 0.25))]
+        assert top >= 30 - 1e-6, (name, top)                # the cup's top is whole
