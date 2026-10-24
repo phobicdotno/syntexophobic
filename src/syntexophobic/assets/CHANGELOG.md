@@ -3,6 +3,13 @@
 Each release has a version and a build number; Help → About shows a one-line summary of
 every release, read from this file.
 
+## v0.8.5 (build 18) — 2026-10-24
+
+**Sketch window fits the screen**
+- The sketch tools no longer take half the window; the drawing gets the room.
+- Opening a sketch no longer makes the window wider than the screen, so full screen and
+  maximize work again. On a narrow window the sketch tools scroll sideways.
+
 ## v0.8.4 (build 17) — 2026-10-18
 
 **Bug fixes from a review of the whole program** (about 40, each with a test)
