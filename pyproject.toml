@@ -1,6 +1,6 @@
 [project]
 name = "syntexophobic"
-version = "0.8.5"
+version = "0.8.6"
 description = "2.5D CAM for GRBL machines with git-style job history"
 readme = "README.md"
 authors = [
