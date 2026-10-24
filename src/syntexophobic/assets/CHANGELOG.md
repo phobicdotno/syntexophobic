@@ -3,6 +3,27 @@
 Each release has a version and a build number; Help → About shows a one-line summary of
 every release, read from this file.
 
+## v0.8.6 (build 19) — 2026-10-24
+
+**Machining safety**
+- Roughing, adaptive clearing and ball-end finishing could cut through a thin plate lying
+  between two cutting levels (an enclosure's top panel, a lid) into the space under it.
+  Each level now keeps clear of everything of the part above it, sliced every 0.5 mm and
+  at every flat face.
+- A profile cut-out on its own no longer moves fast 0.5 mm into stock where the outline
+  grows further down: a pass starts just above the previous level only where the tool
+  has already cut.
+
+**Windows**
+- Send to phobiCCCP finds phobiCCCP on the network even when none runs on this computer
+  (Windows ended the search on the unanswered packet to itself).
+- Saving the project file waits a moment when a virus scanner, a sync client or
+  phobiCCCP has it open, instead of failing.
+
+**Fixes**
+- Sending to phobiCCCP no longer builds the model on a background thread while the
+  window uses it.
+
 ## v0.8.5 (build 18) — 2026-10-24
 
 **Sketch window fits the screen**

@@ -213,3 +213,18 @@ def test_final_version_is_the_one_the_files_are_at(tmp_path):
     p.reload()
     p.write_final()
     assert json.loads((p.folder / "final" / "info.json").read_text())["version"]["hash"] == first
+
+
+def test_pack_waits_for_a_file_another_program_holds(tmp_path, monkeypatch):
+    import os
+    p = Project.create_design(tmp_path / "held.cccp", "held")
+    real, calls = os.replace, []
+
+    def held_twice(a, b):
+        calls.append(a)
+        if len(calls) <= 2:
+            raise PermissionError(32, "The process cannot access the file")
+        real(a, b)
+    monkeypatch.setattr(cccp.os, "replace", held_twice)
+    p.pack()
+    assert len(calls) == 3 and not (tmp_path / "held.cccp.part").exists()

@@ -53,6 +53,8 @@ def discover(timeout: float = 0.8, port: int = PORT) -> list[Peer]:
     """phobiCCCPs listening on this computer and the local network."""
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    if hasattr(socket, "SIO_UDP_CONNRESET"):    # Windows: no listener on loopback must not end the search
+        s.ioctl(socket.SIO_UDP_CONNRESET, False)
     s.settimeout(timeout)
     found: dict[tuple[str, int], Peer] = {}
     try:
@@ -64,6 +66,8 @@ def discover(timeout: float = 0.8, port: int = PORT) -> list[Peer]:
         while True:
             try:
                 data, (addr, _) = s.recvfrom(4096)
+            except ConnectionResetError:
+                continue                   # Windows reports the loopback packet nobody took
             except (TimeoutError, OSError):
                 break
             try:
@@ -161,14 +165,16 @@ def _sketch_dxfs(project, dx: float, dy: float) -> list[tuple[str, bytes]]:
     return out
 
 
-def package(project) -> tuple[dict, list[tuple[str, bytes]]]:
-    """The manifest and the files to send for a project."""
+def package(project, shape=None, stock=None) -> tuple[dict, list[tuple[str, bytes]]]:
+    """The manifest and the files to send for a project. The window passes the shape and
+    stock it already has, so the background thread never builds the project's own."""
     from . import geometry
     from .about import version
-    s = project.setup().stock
-    b = geometry.bounding_box(project.shape)
+    shape = project.shape if shape is None else shape
+    s = project.setup().stock if stock is None else stock
+    b = geometry.bounding_box(shape)
     name = _safe(project.job.name or project.folder.name)
-    model = _stl_bytes(project.shape, -s.xmin, -s.ymin, -s.zmax)
+    model = _stl_bytes(shape, -s.xmin, -s.ymin, -s.zmax)
     files = [("part.stl", model, {"role": "model", "x": round(b.xmin - s.xmin, 4), "y": round(b.ymin - s.ymin, 4),
                                   "top": round(b.zmax - s.zmax, 4)})]
     files += [(n, data, {"role": "vectors"}) for n, data in _sketch_dxfs(project, -s.xmin, -s.ymin)]
@@ -218,9 +224,9 @@ def send(host: str, port: int, manifest: dict, files: list[tuple[str, bytes]],
     raise SendError("phobiCCCP closed the connection without an answer")
 
 
-def send_project(project, target: str) -> str:
+def send_project(project, target: str, shape=None, stock=None) -> str:
     host, port = parse_target(target)
-    manifest, files = package(project)
+    manifest, files = package(project, shape, stock)
     return send(host, port, manifest, files)
 
 
@@ -299,10 +305,15 @@ def dialog(window):
         if not text:
             status.setText("Pick a phobiCCCP or type where it runs.")
             return
+        project = window.project
+        try:                                # here, on the window's thread: the project's caches are its own
+            shape, stock = project.shape, project.setup().stock
+        except Exception as e:  # noqa: BLE001 - a model that does not build
+            status.setText(str(e))
+            return
         QSettings().setValue("send/target", text)
         b_send.setEnabled(False)
         status.setText(f"Sending to {text}… phobiCCCP asks there whether to open it.")
-        project = window.project
 
         def done(what):
             b_send.setEnabled(True)
@@ -313,7 +324,7 @@ def dialog(window):
             last = tb.strip().splitlines()[-1]
             status.setText(last.split(": ", 1)[1] if ": " in last else last)
 
-        run(lambda: send_project(project, text), done, failed)
+        run(lambda: send_project(project, text, shape, stock), done, failed)
 
     refresh.clicked.connect(search)
     b_send.clicked.connect(send_now)

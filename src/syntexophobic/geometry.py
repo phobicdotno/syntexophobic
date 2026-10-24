@@ -371,6 +371,26 @@ def upward_flat_levels(shape: TopoDS_Shape, min_area: float = 1.0) -> list[float
     return [max(g, key=lambda z: area[z]) for g in levels if sum(area[z] for z in g) >= need]
 
 
+def horizontal_levels(shape: TopoDS_Shape, limit: int = 400) -> list[float]:
+    """Heights of every horizontal flat face, up or down, however small (0.01 mm apart at
+    most): where thin plates and overhangs start and end. A finely faceted model has
+    countless; then only the `limit` with the most area are kept."""
+    from OCP.BRepGProp import BRepGProp
+    from OCP.GProp import GProp_GProps
+    area: dict[float, float] = {}
+    exp = TopExp_Explorer(shape, TopAbs_FACE)
+    while exp.More():
+        face = TopoDS.Face(exp.Current())
+        surf = BRepAdaptor_Surface(face)
+        if surf.GetType() == GeomAbs_Plane and abs(surf.Plane().Axis().Direction().Z()) > 0.999:
+            props = GProp_GProps()
+            BRepGProp.SurfaceProperties_s(face, props)
+            z = round(surf.Plane().Location().Z(), 2)
+            area[z] = area.get(z, 0.0) + props.Mass()
+        exp.Next()
+    return sorted(sorted(area, key=lambda z: -area[z])[:limit])
+
+
 @dataclass(frozen=True)
 class Hole:
     x: float
