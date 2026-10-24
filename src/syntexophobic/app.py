@@ -442,8 +442,7 @@ class MainWindow(QMainWindow):
     def _build_ribbon(self):
         """The Fusion-style tool ribbon under the app bar: a Design tab (Create / Modify /
         Insert / Inspect) and a Manufacture tab (Actions / Display), swapped by workspace."""
-        from PySide6.QtWidgets import QFrame
-        from .design_ui import _ribbon_button, _ribbon_group
+        from .design_ui import _ribbon_button, _ribbon_group, _ribbon_sep
         dp = self.design_panel
 
         def qa(icon, text, slot, tip=None):
@@ -459,10 +458,7 @@ class MainWindow(QMainWindow):
             row.setSpacing(0)
             for i, (title, buttons) in enumerate(groups):
                 if i:
-                    line = QFrame()
-                    line.setFrameShape(QFrame.VLine)
-                    line.setProperty("ribbonSep", True)
-                    row.addWidget(line)
+                    row.addWidget(_ribbon_sep())
                 row.addWidget(_ribbon_group(title, buttons))
             row.addStretch(1)
             return w
@@ -1659,6 +1655,7 @@ QToolButton[ribbon="1"], QToolButton[ribbon="big"] { font-size: 10px; }
 QToolButton[ribbon="big"] { min-width: 46px; }
 QLabel[ribbonCaption="true"] { color: #7f868f; font-size: 8px; font-weight: 600; letter-spacing: 1px; }
 QFrame[ribbonSep="true"] { color: #3a3e45; max-width: 1px; margin: 3px 2px; }
+QScrollArea[ribbonScroll="true"], QScrollArea[ribbonScroll="true"] > QWidget { background: #2a2d33; border: none; }
 QToolButton[finish="true"] { color: #d7f5df; }
 QToolButton[finish="true"]:hover { background: #1f4d30; border-color: #2e8c52; }
 

@@ -5,8 +5,8 @@ from __future__ import annotations
 from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (QComboBox, QGroupBox, QHBoxLayout, QInputDialog,
-                               QLabel, QPushButton, QTreeWidget,
-                               QTreeWidgetItem, QVBoxLayout, QWidget)
+                               QLabel, QPushButton, QScrollArea, QSizePolicy,
+                               QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 FEATURE_ICON = {"extrude": "extrude", "revolve": "revolve", "loft": "loft", "sweep": "sweep",
                 "fillet": "fillet", "chamfer": "chamfer", "shell": "shell", "mirror": "mirror",
@@ -601,11 +601,44 @@ def _ribbon_group(title: str, buttons: list[QWidget]) -> QWidget:
     return group
 
 
+def _ribbon_sep() -> QWidget:
+    """A thin vertical divider between ribbon groups. Qt gives a VLine frame a vertically
+    growing size policy, which made the whole ribbon grab half the window's height."""
+    from PySide6.QtWidgets import QFrame, QSizePolicy
+    line = QFrame()
+    line.setFrameShape(QFrame.VLine)
+    line.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+    line.setProperty("ribbonSep", True)
+    return line
+
+
+class RibbonScroll(QScrollArea):
+    """Holds a ribbon at its own height and scrolls it sideways when the window is
+    narrower. Without it the sketch ribbon set the window's minimum width wider than a
+    laptop screen, so full screen and maximize could not fit the window."""
+
+    def __init__(self, bar: QWidget):
+        super().__init__()
+        self.setProperty("ribbonScroll", True)
+        self.setFrameShape(QScrollArea.NoFrame)
+        self.setWidgetResizable(True)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.setSizePolicy(self.sizePolicy().horizontalPolicy(), QSizePolicy.Fixed)
+        self.setWidget(bar)
+
+    def sizeHint(self) -> QSize:
+        bar = self.widget().sizeHint()
+        return QSize(bar.width(), bar.height() + self.horizontalScrollBar().sizeHint().height())
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(200, self.sizeHint().height())
+
+
 def sketch_toolbar(view, on_finish) -> QWidget:
     """The Sketch contextual tab for a SketchView: Create, Modify, Constraints and
     Inspect groups, laid out like Fusion, with a Finish Sketch button at the right."""
     from PySide6.QtGui import QActionGroup
-    from PySide6.QtWidgets import QFrame, QToolButton
     from .app import mono_icon
     pal = view.palette()
 
@@ -632,10 +665,7 @@ def sketch_toolbar(view, on_finish) -> QWidget:
     lay.setSpacing(0)
 
     def sep():
-        line = QFrame()
-        line.setFrameShape(QFrame.VLine)
-        line.setProperty("ribbonSep", True)
-        lay.addWidget(line)
+        lay.addWidget(_ribbon_sep())
 
     # Create: the drawing tools, mutually exclusive
     tool_group = QActionGroup(bar)
@@ -703,4 +733,4 @@ def sketch_toolbar(view, on_finish) -> QWidget:
     finish = _ribbon_button(a_finish, big=True)
     finish.setProperty("finish", True)
     lay.addWidget(_ribbon_group("", [finish]))
-    return bar
+    return RibbonScroll(bar)

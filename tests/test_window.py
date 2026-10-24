@@ -32,3 +32,32 @@ def test_full_screen_toggles(window):
     win.a_fullscreen.trigger()
     app.processEvents()
     assert not win.isFullScreen() and not win.a_fullscreen.isChecked()
+
+
+def test_sketch_ribbon_fits_a_laptop_screen(window):
+    # The sketch ribbon is wider than a laptop screen. It used to push the window's minimum
+    # width past the screen (full screen could not fit it) and grow to half the window's
+    # height (its VLine separators grow vertically). It scrolls sideways at its own height.
+    from PySide6.QtWidgets import QVBoxLayout, QWidget
+    from syntexophobic.design_ui import sketch_toolbar
+    from syntexophobic.sketch import Sketch
+    from syntexophobic.sketcher import SketchView
+    win, app = window
+    view = SketchView(Sketch())
+    page = QWidget()
+    col = QVBoxLayout(page)
+    ribbon = sketch_toolbar(view, lambda *_: None)
+    col.addWidget(ribbon)
+    col.addWidget(view)
+    win.stack.addWidget(page)
+    win.stack.setCurrentWidget(page)
+    win.resize(1400, 860)
+    app.processEvents()
+    try:
+        assert win.minimumSizeHint().width() <= 1280
+        assert ribbon.height() == ribbon.sizeHint().height() < 140
+        assert view.height() > 400
+    finally:
+        win.stack.setCurrentWidget(win.viewer)
+        win.stack.removeWidget(page)
+        page.deleteLater()
