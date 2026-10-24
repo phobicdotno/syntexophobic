@@ -57,11 +57,25 @@ def pack(folder: str | Path, path: str | Path) -> Path:
     tmp = path.with_name(path.name + ".part")
     try:
         _write(folder, tmp)
-        os.replace(tmp, path)
+        _replace(tmp, path)
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
     return path
+
+
+def _replace(tmp: Path, path: Path, tries: int = 20, wait: float = 0.1) -> None:
+    """os.replace, retried for a moment: on Windows it fails while another program (a virus
+    scanner, a sync client, phobiCCCP reading it) has the file open."""
+    import time
+    for i in range(tries):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if i == tries - 1:
+                raise
+            time.sleep(wait)
 
 
 def pack_bytes(folder: str | Path) -> bytes:

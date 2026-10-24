@@ -141,3 +141,28 @@ def test_dialog_lists_what_it_finds(monkeypatch):
     assert found.count() == 1 and "shop-pc" in found.item(0).text()
     found.setCurrentRow(0)
     assert dlg.findChild(QLineEdit).text() == "10.0.0.7"
+
+
+def test_discovery_goes_on_after_windows_reports_an_unread_packet(monkeypatch):
+    answer = json.dumps({"app": "phobiCCCP", "host": "shop-pc", "port": send.PORT}).encode()
+
+    class Sock:
+        def __init__(self, *a):
+            self.replies = [ConnectionResetError(10054, "reset"), (answer, ("10.0.0.5", send.PORT))]
+
+        def setsockopt(self, *a): pass
+        def ioctl(self, *a): pass
+        def settimeout(self, t): pass
+        def sendto(self, *a): pass
+        def close(self): pass
+
+        def recvfrom(self, n):
+            if not self.replies:
+                raise TimeoutError
+            r = self.replies.pop(0)
+            if isinstance(r, Exception):
+                raise r
+            return r
+
+    monkeypatch.setattr(send.socket, "socket", Sock)
+    assert [p.name for p in send.discover()] == ["shop-pc"]
