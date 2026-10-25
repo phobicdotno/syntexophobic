@@ -24,14 +24,8 @@ import math
 from dataclasses import dataclass, field
 
 import pyclipper
-from OCP.BRepAdaptor import BRepAdaptor_Curve
-from OCP.BRepAlgoAPI import BRepAlgoAPI_Section
-from OCP.GCPnts import GCPnts_AbscissaPoint
-from OCP.GeomAbs import GeomAbs_Line
-from OCP.TopAbs import TopAbs_EDGE
-from OCP.TopExp import TopExp_Explorer
-from OCP.TopoDS import TopoDS, TopoDS_Shape
-from OCP.gp import gp_Dir, gp_Pln, gp_Pnt
+from OCP.TopoDS import TopoDS_Shape
+from OCP.gp import gp_Pnt
 
 from . import geometry
 
@@ -288,45 +282,60 @@ def _frame(axis: str, c: float) -> Frame:
     return Frame(tuple(origin), u, v, n)
 
 
-def section(shape: TopoDS_Shape, axis: str, c: float) -> list:
-    """The material of the shape on the plane axis = c, as a clipper region in slice (u, v)."""
-    n, u, v = AXES[axis]
-    k = _INDEX[axis]
-    o = [0.0, 0.0, 0.0]
-    o[k] = c
-    region = []
-    for solid in geometry.solids(shape):
-        sec = BRepAlgoAPI_Section(solid, gp_Pln(gp_Pnt(*o), gp_Dir(*n)), False)
-        sec.Approximation(False)
-        sec.ComputePCurveOn1(False)
-        sec.ComputePCurveOn2(False)
-        sec.Build()
+class Mesh:
+    """The model's triangles, cut by planes. Slicing the mesh is fast and works the same
+    for every model: OpenCascade's B-rep section misses whole slices of a solid that came
+    from an STL, and is slow on one."""
+
+    def __init__(self, shape: TopoDS_Shape, deflection: float = 0.02):
+        import numpy as np
+        from OCP.BRepMesh import BRepMesh_IncrementalMesh
+        BRepMesh_IncrementalMesh(shape, deflection, False, 0.2, True)
+        verts, tris = geometry.mesh(shape, deflection)
+        self.v = np.asarray(verts, dtype=float).reshape(-1, 3)
+        self.t = np.asarray(tris, dtype=np.int64).reshape(-1, 3)
+
+    def section(self, axis: str, c: float) -> list:
+        """The material on the plane axis = c, as a clipper region in slice (u, v)."""
+        import numpy as np
+        n, u, v = AXES[axis]
+        u, v = np.asarray(u, dtype=float), np.asarray(v, dtype=float)
+        k = _INDEX[axis]
+        d = self.v[:, k] - c
+        # a vertex on (or a hair from) the plane makes near-zero segments that chain wrongly,
+        # e.g. along a sphere's seam: move the plane off it, by far less than a laser kerf
+        for nudge in (0.0, 0.01, -0.01, 0.023, -0.023):
+            d = self.v[:, k] - (c + nudge)
+            if not np.any(np.abs(d) < 0.002):
+                break
+        side = d > 0
+        tri_side = side[self.t]
+        tris = self.t[tri_side.any(axis=1) & ~tri_side.all(axis=1)]
+        if not len(tris):
+            return []
         segs = []
-        exp = TopExp_Explorer(sec.Shape(), TopAbs_EDGE)
-        while exp.More():
-            segs.append(_edge_uv(TopoDS.Edge(exp.Current()), u, v))
-            exp.Next()
-        loops = geometry._chain(segs)
-        if loops:                                     # even-odd: holes inside outlines
-            pc = pyclipper.Pyclipper()
-            pc.AddPaths(_ints(loops), pyclipper.PT_SUBJECT, True)
-            region = _union(region, pc.Execute(pyclipper.CT_UNION, pyclipper.PFT_EVENODD, pyclipper.PFT_EVENODD))
-    return region
+        for tri in tris.tolist():
+            pts = []
+            for i, j in ((tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])):
+                if side[i] != side[j]:
+                    if i > j:                  # same edge, same point from both triangles
+                        i, j = j, i
+                    f = d[i] / (d[i] - d[j])
+                    q = self.v[i] + f * (self.v[j] - self.v[i])
+                    pts.append((float(q @ u), float(q @ v)))
+            if len(pts) == 2:
+                segs.append(pts)
+        loops = geometry._chain(segs, tol=1e-5)   # shared edges give bit-identical points
+        if not loops:
+            return []
+        pc = pyclipper.Pyclipper()           # even-odd: holes inside outlines
+        pc.AddPaths(_ints(loops), pyclipper.PT_SUBJECT, True)
+        return _norm(pc.Execute(pyclipper.CT_UNION, pyclipper.PFT_EVENODD, pyclipper.PFT_EVENODD))
 
 
-def _edge_uv(edge, u: Vec, v: Vec) -> list[Point]:
-    curve = BRepAdaptor_Curve(edge)
-    t0, t1 = curve.FirstParameter(), curve.LastParameter()
-    if curve.GetType() == GeomAbs_Line:
-        n = 1
-    else:
-        n = min(400, max(8, math.ceil(GCPnts_AbscissaPoint.Length_s(curve) / 0.2)))
-    pts = []
-    for i in range(n + 1):
-        p = curve.Value(t0 + (t1 - t0) * i / n)
-        q = (p.X(), p.Y(), p.Z())
-        pts.append((sum(q[j] * u[j] for j in range(3)), sum(q[j] * v[j] for j in range(3))))
-    return pts
+def section(shape, axis: str, c: float) -> list:
+    """The material of the shape (or a Mesh of it) on the plane axis = c."""
+    return (shape if isinstance(shape, Mesh) else Mesh(shape)).section(axis, c)
 
 
 def _extent(box, axis: str) -> tuple[float, float]:
@@ -365,9 +374,11 @@ def make(shape: TopoDS_Shape, s: FabSettings) -> FabResult:
 
 def _slices(shape, axis, cs, s, res, prefix):
     """(name, centre, region) for every slice that cuts material."""
+    mesh = getattr(res, "_mesh", None) or Mesh(shape)
+    res._mesh = mesh
     out = []
     for c in cs:
-        reg = section(shape, axis, c)
+        reg = mesh.section(axis, c)
         if not reg or not _islands(reg, s.min_area):
             res.warnings.append(f"No material at {axis} = {c:.1f} mm: slice left out")
             continue

@@ -351,6 +351,9 @@ class MainWindow(QMainWindow):
         self.a_generate = act("Generate toolpaths", self.generate, "generate", "Ctrl+G", m_paths, toolbar=False)
         self.a_simulate = act("Simulate", self.simulate, "simulate", "Ctrl+R", m_paths, toolbar=False)
         self.a_export = act("Export G-code…", self.export_gcode, "export", "Ctrl+E", m_file, toolbar=False)
+        self.a_fabslice = act("Slice for laser / CNC…", self.slice_for_fabrication, "fabslice", None, m_file, toolbar=False)
+        self.a_fabslice.setIconText("Slice")
+        self.a_fabslice.setToolTip("Slice for laser / CNC: cut the model into flat parts from sheet material")
         m_file.addSeparator()
         for text, slot in (("Import DXF as sketch…", self.import_dxf), ("Export sketch…", self.export_dxf),
                            ("Export model…", self.export_model),
@@ -485,12 +488,14 @@ class MainWindow(QMainWindow):
         design_page = page([("CREATE", [_ribbon_button(a, big=a.text() in {"Extrude", "Revolve"}) for a in create]),
                             ("MODIFY", [_ribbon_button(a) for a in modify]),
                             ("INSERT", [_ribbon_button(a) for a in insert]),
-                            ("INSPECT", [_ribbon_button(a) for a in inspect])])
+                            ("INSPECT", [_ribbon_button(a) for a in inspect]),
+                            ("FABRICATE", [_ribbon_button(self.a_fabslice, big=True)])])
 
         # ---- Manufacture tab ----
         manu_page = page([("ACTIONS", [_ribbon_button(self.a_generate, big=True),
                                        _ribbon_button(self.a_simulate, big=True),
                                        _ribbon_button(self.a_export)]),
+                          ("SHEETS", [_ribbon_button(self.a_fabslice, big=True)]),
                           ("DISPLAY", [_ribbon_button(self.c_paths), _ribbon_button(self.c_rapids),
                                        _ribbon_button(self.c_model)])])
 
@@ -1499,6 +1504,22 @@ class MainWindow(QMainWindow):
             saved.append(out.name)
         self.status.setText("Saved " + " and ".join(saved) + ": run the top file, flip the part over its X axis, "
                             "then run the bottom file.")
+
+    def slice_for_fabrication(self):
+        """Cut the model on screen into flat parts for the laser or the CNC (fabslice)."""
+        dlg = getattr(self, "_fab_dialog", None)
+        if dlg is not None and dlg.isVisible():
+            dlg.raise_()
+            dlg.activateWindow()
+            return
+        shape = getattr(self.viewer, "shape", None)
+        if shape is None or self.project is None:
+            QMessageBox.information(self, "Slice for laser / CNC", "Open or design a model first.")
+            return
+        from .fabslice_ui import FabSliceDialog
+        folder = self.project.folder
+        self._fab_dialog = FabSliceDialog(shape, self.viewer, stem=folder.name, folder=str(folder.parent), parent=self)
+        self._fab_dialog.show()
 
     def send_to_phobicccp(self):
         if self.project is None:

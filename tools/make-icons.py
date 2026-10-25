@@ -139,6 +139,10 @@ ICONS = {
                  + '<path d="M7.5 7 5.5 10 7.5 13M12.5 7 14.5 10 12.5 13"/>',
 
     # ---- design features (the sketch profile in blue, the solid in ink, cuts amber) ---
+    # slice for fabrication: the model (dashed) cut into upright slices standing in a base plate
+    "fabslice": helper('<circle cx="10" cy="8.5" r="6.5"/>')
+                + cut('<path d="M5.5 4.2V16M8.5 2.2V16M11.5 2.2V16M14.5 4.2V16"/>')
+                + '<path d="M2.5 16H17.5V18H2.5Z"/>',
     "extrude": face(LEFT_FACE) + '<path d="M3.5 13.8 10 17.5 16.5 13.8"/>'
                + helper('<path d="M3.5 13.8 10 10 16.5 13.8"/>', dashed=False)
                + '<path d="M3.5 13.8V8.5M10 17.5V12M16.5 13.8V8.5M3.5 8.5 10 12 16.5 8.5 10 4.7Z"/>'
