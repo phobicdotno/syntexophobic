@@ -61,3 +61,26 @@ def test_sketch_ribbon_fits_a_laptop_screen(window):
         win.stack.setCurrentWidget(win.viewer)
         win.stack.removeWidget(page)
         page.deleteLater()
+
+
+def test_slice_for_fabrication_dialog(window, tmp_path):
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
+    from OCP.gp import gp_Pnt
+    from syntexophobic.fabslice_ui import FabSliceDialog
+    win, app = window
+    shape = BRepPrimAPI_MakeBox(gp_Pnt(0, 0, 0), 100, 60, 40).Shape()
+    dlg = FabSliceDialog(shape, win.viewer, stem="boxy", parent=win)
+    dlg.show()
+    app.processEvents()
+    assert dlg.sheets and "parts" in dlg.summary.text()
+    assert win.viewer.shape is not shape                  # the 3D view shows the slices
+    for i in range(dlg.style.count()):                   # every style builds sheets
+        dlg.style.setCurrentIndex(i)
+        dlg.recompute()
+        assert dlg.sheets, (dlg.style.currentText(), dlg.error)
+    dlg.hide()
+    files = dlg.export(str(tmp_path))
+    assert files and all(f.exists() for f in files)
+    dlg.reject()
+    assert win.viewer.shape is shape                      # back to the model
+    assert win.a_fabslice.icon().isNull() is False

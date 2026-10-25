@@ -516,6 +516,46 @@ class Session:
             saved.append(str(out))
         return {"saved": saved}
 
+    # ---- slice for laser / CNC -------------------------------------------------------------
+
+    def slice_for_fabrication(self, style: str = "stacked", out: str = "", show: bool = True, **settings) -> dict:
+        """Cut the model into flat parts for laser or CNC and write the sheets (DXF + SVG).
+
+        style: stacked | rod | base | back | waffle. Build settings (fabslice.FabSettings):
+        up, axis, thickness, spacing, count, clearance, rod_diameter, rod_at, dowels,
+        dowel_diameter, wall, plate_margin, guide_outline. Sheet settings
+        (fabexport.SheetSettings): width, height, gap, margin, machine (laser | cnc), kerf,
+        tool_diameter, labels, label_height. With the window open the Slice window shows it.
+        """
+        from dataclasses import fields as dc_fields
+        from . import fabexport, fabslice
+        p = self._need()
+        build = {f.name for f in dc_fields(fabslice.FabSettings)}
+        sheet = {f.name for f in dc_fields(fabexport.SheetSettings)}
+        unknown = sorted(set(settings) - build - sheet)
+        if unknown:
+            raise CommandError(f"Unknown setting(s) {', '.join(unknown)}; build: {', '.join(sorted(build))}; "
+                               f"sheet: {', '.join(sorted(sheet))}")
+        if "rod_at" in settings and settings["rod_at"] is not None:
+            settings["rod_at"] = tuple(settings["rod_at"])
+        fs = fabslice.FabSettings(style=style, **{k: v for k, v in settings.items() if k in build and k != "style"})
+        ss = fabexport.SheetSettings(**{k: v for k, v in settings.items() if k in sheet})
+        try:
+            shape = p.shape
+            res = fabslice.make(shape, fs)
+            sheets = fabexport.layout(res, ss)
+        except (fabslice.FabError, ValueError, ModelError) as e:
+            raise CommandError(str(e)) from None
+        folder = Path(out).expanduser() if out else p.output_dir / "sheets"
+        files = fabexport.write(sheets, ss, folder, p.folder.name)
+        if self.window is not None and show:
+            self.window.automation_fabslice(fs, ss)
+        kinds: dict = {}
+        for part in res.parts:
+            kinds[part.kind] = kinds.get(part.kind, 0) + part.copies
+        return {"parts": res.count(), "by_kind": kinds, "sheets": len(sheets),
+                "files": [str(f) for f in files], "warnings": res.warnings}
+
     # ---- history ----------------------------------------------------------------------------
 
     def save_version(self, message: str) -> dict:
