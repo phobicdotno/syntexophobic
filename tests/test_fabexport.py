@@ -78,3 +78,23 @@ def test_files_read_back(tmp_path):
     svg = files[1].read_text()
     assert 'width="400mm"' in svg and svg.count("<path") == len(sheets[0].cuts) + len(
         [e for e in sheets[0].engrave if len(e) >= 2])
+
+
+def test_automation_command_writes_sheets(tmp_path):
+    from syntexophobic import automation as A
+    from syntexophobic import geometry
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeSphere
+    from OCP.gp import gp_Pnt
+    from OCP.StlAPI import StlAPI_Writer
+    from OCP.BRepMesh import BRepMesh_IncrementalMesh
+    ball = BRepPrimAPI_MakeSphere(gp_Pnt(0, 0, 40), 40).Shape()
+    BRepMesh_IncrementalMesh(ball, 0.05)
+    stl = tmp_path / "ball.stl"
+    StlAPI_Writer().Write(ball, str(stl))
+    s = A.Session()
+    s.new_from_step(str(stl), str(tmp_path / "ball-cam"))
+    r = s.slice_for_fabrication("waffle", count=4, thickness=4, width=500, height=300)
+    assert r["parts"] == 8 and r["sheets"] >= 1 and not r["warnings"]
+    assert all(geometry and __import__("pathlib").Path(f).exists() for f in r["files"])
+    with pytest.raises(A.CommandError, match="Unknown setting"):
+        s.slice_for_fabrication("rod", diameter=8)

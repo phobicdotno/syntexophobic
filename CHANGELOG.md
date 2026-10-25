@@ -3,6 +3,17 @@
 Each release has a version and a build number; Help → About shows a one-line summary of
 every release, read from this file.
 
+## v0.8.7 (build 20) — 2026-10-25
+
+**Slice for laser / CNC**
+- New: cut the model into flat parts to cut from sheet wood or acrylic and build it back up:
+  stacked layers, slices on a rod, slices on a base or back plate, or a waffle grid.
+- Stacked layers get dowel holes and an engraved outline of where the next layer goes; rod
+  slices get spacer rings; plates get numbered slots.
+- Pick the sheet thickness, spacing, slot play, and laser or CNC router. The 3D view shows
+  the slices put together, and the parts are packed onto sheets.
+- Export sheets as DXF and SVG: cuts in red, names and guides engraved in blue.
+
 ## v0.8.6 (build 19) — 2026-10-24
 
 **Machining safety**

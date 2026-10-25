@@ -24,7 +24,8 @@ part: parameters + features) and sketches/*.toml. Units are mm.
 Typical flow: new_design -> add_sketch -> sketch_draw / sketch_constrain (until 0 degrees of
 freedom) -> add_feature (extrude, revolve, loft, sweep, hole, fillet, chamfer, shell, mirror) ->
 add_tool / add_operation -> generate -> simulate (must be safe: no gouges, no rapids into stock)
--> export_gcode -> save_version. Call status first to see what is open. Use screenshot to see
+-> export_gcode -> save_version. For laser / CNC sheet parts (stacked, rod, plate or
+waffle builds) use slice_for_fabrication. Call status first to see what is open. Use screenshot to see
 the result when the window is open. Never tell the user a file is safe to run unless simulate
 returned safe=true."""
 
@@ -363,6 +364,23 @@ def simulate(resolution: float = 0.25) -> str:
 def export_gcode(path: str = "") -> str:
     """Write G-code (one file per side for two-sided jobs). Default: <project>/<name>.nc."""
     return _out(_call("export_gcode", path=path))
+
+
+# ---- slice for laser / CNC ---------------------------------------------------------------------
+
+@server.tool()
+def slice_for_fabrication(style: str = "stacked", out: str = "", settings: dict | None = None) -> str:
+    """Cut the open model into flat parts to laser or CNC from sheet wood / acrylic, and write
+    one DXF + SVG per sheet (red CUT, blue ENGRAVE layers). Default folder: <project>/sheets.
+
+    style: stacked (glued layers, dowel holes, engraved placement guides) | rod (slices on a
+    rod, spacer rings) | base (upright slices in slots of a base plate) | back (same, back
+    plate) | waffle (two interlocking sets slotted half way).
+    settings, all optional: thickness (sheet, mm, default 3), up (+Z), axis (X | Y | Z),
+    spacing, count, clearance (slot play, 0.2), rod_diameter, rod_at [u, v], dowels,
+    dowel_diameter, wall, plate_margin, guide_outline, width / height (sheet size, 600 x 400),
+    gap, margin, machine (laser | cnc), kerf (0.15), tool_diameter (3.175), labels."""
+    return _out(_call("slice_for_fabrication", style=style, out=out, **(settings or {})))
 
 
 # ---- history -----------------------------------------------------------------------------------

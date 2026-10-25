@@ -5,7 +5,6 @@ import time
 import pyclipper
 import pytest
 
-from syntexophobic import nesting
 from syntexophobic.nesting import Placement, nest, transform
 
 SCALE = 1000

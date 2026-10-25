@@ -1172,7 +1172,8 @@ class MainWindow(QMainWindow):
             self.assistant.library_changed()
         if cmd == "library_list" or (cmd == "library_add" and self.project is None):
             return
-        if cmd in ("status", "get_sketch", "history", "diff", "screenshot", "view") or s.project is None:
+        if cmd in ("status", "get_sketch", "history", "diff", "screenshot", "view",
+                   "slice_for_fabrication") or s.project is None:     # these change no project files
             return
         if s.project is not self.project:
             self.load(s.project)
@@ -1227,6 +1228,13 @@ class MainWindow(QMainWindow):
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         shot.save(path)
         return path
+
+    def automation_fabslice(self, fs, ss) -> None:
+        """Open the Slice window showing these settings (for the automation command)."""
+        self.slice_for_fabrication()
+        dlg = getattr(self, "_fab_dialog", None)
+        if dlg is not None:
+            dlg.apply(fs, ss)
 
     def automation_view(self, preset: str, workspace: str) -> dict:
         if workspace:

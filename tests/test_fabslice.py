@@ -60,6 +60,8 @@ def test_rod_spacers_fill_the_gaps():
     assert r == pytest.approx(4.1, abs=0.05)               # rod radius + half the clearance
     spacer = next(p for p in res.parts if p.kind == "spacer")
     assert spacer.copies == 8 * 3                          # 9 mm gaps = 3 sheets each
+    xs = sorted(f.origin[0] for f in spacer.places)        # three rings filling each gap
+    assert len(xs) == 24 and xs[:3] == pytest.approx([5, 8, 11])
 
 
 def test_rod_through_a_torus_gets_hubs_and_stays_one_piece():

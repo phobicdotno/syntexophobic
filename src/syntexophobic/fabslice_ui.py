@@ -39,6 +39,15 @@ def _spin(lo, hi, value, step=0.5, decimals=2, suffix=" mm"):
     return s
 
 
+class SheetView(QGraphicsView):
+    """The sheets: the wheel zooms at the cursor, dragging pans."""
+
+    def wheelEvent(self, e):
+        f = 1.25 if e.angleDelta().y() > 0 else 0.8
+        self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
+        self.scale(f, f)
+
+
 class FabSliceDialog(QDialog):
     """Not modal: the 3D view behind it shows the assembled slices while it is open, and
     the model again when it closes."""
@@ -136,7 +145,8 @@ class FabSliceDialog(QDialog):
 
         # right: the sheets
         self.scene = QGraphicsScene()
-        self.view = QGraphicsView(self.scene)
+        self.view = SheetView(self.scene)
+        self.view.setToolTip("Wheel to zoom, drag to pan")
         self.view.setRenderHint(QPainter.Antialiasing)
         self.view.setDragMode(QGraphicsView.ScrollHandDrag)
         self.view.setBackgroundBrush(QColor("#1b1d21"))
@@ -192,6 +202,29 @@ class FabSliceDialog(QDialog):
                            machine=self.machine.currentData(), kerf=self.kerf.value(),
                            tool_diameter=self.tool.value(), labels=self.labels.isChecked())
         return fs, ss
+
+    def apply(self, fs: FabSettings, ss: SheetSettings) -> None:
+        """Show these settings and recompute."""
+        widgets = self._inputs()
+        for x in widgets:
+            x.blockSignals(True)
+        self.style.setCurrentIndex(self.style.findData(fs.style))
+        self.up.setCurrentText(fs.up)
+        self.axis.setCurrentText(fs.axis)
+        for spin, value in ((self.thickness, fs.thickness), (self.spacing, fs.spacing), (self.count, fs.count),
+                            (self.clearance, fs.clearance), (self.rod, fs.rod_diameter), (self.dowels, fs.dowels),
+                            (self.dowel_d, fs.dowel_diameter), (self.wall, fs.wall), (self.margin, fs.plate_margin),
+                            (self.kerf, ss.kerf), (self.tool, ss.tool_diameter), (self.sheet_w, ss.width),
+                            (self.sheet_h, ss.height), (self.gap, ss.gap)):
+            spin.setValue(value)
+        self.guide.setChecked(fs.guide_outline)
+        self.labels.setChecked(ss.labels)
+        self.machine.setCurrentIndex(self.machine.findData(ss.machine))
+        for x in widgets:
+            x.blockSignals(False)
+        self._changed()
+        self._timer.stop()
+        self.recompute()
 
     def _load(self):
         st = QSettings()

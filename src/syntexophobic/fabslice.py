@@ -85,6 +85,7 @@ class FabPart:
     engrave: list[list[Point]] = field(default_factory=list)       # guide lines, open polylines
     marks: list[tuple[str, float, float, float]] = field(default_factory=list)  # text, x, y, height
     copies: int = 1
+    places: list[Frame] = field(default_factory=list)   # where each copy goes, for the preview
 
     def area(self) -> float:
         return abs(_area(self.rings[0])) - sum(abs(_area(h)) for h in self.rings[1:])
@@ -493,9 +494,13 @@ def _rod(shape, s, res):
     ring = _islands(_diff(_disk(0, 0, hub_r), _disk(0, 0, s.rod_diameter / 2 + s.clearance / 2)))
     total = sum(max(0, round(g / s.thickness)) for g in gaps)
     if total and ring:
-        f = _frame(axis, (slices[0][1] + slices[1][1]) / 2)
-        f = Frame(f.to3d(ru, rv), f.u, f.v, f.n)
-        part = FabPart("Spacer", "spacer", ring[0], f)
+        places = []
+        for (_, a, _), g in zip(slices, gaps):
+            n = max(0, round(g / s.thickness))
+            for r in range(n):            # rings stacked from one slice towards the next
+                f = _frame(axis, a + s.thickness / 2 + (r + 0.5) * (g / n))
+                places.append(Frame(f.to3d(ru, rv), f.u, f.v, f.n))
+        part = FabPart("Spacer", "spacer", ring[0], places[0], places=places)
         part.copies = total
         res.parts.append(part)
     off = [g - round(g / s.thickness) * s.thickness for g in gaps]
@@ -672,15 +677,17 @@ def solid(part: FabPart, thickness: float):
 
 
 def assembly(res: FabResult):
-    """Every part in place, as one compound (spacers drawn once, in the first gap)."""
+    """Every part in place, as one compound (every spacer ring in its gap)."""
     from OCP.BRep import BRep_Builder
     from OCP.TopoDS import TopoDS_Compound
     comp = TopoDS_Compound()
     b = BRep_Builder()
     b.MakeCompound(comp)
+    from dataclasses import replace
     for p in res.parts:
-        try:
-            b.Add(comp, solid(p, res.settings.thickness))
-        except Exception:               # a degenerate sliver must not stop the preview
-            continue
+        for frame in p.places or [p.frame]:
+            try:
+                b.Add(comp, solid(replace(p, frame=frame), res.settings.thickness))
+            except Exception:           # a degenerate sliver must not stop the preview
+                continue
     return comp
