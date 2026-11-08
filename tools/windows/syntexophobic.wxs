@@ -4,6 +4,11 @@
      Settings > Apps to uninstall it. A newer version's installer replaces the installed one
      (MajorUpgrade, by the UpgradeCode, which must never change).
 
+     Started by hand it opens on a splash page with the icon and the name (Install / Cancel),
+     shows its progress, and ends on "Syntexophobic was installed successfully" with [OK]. The
+     updater runs it with /passive and CI with /qn, which show none of these pages. The pictures
+     are drawn by installer_art.py; the progress, error and cancel pages are WiX's (UI extension).
+
      The updater finds an installed copy by HKCU\Software\Syntexophobic\InstallFolder.
      Uninstalling also removes what the program wrote into its folder (Python's __pycache__). -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
@@ -43,6 +48,82 @@
                      Value="[INSTALLFOLDER]" KeyPath="yes" />
       <util:RemoveFolderEx On="uninstall" Property="APPFOLDER" />
     </Component>
+
+    <!-- the pages a person sees -->
+    <Binary Id="Splash" SourceFile="!(bindpath.art)\splash.bmp" />
+    <Binary Id="AppIcon" SourceFile="$(Icon)" />
+    <WixVariable Id="WixUIBannerBmp" Value="!(bindpath.art)\banner.bmp" />
+    <WixVariable Id="WixUIDialogBmp" Value="!(bindpath.art)\dialog.bmp" />
+    <UIRef Id="WixUI_Common" />
+    <UI Id="Pages">
+      <TextStyle Id="WixUI_Font_Normal" FaceName="Segoe UI" Size="9" />
+      <TextStyle Id="WixUI_Font_Bigger" FaceName="Segoe UI" Size="12" />
+      <TextStyle Id="WixUI_Font_Title" FaceName="Segoe UI" Size="9" Bold="yes" />
+      <TextStyle Id="Splash_Font" FaceName="Segoe UI" Size="9" Red="216" Green="220" Blue="228" />
+      <TextStyle Id="Splash_Faint" FaceName="Segoe UI" Size="8" Red="154" Green="163" Blue="178" />
+      <Property Id="DefaultUIFont" Value="WixUI_Font_Normal" />
+
+      <DialogRef Id="ErrorDlg" />
+      <DialogRef Id="FatalError" />
+      <DialogRef Id="FilesInUse" />
+      <DialogRef Id="MsiRMFilesInUse" />
+      <DialogRef Id="PrepareDlg" />
+      <DialogRef Id="ProgressDlg" />
+      <DialogRef Id="UserExit" />
+      <DialogRef Id="CancelDlg" />
+      <DialogRef Id="OutOfDiskDlg" />
+
+      <!-- the splash page: the picture, what will happen, Install (or Remove when this very
+           version is installed already) -->
+      <Dialog Id="SplashDlg" Width="370" Height="270" Title="Syntexophobic Setup">
+        <Control Id="Picture" Type="Bitmap" X="0" Y="0" Width="370" Height="234" TabSkip="no" Text="Splash" />
+        <Control Id="Version" Type="Text" X="168" Y="94" Width="190" Height="12" Transparent="yes" NoPrefix="yes"
+                 Text="{\Splash_Faint}Version [ProductVersion]" />
+        <Control Id="New" Type="Text" X="168" Y="114" Width="190" Height="60" Transparent="yes" NoPrefix="yes"
+                 Text="{\Splash_Font}Click Install to set Syntexophobic up for you. It needs no administrator, and gets its own Start menu entry."
+                 ShowCondition="NOT Installed AND NOT WIX_UPGRADE_DETECTED" HideCondition="Installed OR WIX_UPGRADE_DETECTED" />
+        <Control Id="Upgrade" Type="Text" X="168" Y="114" Width="190" Height="60" Transparent="yes" NoPrefix="yes"
+                 Text="{\Splash_Font}Click Install to update Syntexophobic to version [ProductVersion]. Your projects and settings are kept."
+                 ShowCondition="NOT Installed AND WIX_UPGRADE_DETECTED" HideCondition="Installed OR NOT WIX_UPGRADE_DETECTED" />
+        <Control Id="Present" Type="Text" X="168" Y="114" Width="190" Height="60" Transparent="yes" NoPrefix="yes"
+                 Text="{\Splash_Font}Syntexophobic [ProductVersion] is already installed. Click Remove to uninstall it."
+                 ShowCondition="Installed" HideCondition="NOT Installed" />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="Install" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="&amp;Install"
+                 ShowCondition="NOT Installed" HideCondition="Installed">
+          <Publish Event="SpawnDialog" Value="OutOfDiskDlg" Condition="OutOfDiskSpace = 1" Order="1" />
+          <Publish Event="EndDialog" Value="Return" Condition="OutOfDiskSpace &lt;&gt; 1" Order="2" />
+        </Control>
+        <Control Id="Remove" Type="PushButton" X="236" Y="243" Width="56" Height="17" Text="&amp;Remove"
+                 ShowCondition="Installed" HideCondition="NOT Installed">
+          <Publish Property="WixUI_InstallMode" Value="Remove" Order="1" />
+          <Publish Event="Remove" Value="All" Order="2" />
+          <Publish Event="EndDialog" Value="Return" Order="3" />
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="Cancel">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+      </Dialog>
+
+      <!-- the end: a plain message with OK -->
+      <Dialog Id="DoneDlg" Width="250" Height="80" Title="Syntexophobic Setup">
+        <Control Id="Icon" Type="Icon" X="14" Y="14" Width="24" Height="24" FixedSize="yes" IconSize="32" Text="AppIcon" />
+        <Control Id="Success" Type="Text" X="50" Y="16" Width="190" Height="30" NoPrefix="yes"
+                 Text="Syntexophobic [ProductVersion] was installed successfully. You will find it in the Start menu."
+                 ShowCondition="WixUI_InstallMode &lt;&gt; &quot;Remove&quot;" HideCondition="WixUI_InstallMode = &quot;Remove&quot;" />
+        <Control Id="Removed" Type="Text" X="50" Y="16" Width="190" Height="30" NoPrefix="yes"
+                 Text="Syntexophobic was removed."
+                 ShowCondition="WixUI_InstallMode = &quot;Remove&quot;" HideCondition="WixUI_InstallMode &lt;&gt; &quot;Remove&quot;" />
+        <Control Id="OK" Type="PushButton" X="184" Y="55" Width="56" Height="17" Default="yes" Cancel="yes" Text="OK">
+          <Publish Event="EndDialog" Value="Return" />
+        </Control>
+      </Dialog>
+
+      <InstallUISequence>
+        <Show Dialog="SplashDlg" Before="ProgressDlg" />
+        <Show Dialog="DoneDlg" OnExit="success" />
+      </InstallUISequence>
+    </UI>
 
     <Feature Id="Main">
       <ComponentGroupRef Id="Program" />

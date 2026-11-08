@@ -7,6 +7,7 @@
 # MinGit, and WiX 5 with its util extension for the installer:
 #     dotnet tool install --global wix --version 5.0.2
 #     wix extension add --global WixToolset.Util.wixext/5.0.2
+#     wix extension add --global WixToolset.UI.wixext/5.0.2
 set -euo pipefail
 cd "$(dirname "$0")/.."
 UV=${UV:-uv}
@@ -56,9 +57,10 @@ echo "$ZIP ($(du -h "$ZIP" | cut -f1))"
 # the installer, of the same folder (an absolute path: WiX takes a relative one from the .wxs)
 MSI="dist/Syntexophobic-$VERSION-windows-x64.msi"
 rm -f "$MSI"
-wix build -arch x64 -ext WixToolset.Util.wixext \
+QT_QPA_PLATFORM=offscreen "$PYTHON" tools/windows/installer_art.py build/windows/installer
+wix build -arch x64 -ext WixToolset.Util.wixext -ext WixToolset.UI.wixext \
     -d Version="$VERSION" -d Icon="$(cygpath -w build/windows/syntexophobic.ico)" \
-    -bindpath app="$(cygpath -wa "$OUT")" \
+    -bindpath app="$(cygpath -wa "$OUT")" -bindpath art="$(cygpath -wa build/windows/installer)" \
     -o "$MSI" tools/windows/syntexophobic.wxs
 rm -f "${MSI%.msi}.wixpdb"
 # WiX only warns when it finds nothing to install
