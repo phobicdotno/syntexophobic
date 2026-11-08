@@ -296,7 +296,7 @@ class SketchView(QGraphicsView):
         elif ev.key() in (Qt.Key_Delete, Qt.Key_Backspace):
             for eid in self.selected:
                 if eid in self.sketch.points or eid in self.sketch.lines or eid in self.sketch.circles \
-                        or eid in self.sketch.arcs:
+                        or eid in self.sketch.arcs or eid in self.sketch.splines:
                     self.sketch.delete(eid)
             self.selected = []
             self.commit()

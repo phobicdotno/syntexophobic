@@ -96,9 +96,9 @@ Claude Code (no API key):
   then any Claude Code session can design, machine, simulate and export. With the window
   open, changes appear in it live; without it, Claude works on the project files.
 
-The MCP server has 43 tools (projects, parameters, sketches, features, stock, tools, tool
-library, operations, toolpaths, simulation, G-code, history, views, screenshots, problem
-reports).
+The MCP server has 45 tools (projects, parameters, sketches, features, stock, tools, tool
+library, operations, toolpaths, simulation, G-code, slicing for laser / CNC sheets, history,
+views, screenshots, problem reports).
 Claude is told to call nothing safe to run until `simulate` says so.
 
 **Fault reports:** when a tool fails in the Assistant panel, or Claude can't do what you
@@ -107,6 +107,13 @@ request, every tool call and its result, Claude's answer, a screenshot and the l
 (`~/.cache/syntexophobic/syntexophobic.log`); the chat links it. The same fault again is
 added to the open issue. It uses your GitHub login (`gh auth login`, `GH_TOKEN`, or the token
 git keeps); without one nothing is sent. `SYNTEXOPHOBIC_NO_FAULT_REPORTS=1` turns it off.
+
+**Error reports:** every other error while you use the program goes there too: exceptions,
+logged errors, error and warning dialogs, Qt errors and a crash of the last run, each with
+the version, OS, traceback, open project and the log of what you did before it (label
+`app-error`). A repeat is a comment on its open issue, sent once per run and at most once a
+day after that, with the count in between; at most 20 reports per run. Help → *Send error
+reports automatically* turns it off.
 
 ## How it works
 
@@ -194,6 +201,25 @@ figure from a picture.
 - **File > Export model…**: STEP, IGES, BREP (exact solids) or STL, OBJ, PLY, glTF and 3MF
   (meshes), by the file's extension.
 - **File > Export sketch…**: DXF, SVG, PDF, EPS or HPGL, 1:1 in millimetres.
+
+### Slice for laser / CNC
+
+**Slice** (Design ribbon, Fabricate; Manufacture ribbon, Sheets; or File > Slice for laser /
+CNC…) cuts the model into flat parts to cut from sheet wood or acrylic and put back together:
+
+| Style | How it goes together |
+|---|---|
+| Stacked layers | Horizontal layers one sheet thick, glued. Dowel holes line them up; each layer has where its neighbour goes engraved on it. |
+| Slices on a rod | Slices threaded on a rod or pipe, with spacer rings cut from the same sheet. A slice the rod misses gets a hub. |
+| Slices on a base plate | Upright slices with tabs in slots of a base plate, numbered on the plate. |
+| Slices on a back plate | The same against a back plate, to hang on a wall. |
+| Waffle | Two sets of upright slices at right angles, slotted half way so they slide together. |
+
+Choose the sheet thickness, the spacing or number of slices, the play in slots and holes,
+and laser (kerf compensation) or CNC router (dogbones in the inside corners for the bit).
+The 3D view shows the assembled slices while the window is open, and the sheets are drawn
+beside the settings. **Export sheets…** writes one DXF and one SVG per sheet: cuts red on
+layer CUT, part names and guides blue on layer ENGRAVE, packed onto the sheet size you set.
 
 ### Project files (.cccp)
 

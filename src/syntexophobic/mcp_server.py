@@ -24,7 +24,8 @@ part: parameters + features) and sketches/*.toml. Units are mm.
 Typical flow: new_design -> add_sketch -> sketch_draw / sketch_constrain (until 0 degrees of
 freedom) -> add_feature (extrude, revolve, loft, sweep, hole, fillet, chamfer, shell, mirror) ->
 add_tool / add_operation -> generate -> simulate (must be safe: no gouges, no rapids into stock)
--> export_gcode -> save_version. Call status first to see what is open. Use screenshot to see
+-> export_gcode -> save_version. For laser / CNC sheet parts (stacked, rod, plate or
+waffle builds) use slice_for_fabrication. Call status first to see what is open. Use screenshot to see
 the result when the window is open. Never tell the user a file is safe to run unless simulate
 returned safe=true."""
 
@@ -45,13 +46,14 @@ def _call(cmd: str, **args):
         raise
     except A.CommandError as e:
         raise ToolError(str(e) or f"{cmd} failed") from e
-    except Exception as e:
+    except Exception as e:  # not a refusal: a bug, logged and so reported (errors.py)
+        faults.log.error("mcp %s(%s) failed", cmd, json.dumps(args, default=str)[:300], exc_info=True)
         raise ToolError(f"{type(e).__name__}: {e}" if str(e) else type(e).__name__) from e
 
 
 def _run(cmd: str, args: dict):
     try:
-        return _run(cmd, args)
+        return _dispatch(cmd, args)
     except Exception as e:
         faults.log.warning("mcp %s(%s) failed: %s: %s", cmd, json.dumps(args, default=str)[:300], type(e).__name__, e)
         if not str(e).strip():                 # never hand Claude an empty error
@@ -59,16 +61,29 @@ def _run(cmd: str, args: dict):
         raise
 
 
-def _run(cmd: str, args: dict):
+_seen: dict | None = None                    # the headless project's files after the last command
+
+
+def _files_now() -> dict | None:
+    from .project import Undo
+    return Undo(_headless.project.folder).snapshot() if _headless.project is not None else None
+
+
+def _dispatch(cmd: str, args: dict):
+    global _seen
     try:
         return A.send(cmd, args)
     except ConnectionError:
         pass
+    if _headless.project is not None and _files_now() != _seen:
+        _headless.project.reload()                  # the window (or anything) changed the files
+        _headless.toolpaths, _headless.last_simulation = [], None
     if _headless.project is None and cmd not in ("open_project", "new_design", "new_from_step") and _STATE.exists():
         last = json.loads(_STATE.read_text()).get("project")
         if last and Path(last).exists():
             _headless.open_project(last)
     result = A.run(_headless, cmd, args)
+    _seen = _files_now()
     if _headless.project is not None:
         _headless.project.pack()                    # a .cccp always holds the latest edit
         A.STATE.mkdir(parents=True, exist_ok=True)
@@ -351,6 +366,23 @@ def export_gcode(path: str = "") -> str:
     return _out(_call("export_gcode", path=path))
 
 
+# ---- slice for laser / CNC ---------------------------------------------------------------------
+
+@server.tool()
+def slice_for_fabrication(style: str = "stacked", out: str = "", settings: dict | None = None) -> str:
+    """Cut the open model into flat parts to laser or CNC from sheet wood / acrylic, and write
+    one DXF + SVG per sheet (red CUT, blue ENGRAVE layers). Default folder: <project>/sheets.
+
+    style: stacked (glued layers, dowel holes, engraved placement guides) | rod (slices on a
+    rod, spacer rings) | base (upright slices in slots of a base plate) | back (same, back
+    plate) | waffle (two interlocking sets slotted half way).
+    settings, all optional: thickness (sheet, mm, default 3), up (+Z), axis (X | Y | Z),
+    spacing, count, clearance (slot play, 0.2), rod_diameter, rod_at [u, v], dowels,
+    dowel_diameter, wall, plate_margin, guide_outline, width / height (sheet size, 600 x 400),
+    gap, margin, machine (laser | cnc), kerf (0.15), tool_diameter (3.175), labels."""
+    return _out(_call("slice_for_fabrication", style=style, out=out, **(settings or {})))
+
+
 # ---- history -----------------------------------------------------------------------------------
 
 @server.tool()
@@ -425,5 +457,7 @@ def screenshot() -> Image:
 
 
 def main() -> None:
+    from . import errors
     faults.setup_logging()
+    errors.install(qt=False, crashes=False)
     server.run("stdio")

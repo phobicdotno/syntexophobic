@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import tomllib
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
@@ -91,7 +92,7 @@ def _build(cls, data: dict):
 
 
 def load(path: str | Path) -> Job:
-    data = tomllib.loads(Path(path).read_text())
+    data = tomllib.loads(Path(path).read_text(encoding="utf-8"))
     j = data.get("job", {})
     return Job(
         name=j.get("name", "Untitled"),
@@ -103,11 +104,17 @@ def load(path: str | Path) -> Job:
     )
 
 
+def toml_str(s: str) -> str:
+    """A TOML basic string: quotes, backslashes and control characters escaped (a JSON
+    string is one, apart from DEL, which TOML wants escaped too)."""
+    return json.dumps(s, ensure_ascii=False).replace("\x7f", "\\u007f")
+
+
 def _value(v) -> str:
     if isinstance(v, bool):
         return "true" if v else "false"
     if isinstance(v, str):
-        return '"' + v.replace("\\", "\\\\").replace('"', '\\"') + '"'
+        return toml_str(v)
     return repr(v)
 
 
@@ -132,4 +139,4 @@ def dumps(job: Job) -> str:
 
 
 def save(job: Job, path: str | Path) -> None:
-    Path(path).write_text(dumps(job))
+    Path(path).write_text(dumps(job), encoding="utf-8")

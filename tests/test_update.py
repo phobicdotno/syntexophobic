@@ -94,8 +94,8 @@ def test_install_on_windows_downloads_the_installer(tmp_path, monkeypatch):
 def test_the_windows_update_runs_the_installer_once_the_program_has_closed(tmp_path):
     msi = tmp_path / "Syntexophobic-0.7.0-windows-x64.msi"
     folder = tmp_path / "Programs" / "Syntexophobic"
-    started = []
-    update.run_installer(msi, folder, popen=lambda cmd, **kw: started.append(cmd))
+    started, envs = [], []
+    update.run_installer(msi, folder, popen=lambda cmd, **kw: started.append(cmd) or envs.append(kw["env"]))
     bat = msi.with_suffix(".cmd")
     assert started == [["cmd.exe", "/c", str(bat)]]
     text = bat.read_bytes().decode()
@@ -104,8 +104,9 @@ def test_the_windows_update_runs_the_installer_once_the_program_has_closed(tmp_p
     pid = str(os.getpid())
     assert any(f'"PID eq {pid}"' in line and "goto wait" in line for line in lines)
     run = next(i for i, line in enumerate(lines) if "msiexec" in line)
-    assert lines[run] == f'start "" /wait msiexec /i "{msi}" /passive /norestart'
-    assert lines[run + 1] == f'start "" "{folder / "Syntexophobic.exe"}"'     # then starts it again
+    assert lines[run] == 'start "" /wait msiexec /i "%SYNTEXOPHOBIC_MSI%" /passive /norestart'
+    assert lines[run + 1] == 'start "" "%SYNTEXOPHOBIC_APP%\\Syntexophobic.exe"'     # then starts it again
+    assert (envs[0]["SYNTEXOPHOBIC_MSI"], envs[0]["SYNTEXOPHOBIC_APP"]) == (str(msi), str(folder))
 
 
 def test_check_passes_the_token_and_reports_no_access(monkeypatch):

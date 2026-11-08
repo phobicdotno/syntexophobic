@@ -286,3 +286,75 @@ def test_single_line_text_is_engraved_once_per_stroke(tmp_path):
             cut += math.dist(last[:2], (x, y))
         last = (x, y, z)
     assert cut == pytest.approx(stroke_len, rel=1e-6)    # one pass: every stroke exactly once
+
+
+def test_trim_with_a_crossing_on_one_side_only():
+    for click, kept_ends in ((8, ((0, 0), (5, 0))), (2, ((5, 0), (10, 0)))):
+        sk = Sketch()
+        long = sk.line((0, 0), (10, 0))
+        sk.line((5, -5), (5, 5))
+        kept = sk.trim(long, click, 0)
+        assert len(kept) == 1
+        ln = sk.lines[kept[0]]
+        ends = tuple((round(sk.points[p].x, 6), round(sk.points[p].y, 6)) for p in (ln.a, ln.b))
+        assert ends == kept_ends
+        assert all(sk._uses(p) or any(p in k.refs for k in sk.constraints) for p in sk.points)
+
+
+def test_trim_cuts_only_where_the_arc_is():
+    sk = Sketch()
+    c = sk.point(0, 0, construction=True)
+    sk.arc(c, sk.point(5, 0), sk.point(-5, 0))        # upper half
+    below = sk.line((-10, -3), (10, -3))
+    assert sk.trim(below, 0, -3) == []                # the missing half does not cut
+    above = sk.line((-10, 3), (10, 3))
+    assert len(sk.trim(above, 0, 3)) == 2
+
+
+def test_constraint_ids_stay_unique_after_delete():
+    sk = Sketch()
+    ls = sk.rectangle(0, 0, 10, 5)
+    first = sk.constraints[0].id
+    sk.constraints = [k for k in sk.constraints if k.id != first]
+    sk.constraints.append(sk.constraints.pop(0))      # leave a gap before the last id
+    sk.constrain("distance", ls[0], value=10)
+    ids = [k.id for k in sk.constraints]
+    assert len(ids) == len(set(ids))
+
+
+def test_name_with_quotes_round_trips():
+    sk = Sketch(name='Bracket "A" \\ 2')
+    sk.line((0, 0), (1, 0))
+    assert Sketch.loads(sk.dumps()).name == 'Bracket "A" \\ 2'
+
+
+def test_fillet_keeps_a_spline_on_the_corner():
+    sk = Sketch()
+    sk.line((0, 0), (10, 0))
+    corner = sk.lines[next(iter(sk.lines))].a
+    sk.line(corner, (0, 10))
+    sp = sk.spline([corner, sk.point(-5, -2), sk.point(-8, 3)])
+    sk.fillet(corner, 2)
+    assert corner in sk.points and sk.splines[sp].points[0] == corner
+
+
+def test_mirrored_dxf_arcs_land_in_the_world(tmp_path):
+    import ezdxf
+    from syntexophobic import dxf
+
+    doc = ezdxf.new()
+    doc.header["$INSUNITS"] = 4
+    doc.modelspace().add_arc((-10, 0), 10, 0, 90, dxfattribs={"extrusion": (0, 0, -1)})
+    doc.saveas(tmp_path / "mirrored.dxf")
+    sk = dxf.import_dxf(tmp_path / "mirrored.dxf")
+    a = next(iter(sk.arcs.values()))
+    xy = lambda p: (round(sk.points[p].x, 6), round(sk.points[p].y, 6))   # noqa: E731
+    assert (xy(a.center), {xy(a.start), xy(a.end)}) == ((10, 0), {(0, 0), (10, 10)})
+
+
+@pytest.mark.parametrize("expr", ["sqrt(-1)", "(-8) ** 0.5", "10 ** 400", "min()"])
+def test_bad_expressions_are_parameter_errors(expr):
+    from syntexophobic.params import ParameterError, evaluate
+
+    with pytest.raises(ParameterError):
+        evaluate(expr, {})

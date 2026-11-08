@@ -157,6 +157,7 @@ def result_text(content) -> str:
 def _normal(text: str) -> str:
     """An error with the parts that change between runs taken out: paths, numbers, quotes."""
     text = re.sub(r"(~|\.{0,2})?/[\w./~-]+", "<path>", text)
+    text = re.sub(r"(?:[A-Za-z]:|\\\\[\w.$-]+)\\[^\s:'\"]*", "<path>", text)     # C:\Users\..., \\server\...
     text = re.sub(r"'[^']*'|\"[^\"]*\"", "<s>", text)
     text = re.sub(r"\d+(\.\d+)?", "<n>", text)
     return " ".join(text.split())[:200]

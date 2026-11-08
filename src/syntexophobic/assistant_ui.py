@@ -194,7 +194,7 @@ def fetch_link(url: str, folder: Path, timeout: float = 15.0) -> dict:
             folder.mkdir(parents=True, exist_ok=True)
             tmp.write_bytes(data)
             pic = prepare_image(tmp, folder)
-            if pic != tmp:
+            if pic.resolve() != tmp.resolve():      # (pic is resolved: compare like with like)
                 tmp.unlink()
             info["picture"] = str(pic)
         except Exception:  # the text alone still helps
@@ -589,6 +589,7 @@ class AssistantPanel(QWidget):
         self.proc.setProcessEnvironment(env)
         self.proc.readyReadStandardOutput.connect(self._read)
         self.proc.finished.connect(self._finished)
+        self.proc.errorOccurred.connect(self._error)
         self._buf = b""
         self._library_seen = self._library_keys()
         self.proc.start("claude", command(message, self.session_id, cwd))
@@ -660,6 +661,16 @@ class AssistantPanel(QWidget):
         self.b_stop.setEnabled(False)
         self._idle_note()
         self.library_changed(quiet=True)
+
+    def _error(self, error):
+        """`claude` did not start (no finished signal comes then): say so and free the panel."""
+        if error != QProcess.ProcessError.FailedToStart or self.proc is None:
+            return
+        self._add("error", f"Could not start claude: {self.proc.errorString()}")
+        self.proc, self.turn = None, None
+        self.b_send.setEnabled(True)
+        self.b_stop.setEnabled(False)
+        self._idle_note()
 
     def stop(self):
         if self.proc is not None:

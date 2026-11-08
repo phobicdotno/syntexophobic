@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QSlider, QSplitter, QStackedWidget, QTabWidget, QToolBar, QVBoxLayout, QWidget,
 )
 
-from . import desktop, geometry
+from . import cccp, desktop, geometry
 from .job import Operation, Tool
 from .cccp import SUFFIX as CCCP
 from .project import Project
@@ -257,6 +257,10 @@ class MainWindow(QMainWindow):
         self._pack_soon.setSingleShot(True)
         self._pack_soon.setInterval(2000)
         self._pack_soon.timeout.connect(self._pack)
+        self._status_soon = QTimer(self)            # "Save version •" once edits settle
+        self._status_soon.setSingleShot(True)
+        self._status_soon.setInterval(300)
+        self._status_soon.timeout.connect(self._check_dirty)
         self._build_design_dock()
         self._build_ribbon()
         self._build_assistant_dock()
@@ -287,6 +291,10 @@ class MainWindow(QMainWindow):
         self.addToolBar(tb)
         self.toolbar = tb
         bar = self.menuBar()
+        # what the user did, for the log an error report ends with
+        from .faults import log
+        bar.triggered.connect(lambda a: log.info("menu: %s", a.text().replace("&", "")))
+        tb.actionTriggered.connect(lambda a: log.info("toolbar: %s", a.toolTip() or a.text()))
         m_file, m_edit = bar.addMenu("&File"), bar.addMenu("&Edit")
         m_paths, m_view = bar.addMenu("&Toolpaths"), bar.addMenu("&View")
         m_help = bar.addMenu("&Help")
@@ -295,6 +303,12 @@ class MainWindow(QMainWindow):
         self.a_auto_update.setCheckable(True)
         self.a_auto_update.setChecked(QSettings().value("update/auto", True, type=bool))
         self.a_auto_update.toggled.connect(lambda on: QSettings().setValue("update/auto", on))
+        self.a_error_reports = m_help.addAction("Send error reports automatically")
+        self.a_error_reports.setCheckable(True)
+        self.a_error_reports.setToolTip("Every error goes to the project's GitHub issues for analysis, "
+                                        "with the version, OS and what led up to it")
+        self.a_error_reports.setChecked(QSettings().value("errors/report", True, type=bool))
+        self.a_error_reports.toggled.connect(lambda on: QSettings().setValue("errors/report", on))
         m_help.addSeparator()
         m_help.addAction("&About Syntexophobic", lambda: __import__("syntexophobic.about", fromlist=["x"]).dialog(self).exec())
         self.a_undo = m_edit.addAction("Undo")
@@ -337,6 +351,9 @@ class MainWindow(QMainWindow):
         self.a_generate = act("Generate toolpaths", self.generate, "generate", "Ctrl+G", m_paths, toolbar=False)
         self.a_simulate = act("Simulate", self.simulate, "simulate", "Ctrl+R", m_paths, toolbar=False)
         self.a_export = act("Export G-code…", self.export_gcode, "export", "Ctrl+E", m_file, toolbar=False)
+        self.a_fabslice = act("Slice for laser / CNC…", self.slice_for_fabrication, "fabslice", None, m_file, toolbar=False)
+        self.a_fabslice.setIconText("Slice")
+        self.a_fabslice.setToolTip("Slice for laser / CNC: cut the model into flat parts from sheet material")
         m_file.addSeparator()
         for text, slot in (("Import DXF as sketch…", self.import_dxf), ("Export sketch…", self.export_dxf),
                            ("Export model…", self.export_model),
@@ -396,6 +413,7 @@ class MainWindow(QMainWindow):
         self.play_action = tb.addWidget(self.play_slider)
         self.play_action.setVisible(False)
         self.sim_result = None
+        self._computing_for = None         # the project toolpaths or a simulation are computing for
         self.section_axis = None
         a_assist = m_view.addAction("Assistant (Claude)")
         a_assist.setShortcut(QKeySequence("Ctrl+K"))
@@ -427,8 +445,7 @@ class MainWindow(QMainWindow):
     def _build_ribbon(self):
         """The Fusion-style tool ribbon under the app bar: a Design tab (Create / Modify /
         Insert / Inspect) and a Manufacture tab (Actions / Display), swapped by workspace."""
-        from PySide6.QtWidgets import QFrame
-        from .design_ui import _ribbon_button, _ribbon_group
+        from .design_ui import _ribbon_button, _ribbon_group, _ribbon_sep
         dp = self.design_panel
 
         def qa(icon, text, slot, tip=None):
@@ -444,10 +461,7 @@ class MainWindow(QMainWindow):
             row.setSpacing(0)
             for i, (title, buttons) in enumerate(groups):
                 if i:
-                    line = QFrame()
-                    line.setFrameShape(QFrame.VLine)
-                    line.setProperty("ribbonSep", True)
-                    row.addWidget(line)
+                    row.addWidget(_ribbon_sep())
                 row.addWidget(_ribbon_group(title, buttons))
             row.addStretch(1)
             return w
@@ -474,12 +488,14 @@ class MainWindow(QMainWindow):
         design_page = page([("CREATE", [_ribbon_button(a, big=a.text() in {"Extrude", "Revolve"}) for a in create]),
                             ("MODIFY", [_ribbon_button(a) for a in modify]),
                             ("INSERT", [_ribbon_button(a) for a in insert]),
-                            ("INSPECT", [_ribbon_button(a) for a in inspect])])
+                            ("INSPECT", [_ribbon_button(a) for a in inspect]),
+                            ("FABRICATE", [_ribbon_button(self.a_fabslice, big=True)])])
 
         # ---- Manufacture tab ----
         manu_page = page([("ACTIONS", [_ribbon_button(self.a_generate, big=True),
                                        _ribbon_button(self.a_simulate, big=True),
                                        _ribbon_button(self.a_export)]),
+                          ("SHEETS", [_ribbon_button(self.a_fabslice, big=True)]),
                           ("DISPLAY", [_ribbon_button(self.c_paths), _ribbon_button(self.c_rapids),
                                        _ribbon_button(self.c_model)])])
 
@@ -868,6 +884,7 @@ class MainWindow(QMainWindow):
         self._refresh_model()
         self._refresh_history_status()
         self.toolpaths = []
+        self._forget_claude_toolpaths()
         self.status.setText("Redone." if redo else "Undone.")
 
     def import_dxf(self):
@@ -945,6 +962,8 @@ class MainWindow(QMainWindow):
 
     def _rebuild_part(self):
         from .model import ModelError
+        if self.part is None:             # another project (a STEP one) opened meanwhile
+            return
         try:
             shape = self.part.build()
         except ModelError as e:
@@ -956,6 +975,7 @@ class MainWindow(QMainWindow):
         self.viewer.set_section(self.section_axis, self.section_slider.value() / 1000)
         self.viewer.refresh()
         self.toolpaths = []
+        self._forget_claude_toolpaths()
         b = geometry.bounding_box(shape)
         self.status.setText(f"Part {b.xmax - b.xmin:.1f} × {b.ymax - b.ymin:.1f} × {b.zmax - b.zmin:.1f} mm")
 
@@ -974,7 +994,7 @@ class MainWindow(QMainWindow):
         page = QWidget()
         col = QVBoxLayout(page)
         col.setContentsMargins(0, 0, 0, 0)
-        col.addWidget(sketch_toolbar(view, self.finish_sketch))
+        col.addWidget(sketch_toolbar(view, lambda *_: self.finish_sketch()))   # not the action's checked=False
         col.addWidget(view)
         self.stack.addWidget(page)
         self.stack.setCurrentWidget(page)
@@ -1047,6 +1067,10 @@ class MainWindow(QMainWindow):
 
     def load_path(self, path: str):
         p = Path(path)
+        open_now = self.project and self.project.archive
+        if open_now and cccp.is_cccp(p) and open_now.expanduser().resolve() == p.expanduser().resolve():
+            self._pack()                  # already open: unpacking it again would lose unpacked edits
+            return
         try:
             if p.suffix.lower() in (".step", ".stp", ".stl", ".3mf"):
                 self.load(Project.create(p.with_name(p.stem + "-cam"), p))
@@ -1081,7 +1105,7 @@ class MainWindow(QMainWindow):
             return
         try:
             self.project.pack()
-        except OSError as e:
+        except (OSError, ValueError) as e:            # ValueError: zipfile refusing a file
             from . import faults
             faults.log.warning("could not write %s: %s", self.project.archive, e)
             self.status.setText(f"Could not write {self.project.archive}: {e}")
@@ -1099,7 +1123,13 @@ class MainWindow(QMainWindow):
         self.session = automation.Session()
         self.session.window = self
         automation.STATE.mkdir(parents=True, exist_ok=True)
-        QLocalServer.removeServer(automation.control_name())
+        from PySide6.QtNetwork import QLocalSocket
+        probe = QLocalSocket()
+        probe.connectToServer(automation.control_name())
+        if probe.waitForConnected(300):   # another window answers Claude: leave it its socket
+            probe.disconnectFromServer()
+            return
+        QLocalServer.removeServer(automation.control_name())   # a stale one from a crash
         self.control = QLocalServer(self)
         self.control.setSocketOptions(QLocalServer.UserAccessOption)      # only this user
         if self.control.listen(automation.control_name()):
@@ -1142,7 +1172,8 @@ class MainWindow(QMainWindow):
             self.assistant.library_changed()
         if cmd == "library_list" or (cmd == "library_add" and self.project is None):
             return
-        if cmd in ("status", "get_sketch", "history", "diff", "screenshot", "view"):
+        if cmd in ("status", "get_sketch", "history", "diff", "screenshot", "view",
+                   "slice_for_fabrication") or s.project is None:     # these change no project files
             return
         if s.project is not self.project:
             self.load(s.project)
@@ -1198,6 +1229,13 @@ class MainWindow(QMainWindow):
         shot.save(path)
         return path
 
+    def automation_fabslice(self, fs, ss) -> None:
+        """Open the Slice window showing these settings (for the automation command)."""
+        self.slice_for_fabrication()
+        dlg = getattr(self, "_fab_dialog", None)
+        if dlg is not None:
+            dlg.apply(fs, ss)
+
     def automation_view(self, preset: str, workspace: str) -> dict:
         if workspace:
             self.c_workspace.setCurrentText(workspace)
@@ -1207,14 +1245,18 @@ class MainWindow(QMainWindow):
     def load(self, project: Project):
         from .project import Undo
         self.finish_sketch(save=False)
+        self._rebuild_timer.stop()                    # a rebuild of the old part
         if self.project is not None and self.project is not project:
             self._pack()
         self.project = project
         if hasattr(self, "session"):
             self.session.project = project
-            self.session.toolpaths = []
+            self._forget_claude_toolpaths()
         self.undo = Undo(project.folder)
         self.toolpaths = []
+        self.sim_result, self._measure_picks = None, []
+        self.play_action.setVisible(False)
+        self.viewer.clear_simulation()
         if project.job.model.endswith(".toml"):
             from .model import Part
             self.part = Part.load(project.folder / project.job.model)
@@ -1297,9 +1339,14 @@ class MainWindow(QMainWindow):
             self.viewer.show_stock(p.setup().stock)
             self.viewer.refresh()
         self._mark_stale()
+        self._forget_claude_toolpaths()               # Claude must not export the old ones
         if p.setup().warning:
             self.status.setText(p.setup().warning + " Check the stock size.")
         self._refresh_history_status()
+
+    def _forget_claude_toolpaths(self):
+        if hasattr(self, "session"):
+            self.session.toolpaths, self.session.last_simulation = [], None
 
     def _mark_stale(self):
         if self.toolpaths:
@@ -1373,6 +1420,7 @@ class MainWindow(QMainWindow):
     def generate(self):
         self.a_generate.setEnabled(False)
         self.status.setText("Computing toolpaths… (slicing the model level by level)")
+        self._computing_for = self.project
         task = Task(self.project.toolpaths)
         task.signals.done.connect(self._generated)
         task.signals.failed.connect(self._failed)
@@ -1380,6 +1428,8 @@ class MainWindow(QMainWindow):
 
     def _generated(self, toolpaths):
         self.a_generate.setEnabled(True)
+        if self._computing_for is not self.project:  # another project was opened meanwhile
+            return
         self.toolpaths = toolpaths
         if hasattr(self, "session"):
             self.session.toolpaths = toolpaths
@@ -1407,6 +1457,7 @@ class MainWindow(QMainWindow):
         self.a_simulate.setEnabled(False)
         self.status.setText("Simulating material removal…")
         setup, tps = self.project.setup(), self.toolpaths
+        self._computing_for = self.project
         task = Task(lambda: sim.simulate(setup, tps, snapshots=40))
         task.signals.done.connect(self._simulated)
         task.signals.failed.connect(self._failed)
@@ -1414,6 +1465,8 @@ class MainWindow(QMainWindow):
 
     def _simulated(self, result):
         self.a_simulate.setEnabled(True)
+        if self._computing_for is not self.project:
+            return
         self.c_model.setChecked(False)
         self.c_paths.setChecked(False)
         self.viewer.show_simulation(result)
@@ -1460,6 +1513,22 @@ class MainWindow(QMainWindow):
         self.status.setText("Saved " + " and ".join(saved) + ": run the top file, flip the part over its X axis, "
                             "then run the bottom file.")
 
+    def slice_for_fabrication(self):
+        """Cut the model on screen into flat parts for the laser or the CNC (fabslice)."""
+        dlg = getattr(self, "_fab_dialog", None)
+        if dlg is not None and dlg.isVisible():
+            dlg.raise_()
+            dlg.activateWindow()
+            return
+        shape = getattr(self.viewer, "shape", None)
+        if shape is None or self.project is None:
+            QMessageBox.information(self, "Slice for laser / CNC", "Open or design a model first.")
+            return
+        from .fabslice_ui import FabSliceDialog
+        folder = self.project.folder
+        self._fab_dialog = FabSliceDialog(shape, self.viewer, stem=folder.name, folder=str(folder.parent), parent=self)
+        self._fab_dialog.show()
+
     def send_to_phobicccp(self):
         if self.project is None:
             QMessageBox.information(self, "No project", "Open a project first.")
@@ -1470,21 +1539,20 @@ class MainWindow(QMainWindow):
     # ---- history ---------------------------------------------------------------------
 
     def _refresh_history(self):
-        h = self.project.history
-        current, names = h.branches()
+        o = self.project.history.overview()
         self.c_branch.clear()
-        self.c_branch.addItems(names)
-        self.c_branch.setCurrentText(current)
+        self.c_branch.addItems(o.branches)
+        self.c_branch.setCurrentText(o.current)
         self.l_versions.blockSignals(True)
         self.l_versions.clear()
-        self.versions = h.log()
+        self.versions = o.versions
         for v in self.versions:
             refs = f"  [{v.refs.replace('HEAD -> ', '')}]" if v.refs else ""
             item = QListWidgetItem(f"{v.short}  {v.date}  {v.message}{refs}")
             item.setToolTip(v.hash)
             self.l_versions.addItem(item)
         self.l_versions.blockSignals(False)
-        self.subway.set_stations(h.subway())
+        self.subway.set_stations(o.stations)
         self.subway.select("")
         self.t_diff.clear()
         from . import history
@@ -1496,8 +1564,18 @@ class MainWindow(QMainWindow):
 
     def _refresh_history_status(self):
         self._pack_soon.start()             # edits reach the .cccp file shortly after they are made
-        dirty = self.project.history.has_changes()
-        self.b_save.setText("Save version •" if dirty else "Save version")
+        self._status_soon.start()
+
+    def _check_dirty(self):
+        """`git status` off the UI thread: on Windows starting git costs tens of milliseconds,
+        more with a virus scanner, and this ran after every edit."""
+        if self.project is None:
+            return
+        project = self.project
+        task = Task(project.history.has_changes)
+        task.signals.done.connect(lambda dirty: project is self.project
+                                  and self.b_save.setText("Save version •" if dirty else "Save version"))
+        self.pool.start(task)
 
     def save_version(self):
         msg = self.e_message.text().strip()
@@ -1531,9 +1609,7 @@ class MainWindow(QMainWindow):
             return
         v = self.versions[row]
         self.project.history.restore(v.hash)
-        self.project.reload()
-        self._fill_job()
-        self._refresh_model()
+        self._files_replaced()
         self._refresh_history_status()
         self.status.setText(f"Restored {v.short} “{v.message}”. Save a version to keep it.")
 
@@ -1555,10 +1631,21 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Could not switch", str(e))
             self._refresh_history()
             return
+        self._files_replaced()
+        self._refresh_history()
+
+    def _files_replaced(self):
+        """After git changed the project's files: the job, the design and undo follow them."""
         self.project.reload()
+        if self.part is not None:
+            from .model import Part
+            self.part = Part.load(self.project.folder / self.project.job.model)
+            self.design_panel.set_part(self.part)
+        self.undo.record()
+        self.toolpaths = []
+        self._forget_claude_toolpaths()
         self._fill_job()
         self._refresh_model()
-        self._refresh_history()
 
 
 def _dark_palette(app: QApplication):
@@ -1597,6 +1684,7 @@ QToolButton[ribbon="1"], QToolButton[ribbon="big"] { font-size: 10px; }
 QToolButton[ribbon="big"] { min-width: 46px; }
 QLabel[ribbonCaption="true"] { color: #7f868f; font-size: 8px; font-weight: 600; letter-spacing: 1px; }
 QFrame[ribbonSep="true"] { color: #3a3e45; max-width: 1px; margin: 3px 2px; }
+QScrollArea[ribbonScroll="true"], QScrollArea[ribbonScroll="true"] > QWidget { background: #2a2d33; border: none; }
 QToolButton[finish="true"] { color: #d7f5df; }
 QToolButton[finish="true"]:hover { background: #1f4d30; border-color: #2e8c52; }
 
@@ -1650,10 +1738,12 @@ def run(path: str | None = None) -> int:
     app.setWindowIcon(QIcon(str(desktop.SVG)))
     desktop.integrate()                            # before the window, so the shell matches it at once
     _dark_palette(app)
-    from . import faults
+    from . import errors, faults
     faults.setup_logging()
     faults.log.info("Syntexophobic %s started", faults.environment().get("Version"))
+    reporter = errors.install(enabled=lambda: QSettings().value("errors/report", True, type=bool))
     win = MainWindow()
+    reporter.project = lambda: str(win.project.folder) if win.project is not None else ""
     win.show()
     if path:
         win.load_path(path)

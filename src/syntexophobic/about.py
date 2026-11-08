@@ -88,6 +88,25 @@ def build() -> int:
     return next((r.build for r in summarize(changelog_text()) if r.version == version()), 0)
 
 
+SOFTWARE_GL = ("llvmpipe", "softpipe", "swiftshader", "gdi generic", "microsoft basic render",
+               "apple software renderer")
+
+
+def graphics(report: str) -> str:
+    """The graphics line from VTK's ReportCapabilities(): "AMD Radeon(TM) 860M Graphics
+    (OpenGL 4.6 …)", with a warning when the 3D view is drawn in software on the processor.
+    Empty when the report has no renderer (the view has not been drawn yet)."""
+    found = dict(m.groups() for m in re.finditer(r"^OpenGL (renderer|version) string:\s*(.+?)\s*$", report, re.M))
+    name = found.get("renderer")
+    if not name:
+        return ""
+    gl = found.get("version", "").split(" ")[0]
+    line = f"{name}{f' (OpenGL {gl})' if gl else ''}"
+    if any(s in name.lower() for s in SOFTWARE_GL):
+        line += " — software rendering on the processor, not the graphics card"
+    return line
+
+
 def dialog(parent=None):
     import html
     from PySide6.QtCore import Qt
@@ -103,10 +122,19 @@ def dialog(parent=None):
     logo.setPixmap(QIcon(str(Path(__file__).with_name("assets") / "syntexophobic.svg")).pixmap(96, 96))
     lay.addWidget(logo)
     b = build()
+    gpu = ""
+    viewer = getattr(parent, "viewer", None)
+    if viewer is not None:
+        try:
+            gpu = graphics(viewer.GetRenderWindow().ReportCapabilities())
+        except Exception:  # no OpenGL context: leave the line out
+            pass
+    gpu_line = f"<span style='color:#8a919c'>3D view: {html.escape(gpu)}</span><br>" if gpu else ""
     title = QLabel(
         "<div align=center><span style='font-size:20pt; font-weight:bold'>Syntexophobic</span><br>"
         "<i>σύντηξις: melting together, fusion</i><br>"
-        f"Version {version()}{f' (build {b})' if b else ''}<br><br>"
+        f"Version {version()}{f' (build {b})' if b else ''}<br>"
+        f"{gpu_line}<br>"
         "Parametric CAD and CAM for CNC routers (GRBL / Carbide Motion), with a git-style history"
         " and Claude through MCP<br>"
         "<a href='https://github.com/phobicdotno/syntexophobic'>github.com/phobicdotno/syntexophobic</a>"

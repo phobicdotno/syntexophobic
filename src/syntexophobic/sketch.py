@@ -19,6 +19,8 @@ from pathlib import Path
 
 import numpy as np
 
+from .job import toml_str
+
 # ---- entities ------------------------------------------------------------------------
 
 
@@ -271,6 +273,7 @@ class Sketch:
     def _uses(self, pid) -> int:
         n = sum(pid in (l.a, l.b) for l in self.lines.values())
         n += sum(pid in (a.center, a.start, a.end) for a in self.arcs.values())
+        n += sum(pid in sp.points for sp in self.splines.values())
         return n + sum(pid == c.center for c in self.circles.values())
 
     def fillet(self, pid: str, radius: float) -> str:
@@ -424,6 +427,8 @@ class Sketch:
         for c in list(self.circles.values()) + list(self.arcs.values()):
             cx, cy = self._xy(c.center)
             for t in _line_circle((ax, ay), (bx, by), (cx, cy), c.r):
+                if c.id in self.arcs and not self._on_arc(c, ax + (bx - ax) * t, ay + (by - ay) * t):
+                    continue                              # where the full circle is but the arc is not
                 cuts.append((t, c.id))
         cuts = sorted((t, e) for t, e in cuts if 1e-6 < t < 1 - 1e-6)
         lo = max([c for c in cuts if c[0] < click], default=None)
@@ -436,9 +441,10 @@ class Sketch:
         a, b = ln.a, ln.b
         del self.lines[line_id]
         self.constraints = [k for k in self.constraints if line_id not in k.refs]
-        for (t, cutter), keep_start in ((lo, True), (hi, False)):
-            if (t, cutter) == (None, None) or t is None:
+        for cut, keep_start in ((lo, True), (hi, False)):
+            if cut is None:
                 continue
+            t, cutter = cut
             p = self.point(*point(t))
             kind = "point_on_line" if cutter in self.lines else "point_on_circle"
             self.constrain(kind, p, cutter)
@@ -447,6 +453,13 @@ class Sketch:
             if not self._uses(end):
                 self.delete(end)
         return kept
+
+    def _on_arc(self, arc, x, y) -> bool:
+        """Is (x, y), a point on the arc's circle, inside its counter-clockwise span?"""
+        cx, cy = self._xy(arc.center)
+        ang = lambda px, py: math.atan2(py - cy, px - cx) % (2 * math.pi)   # noqa: E731
+        a0, a1, at = ang(*self._xy(arc.start)), ang(*self._xy(arc.end)), ang(x, y)
+        return (at - a0) % (2 * math.pi) <= (a1 - a0) % (2 * math.pi) + 1e-9
 
     def _ordered_chain(self, line_ids):
         """Point ids around a closed chain of lines, in order."""
@@ -473,7 +486,11 @@ class Sketch:
     def constrain(self, type: str, *refs: str, value: float | None = None) -> str:
         if type not in CONSTRAINT_TYPES:
             raise ValueError(f"Unknown constraint {type!r}")
-        c = Constraint(type, list(refs), value, id=f"k{len(self.constraints) + 1}")
+        used = {k.id for k in self.constraints}
+        n = len(self.constraints) + 1
+        while f"k{n}" in used:                            # ids stay unique after deletes
+            n += 1
+        c = Constraint(type, list(refs), value, id=f"k{n}")
         if type == "fixed" and value is None:
             p = self.points[refs[0]]
             c.value = None
@@ -797,12 +814,12 @@ class Sketch:
             if isinstance(v, bool):
                 return "true" if v else "false"
             if isinstance(v, str):
-                return '"' + v + '"'
+                return toml_str(v)
             if isinstance(v, list):
                 return "[" + ", ".join(val(x) for x in v) + "]"
             return repr(v)
 
-        out = ["[sketch]", f'name = "{self.name}"', f'plane = "{self.plane}"', f"offset = {self.offset!r}"]
+        out = ["[sketch]", f"name = {val(self.name)}", f"plane = {val(self.plane)}", f"offset = {self.offset!r}"]
         if self.plane == "custom":
             out += [f"origin = {val(self.origin)}", f"xdir = {val(self.xdir)}", f"normal = {val(self.normal)}"]
         out.append("")
@@ -842,11 +859,11 @@ class Sketch:
         return sk
 
     def save(self, path: str | Path) -> None:
-        Path(path).write_text(self.dumps())
+        Path(path).write_text(self.dumps(), encoding="utf-8")
 
     @classmethod
     def load(cls, path: str | Path) -> "Sketch":
-        return cls.loads(Path(path).read_text())
+        return cls.loads(Path(path).read_text(encoding="utf-8"))
 
 
 def _intersect(p1, p2, p3, p4, segment: bool = False):

@@ -25,6 +25,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR args, int show) {
     *wcsrchr(dir, L'\\') = 0;
     swprintf(python, MAX_PATH, L"%ls\\python\\python.exe", dir);
     SetEnvironmentVariableW(L"SYNTEXOPHOBIC_WINDOWS_APP", dir);   /* the updater, the MCP server command */
+    SetEnvironmentVariableW(L"PYTHONUTF8", L"1");     /* files and git output in UTF-8, not cp1252 */
 
     /* the bundled git only when there is none, so an installed Git for Windows keeps winning */
     if (!SearchPathW(NULL, L"git.exe", NULL, MAX_PATH, found, NULL)) {

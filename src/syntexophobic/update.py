@@ -395,25 +395,27 @@ def install_msi(release: Release, current: Path, tok: str | None = None,
     return Installed(msi, [], msi, release.asset_size)
 
 
-def installer_script(msi: Path, folder: Path, pid: int) -> str:
+def installer_script(pid: int) -> str:
     """The batch file that updates the Windows build: waits for this program (process pid) to
     end, runs the installer with only its progress bar, then starts Syntexophobic again (the
-    old one if the install was cancelled)."""
+    old one if the install was cancelled). The paths come in environment variables: cmd.exe
+    reads a batch file in the OEM code page, which would garble C:\\Users\\Bjørn."""
     return ("@echo off\r\n"
             ":wait\r\n"
             f'tasklist /fi "PID eq {pid}" /nh 2>nul | find "{pid}" >nul '
             "&& (ping -n 2 127.0.0.1 >nul & goto wait)\r\n"
             "ping -n 2 127.0.0.1 >nul\r\n"          # and Syntexophobic.exe, which waited for it
-            f'start "" /wait msiexec /i "{msi}" /passive /norestart\r\n'
-            f'start "" "{folder / "Syntexophobic.exe"}"\r\n')
+            'start "" /wait msiexec /i "%SYNTEXOPHOBIC_MSI%" /passive /norestart\r\n'
+            'start "" "%SYNTEXOPHOBIC_APP%\\Syntexophobic.exe"\r\n')
 
 
 def run_installer(msi: Path, folder: Path, popen: Callable[..., object] = subprocess.Popen):
     """Starts the update (installer_script) in the background, once this program has closed."""
     bat = msi.with_suffix(".cmd")
-    bat.write_text(installer_script(msi, folder, os.getpid()), newline="")
+    bat.write_text(installer_script(os.getpid()), encoding="ascii", newline="")
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-    popen(["cmd.exe", "/c", str(bat)], creationflags=flags, close_fds=True)
+    env = {**os.environ, "SYNTEXOPHOBIC_MSI": str(msi), "SYNTEXOPHOBIC_APP": str(folder)}
+    popen(["cmd.exe", "/c", str(bat)], creationflags=flags, close_fds=True, env=env)
 
 
 def unzip(archive: Path, dest: Path):
@@ -464,10 +466,16 @@ def install_app(release: Release, current: Path, tok: str | None = None,
         except OSError:
             os.rename(old, current)
             raise
-        previous.mkdir(parents=True, exist_ok=True)
-        kept = previous / f"{current.stem}-{version()}.app"
-        shutil.rmtree(kept, ignore_errors=True)
-        shutil.move(old, kept)
+        try:                                          # the new app is in place: keeping the old is extra
+            previous.mkdir(parents=True, exist_ok=True)
+            kept = previous / f"{current.stem}-{version()}.app"
+            shutil.rmtree(kept, ignore_errors=True)
+            shutil.move(old, kept)
+        except OSError as e:
+            from .faults import log
+            log.warning("could not keep the old app in %s: %s", previous, e)
+            if old.exists():                          # it is still running: never delete it
+                os.rename(old, current.with_name(f".{current.stem}-{version()}.app"))
     except OSError as e:
         raise UpdateError(f"could not replace {current} ({e})") from e
     finally:

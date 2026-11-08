@@ -130,3 +130,24 @@ def test_command_line_opens_a_path(monkeypatch):
         monkeypatch.setattr(sys, "argv", ["syntexophobic", *argv])
         assert syntexophobic.main() == 0
         assert opened.pop() == want
+
+
+def test_toolpaths_never_outlive_their_project_or_model(tmp_path):
+    s = A.Session()
+    s.new_design(str(tmp_path / "a"), "a")
+    s.add_sketch("base")
+    s.sketch_draw("base", "rectangle", x0=0, y0=0, x1=60, y1=40)
+    s.add_feature("extrude", sketch="base", distance=10)
+    s.add_tool(name="6 mm", diameter=6.0)
+    s.add_operation(type="profile", name="Cut out", tool=1)
+    s.generate()
+    assert s.toolpaths
+    s.update_feature(0, distance=12)                  # a new model: the old paths are wrong
+    assert not s.toolpaths
+    s.generate()
+    s.new_design(str(tmp_path / "b"), "b")            # another project
+    assert not s.toolpaths and s.last_simulation is None
+    with pytest.raises(A.CommandError):
+        s.remove_operation(-1)
+    with pytest.raises(A.CommandError):
+        s.remove_feature(0)

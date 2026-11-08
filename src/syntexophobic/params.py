@@ -68,9 +68,14 @@ def evaluate(expr, values: dict[str, float]) -> float:
         raise ParameterError(f"Only arithmetic is allowed in expressions: {expr!r}")
 
     try:
-        return ev(tree)
+        r = ev(tree)
     except ZeroDivisionError as e:
         raise ParameterError(f"Division by zero in {expr!r}") from e
+    except (ArithmeticError, ValueError, TypeError) as e:   # sqrt(-1), 10 ** 400, min()
+        raise ParameterError(f"Cannot work out {expr!r}: {e}") from e
+    if not isinstance(r, float) or not math.isfinite(r):  # (-8) ** 0.5 is complex
+        raise ParameterError(f"{expr!r} does not give a real number")
+    return r
 
 
 def resolve(parameters: dict[str, str]) -> dict[str, float]:

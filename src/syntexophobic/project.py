@@ -94,7 +94,7 @@ class Project:
         if written and "part.stl" in written:
             b = geometry.bounding_box(self.shape)
             info["size"] = [round(b.xmax - b.xmin, 4), round(b.ymax - b.ymin, 4), round(b.zmax - b.zmin, 4)]
-        versions = self.history.log(1)
+        versions = self.history.log(1, every_variant=False)    # the version these files are
         if versions:
             info["version"] = {"hash": versions[0].hash, "date": versions[0].date, "note": versions[0].message}
         (out / "info.json").write_text(json.dumps(info, indent=1) + "\n")

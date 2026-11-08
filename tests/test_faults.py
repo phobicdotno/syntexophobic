@@ -79,6 +79,9 @@ def test_the_same_fault_in_other_folders_has_the_same_signature():
     b = turn_of(box_session("FileExistsError: /tmp/box/job.toml exists"), request="a 10 mm cube")
     other = turn_of(box_session("PermissionError: /tmp/box"))
     assert faults.signature(a) == faults.signature(b) != faults.signature(other)
+    ann = turn_of(box_session(r"FileExistsError: C:\Users\ann\box\job.toml exists"))
+    bob = turn_of(box_session(r"FileExistsError: C:\Users\bob\b\job.toml exists"))
+    assert faults.signature(ann) == faults.signature(bob) == faults.signature(a)
 
 
 def test_report_files_once_then_adds_to_the_open_issue(tmp_path, monkeypatch):

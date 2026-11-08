@@ -55,9 +55,27 @@ def pack(folder: str | Path, path: str | Path) -> Path:
     folder, path = Path(folder), Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".part")
-    _write(folder, tmp)
-    os.replace(tmp, path)
+    try:
+        _write(folder, tmp)
+        _replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
     return path
+
+
+def _replace(tmp: Path, path: Path, tries: int = 20, wait: float = 0.1) -> None:
+    """os.replace, retried for a moment: on Windows it fails while another program (a virus
+    scanner, a sync client, phobiCCCP reading it) has the file open."""
+    import time
+    for i in range(tries):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if i == tries - 1:
+                raise
+            time.sleep(wait)
 
 
 def pack_bytes(folder: str | Path) -> bytes:
@@ -69,7 +87,9 @@ def pack_bytes(folder: str | Path) -> bytes:
 
 
 def _write(folder: Path, target) -> None:
-    with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as z:
+    # strict_timestamps off: a file dated before 1980 (copied from a tar, say) is stored as
+    # 1980 instead of failing every pack from then on
+    with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED, strict_timestamps=False) as z:
         z.writestr(zipfile.ZipInfo("mimetype"), MIMETYPE, compress_type=zipfile.ZIP_STORED)
         for root, dirs, files in os.walk(folder):
             dirs.sort()

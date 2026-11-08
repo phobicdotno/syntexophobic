@@ -71,9 +71,16 @@ class Session:
 
     def __init__(self, project: Project | None = None):
         self.project = project
-        self.toolpaths = []
-        self.last_simulation = None
         self.window = None                 # set by the GUI: for screenshots and live refresh
+
+    @property
+    def project(self) -> Project | None:
+        return self._project
+
+    @project.setter
+    def project(self, p: Project | None) -> None:
+        self._project = p                  # toolpaths belong to the project they were made for
+        self.toolpaths, self.last_simulation = [], None
 
     # ---- helpers -----------------------------------------------------------------------
 
@@ -91,6 +98,7 @@ class Session:
     def _save_part(self, part: Part) -> None:
         part.save(self._need().folder)
         self._need().reload()
+        self.toolpaths, self.last_simulation = [], None   # made for the old model
 
     def _sketch(self, part: Part, name: str) -> Sketch:
         if name not in part.sketches:
@@ -282,9 +290,9 @@ class Session:
         src = Path(path).expanduser()
         if not src.exists():
             raise CommandError(f"No file at {src}")
-        folder = self._need().folder
-        if folder in src.resolve().parents:            # with / on Windows too, so the project moves
-            return src.resolve().relative_to(folder).as_posix()
+        folder, src = self._need().folder.resolve(), src.resolve()
+        if folder in src.parents:                       # with / on Windows too, so the project moves
+            return src.relative_to(folder).as_posix()
         dest = folder / sub / src.name
         dest.parent.mkdir(exist_ok=True)
         shutil.copy2(src, dest)
@@ -356,6 +364,8 @@ class Session:
 
     def remove_feature(self, index: int) -> dict:
         part = self._part()
+        if not 0 <= index < len(part.features):
+            raise CommandError(f"No feature {index}; there are {len(part.features)}")
         part.features.pop(index)
         return self._built(part)
 
@@ -396,7 +406,7 @@ class Session:
         change(job)
         save_job(job, p.folder / "job.toml")
         p.reload()
-        self.toolpaths = []
+        self.toolpaths, self.last_simulation = [], None
         return {"job": _clean(p.job)}
 
     def set_stock(self, **values) -> dict:
@@ -456,11 +466,17 @@ class Session:
         return self._job_change(change)
 
     def remove_operation(self, index: int) -> dict:
-        return self._job_change(lambda j: j.operations.pop(index))
+        def change(j):
+            if not 0 <= index < len(j.operations):
+                raise CommandError(f"No operation {index}; there are {len(j.operations)}")
+            j.operations.pop(index)
+        return self._job_change(change)
 
     def suggest_feeds(self, index: int) -> dict:
         from . import feeds
         def change(j):
+            if not 0 <= index < len(j.operations):
+                raise CommandError(f"No operation {index}; there are {len(j.operations)}")
             feeds.apply(j, j.operations[index])
         return self._job_change(change)
 
@@ -500,6 +516,46 @@ class Session:
             saved.append(str(out))
         return {"saved": saved}
 
+    # ---- slice for laser / CNC -------------------------------------------------------------
+
+    def slice_for_fabrication(self, style: str = "stacked", out: str = "", show: bool = True, **settings) -> dict:
+        """Cut the model into flat parts for laser or CNC and write the sheets (DXF + SVG).
+
+        style: stacked | rod | base | back | waffle. Build settings (fabslice.FabSettings):
+        up, axis, thickness, spacing, count, clearance, rod_diameter, rod_at, dowels,
+        dowel_diameter, wall, plate_margin, guide_outline. Sheet settings
+        (fabexport.SheetSettings): width, height, gap, margin, machine (laser | cnc), kerf,
+        tool_diameter, labels, label_height. With the window open the Slice window shows it.
+        """
+        from dataclasses import fields as dc_fields
+        from . import fabexport, fabslice
+        p = self._need()
+        build = {f.name for f in dc_fields(fabslice.FabSettings)}
+        sheet = {f.name for f in dc_fields(fabexport.SheetSettings)}
+        unknown = sorted(set(settings) - build - sheet)
+        if unknown:
+            raise CommandError(f"Unknown setting(s) {', '.join(unknown)}; build: {', '.join(sorted(build))}; "
+                               f"sheet: {', '.join(sorted(sheet))}")
+        if "rod_at" in settings and settings["rod_at"] is not None:
+            settings["rod_at"] = tuple(settings["rod_at"])
+        fs = fabslice.FabSettings(style=style, **{k: v for k, v in settings.items() if k in build and k != "style"})
+        ss = fabexport.SheetSettings(**{k: v for k, v in settings.items() if k in sheet})
+        try:
+            shape = p.shape
+            res = fabslice.make(shape, fs)
+            sheets = fabexport.layout(res, ss)
+        except (fabslice.FabError, ValueError, ModelError) as e:
+            raise CommandError(str(e)) from None
+        folder = Path(out).expanduser() if out else p.output_dir / "sheets"
+        files = fabexport.write(sheets, ss, folder, p.folder.name)
+        if self.window is not None and show:
+            self.window.automation_fabslice(fs, ss)
+        kinds: dict = {}
+        for part in res.parts:
+            kinds[part.kind] = kinds.get(part.kind, 0) + part.copies
+        return {"parts": res.count(), "by_kind": kinds, "sheets": len(sheets),
+                "files": [str(f) for f in files], "warnings": res.warnings}
+
     # ---- history ----------------------------------------------------------------------------
 
     def save_version(self, message: str) -> dict:
@@ -517,6 +573,7 @@ class Session:
         p = self._need()
         p.history.restore(ref)
         p.reload()
+        self.toolpaths, self.last_simulation = [], None
         return self.status()
 
     def new_variant(self, name: str) -> dict:

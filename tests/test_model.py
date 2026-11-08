@@ -597,3 +597,24 @@ def test_step_project_to_design(tmp_path, pocket_part):
     part.features.append(Feature("extrude", sketch="hole", distance=20, operation="cut"))
     part.save(tmp_path / "proj")
     assert volume(Project(tmp_path / "proj").shape) == pytest.approx(before - math.pi * 4 * 15, rel=1e-3)
+
+
+def test_through_hole_from_the_bottom_sketch():
+    base = Sketch("base")
+    base.rectangle(0, 0, 40, 40)
+    holes = Sketch("holes")
+    holes.point(20, 20)                               # on the plate's bottom face, normal away from it
+    part = Part(features=[Feature("extrude", sketch="base", distance=10),
+                          Feature("hole", sketch="holes", diameter=6, depth=0)],
+                sketches={"base": base, "holes": holes})
+    assert abs(volume(part.build()) - (16000 - math.pi * 9 * 10)) < 1
+
+
+def test_save_escapes_names_and_windows_paths(tmp_path):
+    part = plate_part()
+    part.name = 'Bracket "A"'
+    part.features.append(Feature("import", name="bracket", file="imports\\bracket.step", suppressed=True))
+    part.parameters["note"] = "1"
+    part.save(tmp_path)
+    back = Part.load(tmp_path / "model.toml")
+    assert back.name == 'Bracket "A"' and back.features[-1].file == "imports\\bracket.step"

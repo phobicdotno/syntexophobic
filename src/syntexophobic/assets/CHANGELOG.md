@@ -11,6 +11,108 @@ every release, read from this file.
   successfully" and OK. Run again on the same version, it offers Remove. Updates from inside
   the program still install with only a progress bar.
 
+## v0.8.7 (build 20) — 2026-10-25
+
+**Slice for laser / CNC**
+- New: cut the model into flat parts to cut from sheet wood or acrylic and build it back up:
+  stacked layers, slices on a rod, slices on a base or back plate, or a waffle grid.
+- Stacked layers get dowel holes and an engraved outline of where the next layer goes; rod
+  slices get spacer rings; plates get numbered slots.
+- Pick the sheet thickness, spacing, slot play, and laser or CNC router. The 3D view shows
+  the slices put together, and the parts are packed onto sheets.
+- Export sheets as DXF and SVG: cuts in red, names and guides engraved in blue.
+
+## v0.8.6 (build 19) — 2026-10-24
+
+**Machining safety**
+- Roughing, adaptive clearing and ball-end finishing could cut through a thin plate lying
+  between two cutting levels (an enclosure's top panel, a lid) into the space under it.
+  Each level now keeps clear of everything of the part above it, sliced every 0.5 mm and
+  at every flat face.
+- A profile cut-out on its own no longer moves fast 0.5 mm into stock where the outline
+  grows further down: a pass starts just above the previous level only where the tool
+  has already cut.
+
+**Windows**
+- Send to phobiCCCP finds phobiCCCP on the network even when none runs on this computer
+  (Windows ended the search on the unanswered packet to itself).
+- Saving the project file waits a moment when a virus scanner, a sync client or
+  phobiCCCP has it open, instead of failing.
+
+**Fixes**
+- Sending to phobiCCCP no longer builds the model on a background thread while the
+  window uses it.
+
+## v0.8.5 (build 18) — 2026-10-24
+
+**Sketch window fits the screen**
+- The sketch tools no longer take half the window; the drawing gets the room.
+- Opening a sketch no longer makes the window wider than the screen, so full screen and
+  maximize work again. On a narrow window the sketch tools scroll sideways.
+
+## v0.8.4 (build 17) — 2026-10-18
+
+**Bug fixes from a review of the whole program** (about 40, each with a test)
+- Sketches: Trim no longer crashes (and loses the line) when only one side of the click
+  is crossed, and only cuts where an arc really is. Dragging a point no longer deletes a
+  constraint after one was removed. Delete removes a selected spline; Fillet keeps a
+  spline that ends on the corner. Expressions such as sqrt(-1) give a clear message.
+- Files: an import path on Windows (imports\bracket.step), a quote in a name or a line
+  break in a tool name no longer breaks model.toml, sketches, job.toml or tools.toml.
+  These files are UTF-8 everywhere (Windows read and wrote them as cp1252). Mirrored arcs
+  and polylines in DXF files from other CAD programs land the right way round.
+- Project files: a file dated before 1980 no longer stops every save to the .cccp.
+  Opening the project that is already open keeps its latest edits. Restoring a version
+  or switching variant also restores the design in the window, so the next edit no longer
+  writes the old one back. final/info.json names the version the files are at.
+- Through holes cut through the part also from a sketch on its own face. A 3MF of many
+  parts is no longer refused as too big. OBJ and 3MF exports keep 9 digits.
+- Claude: simulate and export never use toolpaths made for another project or an older
+  model or job. A second window no longer cuts Claude off from the first. The Assistant
+  panel recovers when claude cannot start.
+- Updates: the Windows update works for user names with letters like ø, and a broken
+  download index falls back to the full download. On a Mac, a failed copy of the old app
+  no longer deletes it.
+- `syntexophobic send x.cccp` works; one garbled answer no longer hides every phobiCCCP
+  found. The same error on Windows is filed as one issue, not one per user folder.
+
+## v0.8.3 (build 16) — 2026-10-16
+
+**Faster on Windows**
+- The History panel asks git two questions instead of nine. Every git command is a new
+  program start, which on Windows (more so with a company virus scanner) costs far more than
+  on Linux: refreshing the panel went from about 370 ms to 75 ms on a Windows test machine.
+- Checking whether there are unsaved changes ("Save version •") no longer holds up the
+  window after every edit: it runs in the background once the edits settle.
+- The 3D view draws once per change instead of once per step of it: opening a project drew
+  eight frames, an edit three. On the Windows test machine loading a design went from
+  1.5 s to 0.7 s and an edit from 290 ms to 130 ms.
+
+**Graphics card in About**
+- Help → About names the graphics card the 3D view draws with, for example
+  "AMD Radeon(TM) 860M Graphics (OpenGL 4.6)". When the view is drawn in software on the
+  processor instead (no working graphics driver, a remote desktop), it says so.
+
+## v0.8.1 (build 14) — 2026-10-15
+
+**Error reports**
+- Every error while Syntexophobic is in use now goes back to the project's GitHub issues
+  for analysis, not only the Assistant's faults: exceptions nothing caught (in the window
+  or a background thread), errors the program logs, the error and warning dialogs you see,
+  Qt's own critical errors, and a crash of the last run (found at the next start). Each
+  issue (labels `fault-report`, `app-error`) has the version and build, OS, the message,
+  the traceback, where in the program it happened, the open project and the log of what
+  led up to it, which now includes the menu and toolbar actions you used.
+- Repeats don't flood the issues: the same error goes to its open issue as a comment, is
+  sent once per run, at most once a day after that (with how many times it happened in
+  between), and no more than 20 reports go out per run. Help → *Send error reports
+  automatically* turns it off; it never sends from CI.
+
+**Testing**
+- Error reports: where an exception came from, once per run and once a day with the count,
+  the per-run limit, off switch and CI, a failed send retried next run, one issue then
+  comments, logged errors vs. warnings, error dialogs, a crash found at the next start.
+
 ## v0.8.0 (build 13) — 2026-10-14
 
 **Windows installer**
