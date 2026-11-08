@@ -5,12 +5,14 @@
 
 from __future__ import annotations
 
+import faulthandler
 import os
 import subprocess
 import sys
 import time
 from pathlib import Path
 
+faulthandler.enable()                         # a native crash (VTK, OpenGL) says where it happened
 os.environ.setdefault("QT_QPA_PLATFORM", {"darwin": "cocoa", "win32": "windows"}.get(sys.platform, "offscreen"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 t0 = time.perf_counter()
