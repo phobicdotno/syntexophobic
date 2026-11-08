@@ -59,6 +59,8 @@
       <TextStyle Id="WixUI_Font_Normal" FaceName="Segoe UI" Size="9" />
       <TextStyle Id="WixUI_Font_Bigger" FaceName="Segoe UI" Size="12" />
       <TextStyle Id="WixUI_Font_Title" FaceName="Segoe UI" Size="9" Bold="yes" />
+      <TextStyle Id="Splash_Title" FaceName="Segoe UI" Size="20" Bold="yes" Red="255" Green="255" Blue="255" />
+      <TextStyle Id="Splash_Tagline" FaceName="Segoe UI" Size="10" Red="154" Green="163" Blue="178" />
       <TextStyle Id="Splash_Font" FaceName="Segoe UI" Size="9" Red="216" Green="220" Blue="228" />
       <TextStyle Id="Splash_Faint" FaceName="Segoe UI" Size="8" Red="154" Green="163" Blue="178" />
       <Property Id="DefaultUIFont" Value="WixUI_Font_Normal" />
@@ -77,6 +79,10 @@
            version is installed already) -->
       <Dialog Id="SplashDlg" Width="370" Height="270" Title="Syntexophobic Setup">
         <Control Id="Picture" Type="Bitmap" X="0" Y="0" Width="370" Height="234" TabSkip="no" Text="Splash" />
+        <Control Id="Name" Type="Text" X="166" Y="30" Width="195" Height="34" Transparent="yes" NoPrefix="yes"
+                 Text="{\Splash_Title}Syntexophobic" />
+        <Control Id="Tagline" Type="Text" X="168" Y="63" Width="190" Height="14" Transparent="yes" NoPrefix="yes"
+                 Text="{\Splash_Tagline}CAD with git-style history" />
         <Control Id="Version" Type="Text" X="168" Y="94" Width="190" Height="12" Transparent="yes" NoPrefix="yes"
                  Text="{\Splash_Faint}Version [ProductVersion]" />
         <Control Id="New" Type="Text" X="168" Y="114" Width="190" Height="60" Transparent="yes" NoPrefix="yes"

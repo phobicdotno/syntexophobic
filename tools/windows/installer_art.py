@@ -1,8 +1,8 @@
 """Draws the Windows installer's pictures, in the program's own colours, into a folder:
 
   splash.bmp  493 x 312, the first page of the installer (the WiX dialog picture's size): the
-              icon and the name on the dark background of the 3D view, the text the installer
-              writes over it on the right
+              icon on the dark background of the 3D view; the installer writes the name and
+              all other text over it on the right
   banner.bmp  493 x 58, across the top of the progress page, light, as Windows draws its text
               over it in black
   dialog.bmp  493 x 312, behind the pages that say setup failed or was cancelled: the icon in a
@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QGuiApplication, QImage, QLinearGradient, QPainter, QPen
+from PySide6.QtGui import QColor, QGuiApplication, QImage, QLinearGradient, QPainter, QPen
 from PySide6.QtSvg import QSvgRenderer
 
 SVG = Path(__file__).resolve().parents[2] / "src" / "syntexophobic" / "assets" / "syntexophobic.svg"
@@ -29,13 +29,6 @@ def _canvas(w: int, h: int) -> tuple[QImage, QPainter]:
     p.setRenderHint(QPainter.Antialiasing)
     p.setRenderHint(QPainter.TextAntialiasing)
     return img, p
-
-
-def _font(px: int, bold: bool = False) -> QFont:
-    f = QFont("Segoe UI")
-    f.setPixelSize(px)
-    f.setBold(bold)
-    return f
 
 
 def splash() -> QImage:
@@ -63,12 +56,8 @@ def splash() -> QImage:
     for pt in (QPointF(187.9, 91), QPointF(64.7, 220.4)):
         p.drawEllipse(pt, 3.2, 3.2)
     QSvgRenderer(str(SVG)).render(p, QRectF(42, 68, 136, 136))
-    p.setPen(QColor("#ffffff"))
-    p.setFont(_font(30, bold=True))
-    p.drawText(QRectF(222, 40, 260, 46), Qt.AlignLeft | Qt.AlignVCenter, "Syntexophobic")
-    p.setPen(QColor("#9aa3b2"))
-    p.setFont(_font(14))
-    p.drawText(QRectF(224, 84, 260, 22), Qt.AlignLeft | Qt.AlignVCenter, "CAD with git-style history")
+    # no text: Qt's offscreen platform draws none on Windows (empty boxes); the installer
+    # writes the name and the tagline above this line itself
     p.setPen(QPen(AMBER, 2))
     p.drawLine(224, 114, 284, 114)
     p.end()
