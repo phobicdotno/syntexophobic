@@ -1518,7 +1518,7 @@ wheels = [
 
 [[package]]
 name = "syntexophobic"
-version = "0.8.7"
+version = "0.8.8"
 source = { editable = "." }
 dependencies = [
     { name = "cadquery-ocp" },

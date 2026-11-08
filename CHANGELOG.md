@@ -3,15 +3,15 @@
 Each release has a version and a build number; Help → About shows a one-line summary of
 every release, read from this file.
 
-## Unreleased
+## v0.8.8 (build 21) — 2026-11-08
+
+Also brings 0.8.6 and 0.8.7, which were never released on their own.
 
 **Windows installer**
 - Opening the installer by hand now shows a splash page with the Syntexophobic icon and name
   and an Install button, then its progress, and ends with "Syntexophobic was installed
   successfully" and OK. Run again on the same version, it offers Remove. Updates from inside
   the program still install with only a progress bar.
-
-## v0.8.7 (build 20) — 2026-10-25
 
 **Slice for laser / CNC**
 - New: cut the model into flat parts to cut from sheet wood or acrylic and build it back up:
@@ -21,8 +21,6 @@ every release, read from this file.
 - Pick the sheet thickness, spacing, slot play, and laser or CNC router. The 3D view shows
   the slices put together, and the parts are packed onto sheets.
 - Export sheets as DXF and SVG: cuts in red, names and guides engraved in blue.
-
-## v0.8.6 (build 19) — 2026-10-24
 
 **Machining safety**
 - Roughing, adaptive clearing and ball-end finishing could cut through a thin plate lying
