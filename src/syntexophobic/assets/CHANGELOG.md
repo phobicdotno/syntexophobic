@@ -3,6 +3,18 @@
 Each release has a version and a build number; Help → About shows a one-line summary of
 every release, read from this file.
 
+## v0.8.9 (build 22) — 2026-11-09
+
+**Carbide Create files**
+- File → Import DXF / C2D as sketch now opens Carbide Create (.c2d) drawings too, and so
+  does a CAM operation's Source. Lines stay lines, circles stay circles, curves become
+  splines, text comes in as its outlines and construction lines as construction. Stock
+  and toolpaths in the file are left out.
+
+**Speed**
+- Finding the closed outlines of a big sketch (thousands of lines, like lettering) took
+  seconds to minutes; it is now near instant.
+
 ## v0.8.8 (build 21) — 2026-11-08
 
 Also brings 0.8.6 and 0.8.7, which were never released on their own.

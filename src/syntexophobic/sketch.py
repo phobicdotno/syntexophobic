@@ -761,6 +761,12 @@ class Sketch:
                         same[key] = a
                 same[b] = a
         node = lambda p: same.get(p, p)                     # noqa: E731
+        # edges by end point, in edge order: the walk takes the first unused one, as a scan
+        # of all edges would, without going quadratic on drawings of thousands of lines
+        touching: dict[str, list[int]] = {}
+        for j, (p, q, _) in enumerate(edges):
+            for n in {node(p), node(q)}:
+                touching.setdefault(n, []).append(j)
         used = [False] * len(edges)
         for i, (a, b, seg) in enumerate(edges):
             if used[i]:
@@ -768,8 +774,7 @@ class Sketch:
             used[i] = True
             start, cur, loop = node(a), node(b), [seg]
             while cur != start:
-                nxt = next((j for j, (p, q, _) in enumerate(edges)
-                            if not used[j] and cur in (node(p), node(q))), None)
+                nxt = next((j for j in touching.get(cur, ()) if not used[j]), None)
                 if nxt is None:
                     break
                 used[nxt] = True

@@ -355,7 +355,7 @@ class MainWindow(QMainWindow):
         self.a_fabslice.setIconText("Slice")
         self.a_fabslice.setToolTip("Slice for laser / CNC: cut the model into flat parts from sheet material")
         m_file.addSeparator()
-        for text, slot in (("Import DXF as sketch…", self.import_dxf), ("Export sketch…", self.export_dxf),
+        for text, slot in (("Import DXF / C2D as sketch…", self.import_dxf), ("Export sketch…", self.export_dxf),
                            ("Export model…", self.export_model),
                            ("Convert STL / 3MF to STEP…", self.convert_stl)):
             m_file.addAction(text).triggered.connect(slot)
@@ -890,18 +890,19 @@ class MainWindow(QMainWindow):
     def import_dxf(self):
         from . import dxf
         if self.part is None:
-            QMessageBox.information(self, "Import DXF", "Open or start a design first (File > New design…).")
+            QMessageBox.information(self, "Import drawing", "Open or start a design first (File > New design…).")
             return
-        path, _ = QFileDialog.getOpenFileName(self, "DXF drawing", str(Path.home()), "DXF (*.dxf *.DXF)")
+        path, _ = QFileDialog.getOpenFileName(self, "Drawing", str(Path.home()),
+                                              "Drawings (*.dxf *.DXF *.c2d *.C2D);;DXF (*.dxf *.DXF);;Carbide Create (*.c2d *.C2D)")
         if not path:
             return
         name = Path(path).stem.replace(" ", "_")
         while name in self.part.sketches:
             name += "_"
         try:
-            sk = dxf.import_dxf(path, name=name)
+            sk = dxf.import_drawing(path, name=name)
         except Exception as e:
-            QMessageBox.critical(self, "Import DXF", f"Could not read the drawing: {e}")
+            QMessageBox.critical(self, "Import drawing", f"Could not read the drawing: {e}")
             return
         self.part.sketches[name] = sk
         self._design_changed()
