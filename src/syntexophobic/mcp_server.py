@@ -195,7 +195,7 @@ def sketch_edit(sketch: str, action: str, params: dict) -> str:
 
 @server.tool()
 def import_dxf(path: str, name: str = "", plane: str = "XY", offset: float = 0.0) -> str:
-    """Import a DXF drawing as a new sketch (lines, arcs, circles, polylines, splines)."""
+    """Import a DXF or Carbide Create .c2d drawing as a new sketch (lines, arcs, circles, polylines, splines)."""
     return _out(_call("import_dxf", path=path, name=name, plane=plane, offset=offset))
 
 

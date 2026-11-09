@@ -114,6 +114,14 @@ def import_dxf(path: str | Path, name: str = "imported", plane: str = "XY", offs
     return sk
 
 
+def import_drawing(path: str | Path, name: str = "imported", plane: str = "XY", offset: float = 0.0) -> Sketch:
+    """A DXF or a Carbide Create .c2d drawing as a sketch, by the file's extension."""
+    if Path(path).suffix.lower() == ".c2d":
+        from .c2d import import_c2d
+        return import_c2d(path, name=name, plane=plane, offset=offset)
+    return import_dxf(path, name=name, plane=plane, offset=offset)
+
+
 def export_dxf(sk: Sketch, path: str | Path) -> None:
     """Non-construction geometry of a sketch to a DXF in millimetres (R2010)."""
     doc = ezdxf.new("R2010")

@@ -340,7 +340,7 @@ class Session:
         from . import dxf
         part = self._part()
         name = name or Path(path).stem
-        sk = dxf.import_dxf(Path(path).expanduser(), name=name, plane=plane, offset=offset)
+        sk = dxf.import_drawing(Path(path).expanduser(), name=name, plane=plane, offset=offset)
         part.sketches[name] = sk
         return self._sketch_result(part, sk)
 

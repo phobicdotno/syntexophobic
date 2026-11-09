@@ -596,11 +596,11 @@ def _source_sketch(setup: Setup, op: Operation, what: str):
     from pathlib import Path
     src = op.source.strip()
     if not src:
-        raise ValueError(f"{what}: set Source to a sketch name or a .dxf file in the project folder")
-    if src.lower().endswith(".dxf"):
+        raise ValueError(f"{what}: set Source to a sketch name or a .dxf / .c2d file in the project folder")
+    if src.lower().endswith((".dxf", ".c2d")):
         from . import dxf
         folder = Path(setup.job_folder) if getattr(setup, "job_folder", None) else Path(".")
-        return dxf.import_dxf(folder / src)
+        return dxf.import_drawing(folder / src)
     sk = setup.sketches.get(src) if getattr(setup, "sketches", None) else None
     if sk is None:
         raise ValueError(f"{what}: no sketch called {src!r} in this design")
